@@ -28,7 +28,8 @@ exports.DatabaseModule = DatabaseModule = __decorate([
                     entities: [User_1.User],
                     useUnifiedTopology: true,
                     synchronize: true,
-                    logging: true
+                    logging: true,
+                    ssl: true
                 })
             })
         ]

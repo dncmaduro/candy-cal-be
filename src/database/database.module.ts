@@ -17,7 +17,8 @@ import { User } from "./typeorm/entities/User"
         entities: [User],
         useUnifiedTopology: true,
         synchronize: true,
-        logging: true
+        logging: true,
+        ssl: true // Enable SSL for secure connections
       })
     })
   ]
