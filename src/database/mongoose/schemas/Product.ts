@@ -1,7 +1,7 @@
-import { Schema, Document, model } from "mongoose"
+import { Schema, Document, model, Types } from "mongoose"
 
 export interface ProductItem {
-  _id: string
+  _id: Types.ObjectId // Reference to Item schema
   quantity: number
 }
 
@@ -11,7 +11,7 @@ export interface Product extends Document {
 }
 
 const ProductItemSchema = new Schema<ProductItem>({
-  _id: { type: String, required: true },
+  _id: { type: Schema.Types.ObjectId, ref: "Item", required: true }, // Reference to Item schema
   quantity: { type: Number, required: true }
 })
 

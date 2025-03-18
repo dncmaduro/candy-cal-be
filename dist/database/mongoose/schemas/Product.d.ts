@@ -1,6 +1,6 @@
-import { Schema, Document } from "mongoose";
+import { Schema, Document, Types } from "mongoose";
 export interface ProductItem {
-    _id: string;
+    _id: Types.ObjectId;
     quantity: number;
 }
 export interface Product extends Document {

@@ -13,6 +13,7 @@ const mongoose_1 = require("@nestjs/mongoose");
 const database_module_1 = require("./database/database.module");
 const users_module_1 = require("./users/users.module");
 const items_module_1 = require("./items/items.module");
+const products_module_1 = require("./products/products.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -23,6 +24,7 @@ exports.AppModule = AppModule = __decorate([
             database_module_1.DatabaseModule,
             users_module_1.UsersModule,
             items_module_1.ItemsModule,
+            products_module_1.ProductsModule,
             mongoose_1.MongooseModule.forRoot(process.env.DATABASE_URL, {
                 dbName: "data"
             })

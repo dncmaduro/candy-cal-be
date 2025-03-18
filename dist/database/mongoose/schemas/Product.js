@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProductModel = exports.ProductSchema = void 0;
 const mongoose_1 = require("mongoose");
 const ProductItemSchema = new mongoose_1.Schema({
-    _id: { type: String, required: true },
+    _id: { type: mongoose_1.Schema.Types.ObjectId, ref: "Item", required: true },
     quantity: { type: Number, required: true }
 });
 exports.ProductSchema = new mongoose_1.Schema({

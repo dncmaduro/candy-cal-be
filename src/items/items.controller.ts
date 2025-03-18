@@ -3,7 +3,6 @@ import {
   Post,
   Put,
   Get,
-  Param,
   Body,
   HttpCode,
   HttpStatus,
@@ -12,7 +11,6 @@ import {
 import { ItemsService } from "./items.service"
 import { ItemDto } from "./dto/item.dto"
 import { Item } from "src/database/mongoose/schemas/Item"
-import { ObjectId } from "typeorm"
 
 @Controller("items")
 export class ItemsController {
