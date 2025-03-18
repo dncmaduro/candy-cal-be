@@ -8,10 +8,11 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
 const config_1 = require("@nestjs/config");
+const mongoose_1 = require("@nestjs/mongoose");
 const database_module_1 = require("./database/database.module");
 const users_module_1 = require("./users/users.module");
+const items_module_1 = require("./items/items.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -21,14 +22,9 @@ exports.AppModule = AppModule = __decorate([
             config_1.ConfigModule.forRoot({ isGlobal: true, envFilePath: ".env" }),
             database_module_1.DatabaseModule,
             users_module_1.UsersModule,
-            typeorm_1.TypeOrmModule.forRoot({
-                type: "mongodb",
-                url: process.env.DATABASE_URL,
-                database: "data",
-                entities: ["dist/database/typeorm/entities/*.js"],
-                useUnifiedTopology: true,
-                synchronize: true,
-                logging: true
+            items_module_1.ItemsModule,
+            mongoose_1.MongooseModule.forRoot(process.env.DATABASE_URL, {
+                dbName: "data"
             })
         ],
         controllers: [],

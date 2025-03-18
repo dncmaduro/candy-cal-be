@@ -14,20 +14,19 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
-const User_1 = require("../database/typeorm/entities/User");
+const mongoose_1 = require("@nestjs/mongoose");
+const mongoose_2 = require("mongoose");
 let UsersService = class UsersService {
-    constructor(userRepository) {
-        this.userRepository = userRepository;
+    constructor(userModel) {
+        this.userModel = userModel;
     }
     async login(credential) {
         try {
-            const existingUser = await this.userRepository.findOne({
-                where: {
-                    username: credential.username
-                }
-            });
+            const existingUser = await this.userModel
+                .findOne({
+                username: credential.username
+            })
+                .exec();
             if (!existingUser) {
                 throw new common_1.HttpException("Wrong username", common_1.HttpStatus.UNAUTHORIZED);
             }
@@ -48,7 +47,7 @@ let UsersService = class UsersService {
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(User_1.User)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __param(0, (0, mongoose_1.InjectModel)("users")),
+    __metadata("design:paramtypes", [mongoose_2.Model])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

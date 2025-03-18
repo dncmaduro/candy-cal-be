@@ -1,24 +1,24 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { IUsersService } from "./users"
-import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
-import { User } from "src/database/typeorm/entities/User"
+import { InjectModel } from "@nestjs/mongoose"
+import { Model } from "mongoose"
+import { User } from "src/database/mongoose/schemas/User"
 import { LoginDto } from "./dto/login.dto"
 
 @Injectable()
 export class UsersService implements IUsersService {
   constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>
+    @InjectModel("users")
+    private readonly userModel: Model<User>
   ) {}
 
   async login(credential: LoginDto): Promise<User> {
     try {
-      const existingUser = await this.userRepository.findOne({
-        where: {
+      const existingUser = await this.userModel
+        .findOne({
           username: credential.username
-        }
-      })
+        })
+        .exec()
 
       if (!existingUser) {
         throw new HttpException("Wrong username", HttpStatus.UNAUTHORIZED)

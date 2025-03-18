@@ -1,9 +1,9 @@
 import { IUsersService } from "./users";
-import { Repository } from "typeorm";
-import { User } from "src/database/typeorm/entities/User";
+import { Model } from "mongoose";
+import { User } from "src/database/mongoose/schemas/User";
 import { LoginDto } from "./dto/login.dto";
 export declare class UsersService implements IUsersService {
-    private readonly userRepository;
-    constructor(userRepository: Repository<User>);
+    private readonly userModel;
+    constructor(userModel: Model<User>);
     login(credential: LoginDto): Promise<User>;
 }

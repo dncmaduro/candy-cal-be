@@ -1,7 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common"
 import { UsersService } from "./users.service"
 import { LoginDto } from "./dto/login.dto"
-import { User } from "src/database/typeorm/entities/User"
+import { User } from "src/database/mongoose/schemas/User"
 
 @Controller("users")
 export class UsersController {
