@@ -8,6 +8,7 @@ export interface ComboProduct {
 export interface Combo extends Document {
   name: string
   products: ComboProduct[]
+  optional: boolean
 }
 
 const ComboProductSchema = new Schema<ComboProduct>({
@@ -17,7 +18,8 @@ const ComboProductSchema = new Schema<ComboProduct>({
 
 export const ComboSchema = new Schema<Combo>({
   name: { type: String, required: true },
-  products: { type: [ComboProductSchema], required: true }
+  products: { type: [ComboProductSchema], required: true },
+  optional: { type: Boolean, required: false }
 })
 
 export const ComboModel = model<Combo>("Combo", ComboSchema)
