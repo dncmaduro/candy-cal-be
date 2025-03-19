@@ -14,6 +14,7 @@ const database_module_1 = require("./database/database.module");
 const users_module_1 = require("./users/users.module");
 const items_module_1 = require("./items/items.module");
 const products_module_1 = require("./products/products.module");
+const combos_module_1 = require("./combos/combos.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -25,6 +26,7 @@ exports.AppModule = AppModule = __decorate([
             users_module_1.UsersModule,
             items_module_1.ItemsModule,
             products_module_1.ProductsModule,
+            combos_module_1.CombosModule,
             mongoose_1.MongooseModule.forRoot(process.env.DATABASE_URL, {
                 dbName: "data"
             })

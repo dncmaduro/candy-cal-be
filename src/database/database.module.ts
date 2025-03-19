@@ -1,9 +1,9 @@
 import { Module } from "@nestjs/common"
 import { MongooseModule } from "@nestjs/mongoose"
-import { User, UserSchema } from "./mongoose/schemas/User"
-import { Product, ProductSchema } from "./mongoose/schemas/Product"
-import { Item, ItemSchema } from "./mongoose/schemas/Item"
-import { Combo, ComboSchema } from "./mongoose/schemas/Combo"
+import { UserSchema } from "./mongoose/schemas/User"
+import { ProductSchema } from "./mongoose/schemas/Product"
+import { ItemSchema } from "./mongoose/schemas/Item"
+import { ComboSchema } from "./mongoose/schemas/Combo"
 
 @Module({
   imports: [

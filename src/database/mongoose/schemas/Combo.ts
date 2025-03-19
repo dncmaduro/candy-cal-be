@@ -1,7 +1,7 @@
-import { Schema, Document, model } from "mongoose"
+import { Schema, Document, model, Types } from "mongoose"
 
 export interface ComboProduct {
-  _id: string
+  _id: Types.ObjectId // Reference to Product schema
   quantity: number
 }
 
@@ -11,7 +11,7 @@ export interface Combo extends Document {
 }
 
 const ComboProductSchema = new Schema<ComboProduct>({
-  _id: { type: String, required: true },
+  _id: { type: Schema.Types.ObjectId, ref: "Product", required: true }, // Reference to Product schema
   quantity: { type: Number, required: true }
 })
 
