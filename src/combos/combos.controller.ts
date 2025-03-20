@@ -9,8 +9,9 @@ import {
   Query
 } from "@nestjs/common"
 import { CombosService } from "./combos.service"
-import { ComboDto } from "./dto/combo.dto"
+import { CalComboDto, ComboDto } from "./dto/combo.dto"
 import { Combo } from "src/database/mongoose/schemas/Combo"
+import { CalItemsResponse } from "./combos"
 
 @Controller("combos")
 export class CombosController {
@@ -55,5 +56,11 @@ export class CombosController {
     @Query("searchText") searchText: string
   ): Promise<Combo[]> {
     return this.combosService.searchCombos(searchText)
+  }
+
+  @Post("/cal")
+  @HttpCode(HttpStatus.OK)
+  async calToItems(@Body() combos: CalComboDto[]): Promise<CalItemsResponse[]> {
+    return this.combosService.calToItems(combos)
   }
 }

@@ -5,3 +5,11 @@ export class ComboDto {
     quantity: number
   }[]
 }
+
+export class CalComboDto {
+  products: {
+    _id: string
+    quantity: number
+  }[]
+  quantity: number
+}

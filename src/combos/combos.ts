@@ -1,5 +1,10 @@
 import { Combo } from "src/database/mongoose/schemas/Combo"
-import { ComboDto } from "./dto/combo.dto"
+import { CalComboDto, ComboDto } from "./dto/combo.dto"
+
+export interface CalItemsResponse {
+  _id: string
+  quantity: number
+}
 
 export interface ICombosService {
   createCombo(combo: ComboDto): Promise<Combo>
@@ -11,4 +16,5 @@ export interface ICombosService {
   getAllCombos(): Promise<Combo[]>
   getCombo(id: string): Promise<Combo>
   searchCombos(searchText: string): Promise<Combo[]>
+  calToItems(combos: CalComboDto[]): Promise<CalItemsResponse[]>
 }
