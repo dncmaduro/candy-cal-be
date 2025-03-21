@@ -5,3 +5,10 @@ export class ProductDto {
     quantity: number // Updated from string to number
   }[]
 }
+
+export class CalProductsDto {
+  products: {
+    _id: string
+    quantity: number
+  }[]
+}

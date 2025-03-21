@@ -3,7 +3,8 @@ import { IProductsService } from "./products"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { Product } from "src/database/mongoose/schemas/Product"
-import { ProductDto } from "./dto/product.dto"
+import { CalProductsDto, ProductDto } from "./dto/product.dto"
+import { CalItemsResponse } from "src/combos/combos"
 
 @Injectable()
 export class ProductsService implements IProductsService {
@@ -110,6 +111,35 @@ export class ProductsService implements IProductsService {
         })
         .exec()
       return products
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async calToItems(products: CalProductsDto): Promise<CalItemsResponse[]> {
+    try {
+      const itemQuantities: Record<string, number> = {}
+
+      products.products.forEach(async (p) => {
+        const product = await this.productModel.findById(p._id).exec()
+        if (product) {
+          for (const item of product.items) {
+            if (!itemQuantities[item._id.toString()]) {
+              itemQuantities[item._id.toString()] = 0
+            }
+            itemQuantities[item._id.toString()] += item.quantity * p.quantity
+          }
+        }
+      })
+
+      return Object.entries(itemQuantities).map(([itemId, quantity]) => ({
+        _id: itemId,
+        quantity
+      }))
     } catch (error) {
       console.error(error)
       throw new HttpException(

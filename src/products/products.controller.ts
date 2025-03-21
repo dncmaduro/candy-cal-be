@@ -9,8 +9,9 @@ import {
   Query
 } from "@nestjs/common"
 import { ProductsService } from "./products.service"
-import { ProductDto } from "./dto/product.dto"
+import { CalProductsDto, ProductDto } from "./dto/product.dto"
 import { Product } from "src/database/mongoose/schemas/Product"
+import { CalItemsResponse } from "src/combos/combos"
 
 @Controller("products")
 export class ProductsController {
@@ -55,5 +56,13 @@ export class ProductsController {
     @Query("searchText") searchText: string
   ): Promise<Product[]> {
     return this.productsService.searchProducts(searchText)
+  }
+
+  @Get("/cal")
+  @HttpCode(HttpStatus.OK)
+  async calToItems(
+    @Body() products: CalProductsDto
+  ): Promise<CalItemsResponse[]> {
+    return this.productsService.calToItems(products)
   }
 }
