@@ -124,17 +124,20 @@ export class ProductsService implements IProductsService {
     try {
       const itemQuantities: Record<string, number> = {}
 
-      products.products.forEach(async (p) => {
+      console.log(products)
+
+      for (const p of products.products) {
         const product = await this.productModel.findById(p._id).exec()
         if (product) {
           for (const item of product.items) {
+            console.log("id: ", item._id.toString())
             if (!itemQuantities[item._id.toString()]) {
               itemQuantities[item._id.toString()] = 0
             }
             itemQuantities[item._id.toString()] += item.quantity * p.quantity
           }
         }
-      })
+      }
 
       return Object.entries(itemQuantities).map(([itemId, quantity]) => ({
         _id: itemId,
