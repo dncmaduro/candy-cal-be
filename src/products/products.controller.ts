@@ -58,7 +58,7 @@ export class ProductsController {
     return this.productsService.searchProducts(searchText)
   }
 
-  @Get("/cal")
+  @Post("/cal")
   @HttpCode(HttpStatus.OK)
   async calToItems(
     @Body() products: CalProductsDto
