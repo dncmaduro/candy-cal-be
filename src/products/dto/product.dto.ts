@@ -10,5 +10,6 @@ export class CalProductsDto {
   products: {
     _id: string
     quantity: number
+    customers: number
   }[]
 }

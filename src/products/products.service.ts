@@ -134,7 +134,8 @@ export class ProductsService implements IProductsService {
             if (!itemQuantities[item._id.toString()]) {
               itemQuantities[item._id.toString()] = 0
             }
-            itemQuantities[item._id.toString()] += item.quantity * p.quantity
+            itemQuantities[item._id.toString()] +=
+              item.quantity * p.quantity * p.customers
           }
         }
       }
