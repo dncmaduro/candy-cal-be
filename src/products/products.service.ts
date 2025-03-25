@@ -3,8 +3,9 @@ import { IProductsService } from "./products"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { Product } from "src/database/mongoose/schemas/Product"
-import { CalProductsDto, ProductDto } from "./dto/product.dto"
+import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
 import { CalItemsResponse } from "src/combos/combos"
+import * as XLSX from "xlsx"
 
 @Injectable()
 export class ProductsService implements IProductsService {
@@ -124,8 +125,6 @@ export class ProductsService implements IProductsService {
     try {
       const itemQuantities: Record<string, number> = {}
 
-      console.log(products)
-
       for (const p of products.products) {
         const product = await this.productModel.findById(p._id).exec()
         if (product) {
@@ -148,6 +147,48 @@ export class ProductsService implements IProductsService {
       console.error(error)
       throw new HttpException(
         "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse[]> {
+    try {
+      const workbook = XLSX.read(dto.file.buffer, { type: "buffer" })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const data = XLSX.utils.sheet_to_json(sheet)
+
+      const itemQuantities: Record<string, number> = {}
+
+      for (const row of data as any[]) {
+        const product = await this.productModel
+          .findOne({
+            name: row["Seller SKU"]
+          })
+          .exec()
+        if (product) {
+          for (const item of product.items) {
+            if (!itemQuantities[item._id.toString()]) {
+              itemQuantities[item._id.toString()] = 0
+            }
+            itemQuantities[item._id.toString()] += item.quantity * row.Quantity
+          }
+        }
+      }
+
+      const result = Object.entries(itemQuantities).map(
+        ([itemId, quantity]) => ({
+          _id: itemId,
+          quantity
+        })
+      )
+      console.log("Final result:", result)
+      return result
+    } catch (error) {
+      console.error("Error in calFromXlsx:", error)
+      throw new HttpException(
+        "Failed to process XLSX file",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

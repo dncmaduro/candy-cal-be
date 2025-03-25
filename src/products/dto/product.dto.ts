@@ -13,3 +13,7 @@ export class CalProductsDto {
     customers: number
   }[]
 }
+
+export class CalXlsxDto {
+  file: Express.Multer.File
+}

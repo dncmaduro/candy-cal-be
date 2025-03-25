@@ -6,10 +6,13 @@ import {
   Body,
   HttpCode,
   HttpStatus,
-  Query
+  Query,
+  UploadedFile,
+  UseInterceptors
 } from "@nestjs/common"
+import { FileInterceptor } from "@nestjs/platform-express"
 import { ProductsService } from "./products.service"
-import { CalProductsDto, ProductDto } from "./dto/product.dto"
+import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
 import { Product } from "src/database/mongoose/schemas/Product"
 import { CalItemsResponse } from "src/combos/combos"
 
@@ -64,5 +67,14 @@ export class ProductsController {
     @Body() products: CalProductsDto
   ): Promise<CalItemsResponse[]> {
     return this.productsService.calToItems(products)
+  }
+
+  @Post("/cal-xlsx")
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor("file"))
+  async calXlsx(
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<CalItemsResponse[]> {
+    return this.productsService.calFromXlsx({ file })
   }
 }
