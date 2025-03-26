@@ -1,10 +1,9 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
-import { IProductsService } from "./products"
+import { CalItemsResponse, IProductsService, XlsxData } from "./products"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { Product } from "src/database/mongoose/schemas/Product"
 import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
-import { CalItemsResponse } from "src/combos/combos"
 import * as XLSX from "xlsx"
 
 @Injectable()
@@ -121,43 +120,45 @@ export class ProductsService implements IProductsService {
     }
   }
 
-  async calToItems(products: CalProductsDto): Promise<CalItemsResponse[]> {
-    try {
-      const itemQuantities: Record<string, number> = {}
+  // async calToItems(products: CalProductsDto): Promise<CalItemsResponse[]> {
+  //   try {
+  //     const itemQuantities: Record<string, number> = {}
 
-      for (const p of products.products) {
-        const product = await this.productModel.findById(p._id).exec()
-        if (product) {
-          for (const item of product.items) {
-            console.log("id: ", item._id.toString())
-            if (!itemQuantities[item._id.toString()]) {
-              itemQuantities[item._id.toString()] = 0
-            }
-            itemQuantities[item._id.toString()] +=
-              item.quantity * p.quantity * p.customers
-          }
-        }
-      }
+  //     for (const p of products.products) {
+  //       const product = await this.productModel.findById(p._id).exec()
+  //       if (product) {
+  //         for (const item of product.items) {
+  //           console.log("id: ", item._id.toString())
+  //           if (!itemQuantities[item._id.toString()]) {
+  //             itemQuantities[item._id.toString()] = 0
+  //           }
+  //           itemQuantities[item._id.toString()] +=
+  //             item.quantity * p.quantity * p.customers
+  //         }
+  //       }
+  //     }
 
-      return Object.entries(itemQuantities).map(([itemId, quantity]) => ({
-        _id: itemId,
-        quantity
-      }))
-    } catch (error) {
-      console.error(error)
-      throw new HttpException(
-        "Internal server error",
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
-    }
-  }
+  //     return Object.entries(itemQuantities).map(([itemId, quantity]) => ({
+  //       _id: itemId,
+  //       quantity,
+  //       orders: []
+  //     }))
+  //   } catch (error) {
+  //     console.error(error)
+  //     throw new HttpException(
+  //       "Internal server error",
+  //       HttpStatus.INTERNAL_SERVER_ERROR
+  //     )
+  //   }
+  // }
 
-  async calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse[]> {
+  async calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse> {
     try {
       const workbook = XLSX.read(dto.file.buffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
-      const data = XLSX.utils.sheet_to_json(sheet)
+      const tempData = XLSX.utils.sheet_to_json(sheet) as XlsxData[]
+      const data = tempData.slice(1, tempData.length - 1)
 
       const itemQuantities: Record<string, number> = {}
 
@@ -177,6 +178,32 @@ export class ProductsService implements IProductsService {
         }
       }
 
+      const convertedOrders = data.reduce(
+        (acc, row) => {
+          if (acc[row["Order ID"]]) {
+            acc[row["Order ID"]].push(row["Seller SKU"])
+          } else {
+            acc[row["Order ID"]] = [row["Seller SKU"]]
+          }
+          return acc
+        },
+        {} as Record<string, string[]>
+      )
+
+      const groupedOrders = Object.values(convertedOrders).reduce(
+        (acc, products) => {
+          const key = products.sort().join(",")
+          if (!acc[key]) {
+            acc[key] = { productsId: products, quantity: 0 }
+          }
+          acc[key].quantity += 1
+          return acc
+        },
+        {} as Record<string, { productsId: string[]; quantity: number }>
+      )
+
+      const orders = Object.values(groupedOrders)
+
       const result = Object.entries(itemQuantities).map(
         ([itemId, quantity]) => ({
           _id: itemId,
@@ -184,7 +211,7 @@ export class ProductsService implements IProductsService {
         })
       )
       console.log("Final result:", result)
-      return result
+      return { items: result, orders }
     } catch (error) {
       console.error("Error in calFromXlsx:", error)
       throw new HttpException(

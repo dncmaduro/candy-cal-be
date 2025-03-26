@@ -3,7 +3,7 @@ import { MongooseModule } from "@nestjs/mongoose"
 import { UserSchema } from "./mongoose/schemas/User"
 import { ProductSchema } from "./mongoose/schemas/Product"
 import { ItemSchema } from "./mongoose/schemas/Item"
-import { ComboSchema } from "./mongoose/schemas/Combo"
+import { CommonOrderSchema } from "./mongoose/schemas/CommonOrder"
 
 @Module({
   imports: [
@@ -11,7 +11,7 @@ import { ComboSchema } from "./mongoose/schemas/Combo"
       { name: "users", schema: UserSchema },
       { name: "products", schema: ProductSchema },
       { name: "items", schema: ItemSchema },
-      { name: "combos", schema: ComboSchema }
+      { name: "commonorders", schema: CommonOrderSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

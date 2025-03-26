@@ -5,7 +5,6 @@ import { DatabaseModule } from "./database/database.module"
 import { UsersModule } from "./users/users.module"
 import { ItemsModule } from "./items/items.module"
 import { ProductsModule } from "./products/products.module"
-import { CombosModule } from "./combos/combos.module"
 
 @Module({
   imports: [
@@ -14,7 +13,6 @@ import { CombosModule } from "./combos/combos.module"
     UsersModule,
     ItemsModule,
     ProductsModule,
-    CombosModule,
     MongooseModule.forRoot(process.env.DATABASE_URL, {
       dbName: "data"
     })

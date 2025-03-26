@@ -14,7 +14,7 @@ import { FileInterceptor } from "@nestjs/platform-express"
 import { ProductsService } from "./products.service"
 import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
 import { Product } from "src/database/mongoose/schemas/Product"
-import { CalItemsResponse } from "src/combos/combos"
+import { CalItemsResponse } from "./products"
 
 @Controller("products")
 export class ProductsController {
@@ -61,20 +61,20 @@ export class ProductsController {
     return this.productsService.searchProducts(searchText)
   }
 
-  @Post("/cal")
-  @HttpCode(HttpStatus.OK)
-  async calToItems(
-    @Body() products: CalProductsDto
-  ): Promise<CalItemsResponse[]> {
-    return this.productsService.calToItems(products)
-  }
+  // @Post("/cal")
+  // @HttpCode(HttpStatus.OK)
+  // async calToItems(
+  //   @Body() products: CalProductsDto
+  // ): Promise<CalItemsResponse[]> {
+  //   return this.productsService.calToItems(products)
+  // }
 
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor("file"))
   async calXlsx(
     @UploadedFile() file: Express.Multer.File
-  ): Promise<CalItemsResponse[]> {
+  ): Promise<CalItemsResponse> {
     return this.productsService.calFromXlsx({ file })
   }
 }

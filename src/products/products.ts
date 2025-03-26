@@ -1,6 +1,21 @@
 import { Product } from "src/database/mongoose/schemas/Product"
 import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
-import { CalItemsResponse } from "src/combos/combos"
+
+export interface CalItemsResponse {
+  items: {
+    _id: string
+    quantity: number
+  }[]
+  orders: {
+    productsId: string[]
+    quantity: number
+  }[]
+}
+
+export interface XlsxData {
+  "Seller SKU": string
+  "Order IO": string
+}
 
 export interface IProductsService {
   createProduct(product: ProductDto): Promise<Product>
@@ -12,6 +27,6 @@ export interface IProductsService {
   getAllProducts(): Promise<Product[]>
   getProduct(id: string): Promise<Product>
   searchProducts(searchText: string): Promise<Product[]>
-  calToItems(combos: CalProductsDto): Promise<CalItemsResponse[]>
-  calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse[]>
+  calToItems?(combos: CalProductsDto): Promise<CalItemsResponse[]>
+  calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse>
 }
