@@ -157,8 +157,8 @@ export class ProductsService implements IProductsService {
       const workbook = XLSX.read(dto.file.buffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
-      const tempData = XLSX.utils.sheet_to_json(sheet) as XlsxData[]
-      const data = tempData.slice(1, tempData.length - 1)
+      const data = XLSX.utils.sheet_to_json(sheet) as XlsxData[]
+      // const data = tempData.slice(0, tempData.length - 1)
 
       const itemQuantities: Record<string, number> = {}
 
@@ -168,7 +168,6 @@ export class ProductsService implements IProductsService {
             name: row["Seller SKU"]
           })
           .exec()
-        console.log(product)
         if (product) {
           for (const item of product.items) {
             if (!itemQuantities[item._id.toString()]) {
@@ -178,8 +177,6 @@ export class ProductsService implements IProductsService {
           }
         }
       }
-
-      console.log(itemQuantities)
 
       const convertedOrders = data.reduce(
         (acc, row) => {
@@ -209,7 +206,10 @@ export class ProductsService implements IProductsService {
 
       const groupedOrders = Object.values(convertedOrders).reduce(
         (acc, products) => {
-          const key = products.sort().join(",")
+          const key = products
+            .map((product) => `${product.name}${product.quantity}`)
+            .sort()
+            .join(",")
           if (!acc[key]) {
             acc[key] = { products, quantity: 0 }
           }
@@ -229,6 +229,7 @@ export class ProductsService implements IProductsService {
       )
 
       const orders = Object.values(groupedOrders)
+      orders.shift()
 
       const result = Object.entries(itemQuantities).map(
         ([itemId, quantity]) => ({
