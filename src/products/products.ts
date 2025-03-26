@@ -7,7 +7,10 @@ export interface CalItemsResponse {
     quantity: number
   }[]
   orders: {
-    productsId: string[]
+    products: {
+      name: string
+      quantity: number
+    }[]
     quantity: number
   }[]
 }
@@ -15,6 +18,7 @@ export interface CalItemsResponse {
 export interface XlsxData {
   "Seller SKU": string
   "Order IO": string
+  Quantity: number
 }
 
 export interface IProductsService {

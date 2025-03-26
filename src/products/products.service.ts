@@ -168,6 +168,7 @@ export class ProductsService implements IProductsService {
             name: row["Seller SKU"]
           })
           .exec()
+        console.log(product)
         if (product) {
           for (const item of product.items) {
             if (!itemQuantities[item._id.toString()]) {
@@ -178,28 +179,53 @@ export class ProductsService implements IProductsService {
         }
       }
 
+      console.log(itemQuantities)
+
       const convertedOrders = data.reduce(
         (acc, row) => {
           if (acc[row["Order ID"]]) {
-            acc[row["Order ID"]].push(row["Seller SKU"])
+            acc[row["Order ID"]].push({
+              name: row["Seller SKU"],
+              quantity: row["Quantity"]
+            })
           } else {
-            acc[row["Order ID"]] = [row["Seller SKU"]]
+            acc[row["Order ID"]] = [
+              {
+                name: row["Seller SKU"],
+                quantity: row["Quantity"]
+              }
+            ]
           }
           return acc
         },
-        {} as Record<string, string[]>
+        {} as Record<
+          string,
+          {
+            name: string
+            quantity: number
+          }[]
+        >
       )
 
       const groupedOrders = Object.values(convertedOrders).reduce(
         (acc, products) => {
           const key = products.sort().join(",")
           if (!acc[key]) {
-            acc[key] = { productsId: products, quantity: 0 }
+            acc[key] = { products, quantity: 0 }
           }
           acc[key].quantity += 1
           return acc
         },
-        {} as Record<string, { productsId: string[]; quantity: number }>
+        {} as Record<
+          string,
+          {
+            products: {
+              name: string
+              quantity: number
+            }[]
+            quantity: number
+          }
+        >
       )
 
       const orders = Object.values(groupedOrders)
@@ -210,7 +236,6 @@ export class ProductsService implements IProductsService {
           quantity
         })
       )
-      console.log("Final result:", result)
       return { items: result, orders }
     } catch (error) {
       console.error("Error in calFromXlsx:", error)
