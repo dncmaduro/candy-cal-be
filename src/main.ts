@@ -7,7 +7,6 @@ async function bootstrap() {
   const { PORT } = process.env
   app.setGlobalPrefix("api/v1")
   app.enableCors()
-  console.log(process.env.DATABASE_URL)
   app.use(bodyParser.json())
   try {
     await app.listen(PORT, () =>

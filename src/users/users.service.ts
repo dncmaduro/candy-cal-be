@@ -3,16 +3,20 @@ import { IUsersService } from "./users"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { User } from "src/database/mongoose/schemas/User"
-import { LoginDto } from "./dto/login.dto"
+import { LoginDto, RefreshTokenDto } from "./dto/login.dto"
+import { JwtService } from "@nestjs/jwt"
 
 @Injectable()
 export class UsersService implements IUsersService {
   constructor(
     @InjectModel("users")
-    private readonly userModel: Model<User>
+    private readonly userModel: Model<User>,
+    private readonly jwtService: JwtService
   ) {}
 
-  async login(credential: LoginDto): Promise<User> {
+  async login(
+    credential: LoginDto
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
       const existingUser = await this.userModel
         .findOne({
@@ -28,7 +32,13 @@ export class UsersService implements IUsersService {
         throw new HttpException("Wrong password", HttpStatus.UNAUTHORIZED)
       }
 
-      return existingUser
+      const payload = { username: existingUser.username, sub: existingUser._id }
+      const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
+      const refreshToken = this.jwtService.sign(payload, {
+        expiresIn: "120 days"
+      })
+
+      return { accessToken, refreshToken }
     } catch (error) {
       if (error instanceof HttpException) {
         throw error
@@ -38,6 +48,19 @@ export class UsersService implements IUsersService {
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
+    }
+  }
+
+  async refreshToken(
+    credential: RefreshTokenDto
+  ): Promise<{ accessToken: string }> {
+    try {
+      const decoded = this.jwtService.verify(credential.refreshToken)
+      const payload = { username: decoded.username, sub: decoded.sub }
+      const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
+      return { accessToken }
+    } catch (error) {
+      throw new HttpException("Invalid refresh token", HttpStatus.UNAUTHORIZED)
     }
   }
 }

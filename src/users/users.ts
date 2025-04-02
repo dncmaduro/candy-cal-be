@@ -1,6 +1,8 @@
-import { User } from "src/database/mongoose/schemas/User"
-import { LoginDto } from "./dto/login.dto"
+import { LoginDto, RefreshTokenDto } from "./dto/login.dto"
 
 export interface IUsersService {
-  login(credential: LoginDto): Promise<User>
+  login(
+    credential: LoginDto
+  ): Promise<{ accessToken: string; refreshToken: string }>
+  refreshToken(credential: RefreshTokenDto): Promise<{ accessToken: string }>
 }
