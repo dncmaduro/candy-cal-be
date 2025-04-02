@@ -8,10 +8,10 @@ import { JwtStrategy } from "./jwt.strategy"
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
-      signOptions: { expiresIn: "30m" }
+      signOptions: { expiresIn: "10days" }
     })
   ],
   providers: [JwtStrategy],
-  exports: [JwtModule]
+  exports: [JwtModule, JwtStrategy]
 })
 export class AuthModule {}
