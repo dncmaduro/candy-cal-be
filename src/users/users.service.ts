@@ -33,7 +33,7 @@ export class UsersService implements IUsersService {
       }
 
       const payload = { username: existingUser.username, sub: existingUser._id }
-      const accessToken = this.jwtService.sign(payload, { expiresIn: "10days" })
+      const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
         expiresIn: "120 days"
       })
@@ -53,12 +53,15 @@ export class UsersService implements IUsersService {
 
   async refreshToken(
     credential: RefreshTokenDto
-  ): Promise<{ accessToken: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
       const decoded = this.jwtService.verify(credential.refreshToken)
       const payload = { username: decoded.username, sub: decoded.sub }
-      const accessToken = this.jwtService.sign(payload, { expiresIn: "10days" })
-      return { accessToken }
+      const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
+      const refreshToken = this.jwtService.sign(payload, {
+        expiresIn: "120 days"
+      })
+      return { accessToken, refreshToken }
     } catch (error) {
       throw new HttpException("Invalid refresh token", HttpStatus.UNAUTHORIZED)
     }
