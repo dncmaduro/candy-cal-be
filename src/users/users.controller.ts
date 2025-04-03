@@ -1,6 +1,6 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common"
 import { UsersService } from "./users.service"
-import { LoginDto, RefreshTokenDto } from "./dto/login.dto"
+import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
 
 @Controller("users")
 export class UsersController {
@@ -20,5 +20,13 @@ export class UsersController {
     @Body() credential: RefreshTokenDto
   ): Promise<{ accessToken: string }> {
     return this.usersService.refreshToken(credential)
+  }
+
+  @Post("check-token")
+  @HttpCode(HttpStatus.OK)
+  async isTokenValid(
+    @Body() credential: ValidTokenDto
+  ): Promise<{ valid: boolean }> {
+    return this.usersService.isTokenValid(credential)
   }
 }

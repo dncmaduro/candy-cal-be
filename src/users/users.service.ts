@@ -3,7 +3,7 @@ import { IUsersService } from "./users"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { User } from "src/database/mongoose/schemas/User"
-import { LoginDto, RefreshTokenDto } from "./dto/login.dto"
+import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
 import { JwtService } from "@nestjs/jwt"
 
 @Injectable()
@@ -61,6 +61,15 @@ export class UsersService implements IUsersService {
       return { accessToken }
     } catch (error) {
       throw new HttpException("Invalid refresh token", HttpStatus.UNAUTHORIZED)
+    }
+  }
+
+  async isTokenValid(credential: ValidTokenDto): Promise<{ valid: boolean }> {
+    try {
+      this.jwtService.verify(credential.accessToken)
+      return { valid: true }
+    } catch (error) {
+      return { valid: false }
     }
   }
 }

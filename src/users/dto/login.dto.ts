@@ -6,3 +6,7 @@ export class LoginDto {
 export class RefreshTokenDto {
   refreshToken: string
 }
+
+export class ValidTokenDto {
+  accessToken: string
+}
