@@ -1,8 +1,10 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
-import { Log } from "src/database/mongoose/schemas/Log"
+import { Log, LogProduct } from "src/database/mongoose/schemas/Log"
 import { LogDto } from "./dto/log.dto"
+import { Types } from "mongoose"
+import { isEqual } from "lodash"
 
 @Injectable()
 export class LogsService {
@@ -48,15 +50,69 @@ export class LogsService {
     }
   }
 
-  async getLog(id: string): Promise<Log> {
+  async getLogsByRange(
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    startDate: Date
+    endDate: Date
+    items: { _id: Types.ObjectId; quantity: number }[]
+    orders: { products: LogProduct[]; quantity: number }[]
+  }> {
     try {
-      const log = await this.logModel.findById(id).exec()
+      const logs = await this.logModel
+        .find({
+          date: {
+            $gte: startDate,
+            $lte: endDate
+          }
+        })
+        .sort({ date: 1 })
+        .exec()
 
-      if (!log) {
-        throw new HttpException("Log not found", HttpStatus.NOT_FOUND)
+      if (!logs || logs.length === 0) {
+        throw new HttpException("Logs not found", HttpStatus.NOT_FOUND)
       }
 
-      return log
+      const itemsMap = new Map<
+        string,
+        { _id: Types.ObjectId; quantity: number }
+      >()
+      logs.forEach((log) => {
+        log.items.forEach((item) => {
+          const key = item._id.toString()
+          if (itemsMap.has(key)) {
+            itemsMap.get(key)!.quantity += item.quantity
+          } else {
+            itemsMap.set(key, { _id: item._id, quantity: item.quantity })
+          }
+        })
+      })
+      const mergedItems = Array.from(itemsMap.values())
+
+      const ordersArr: { products: LogProduct[]; quantity: number }[] = []
+      logs.forEach((log) => {
+        log.orders.forEach((order) => {
+          const found = ordersArr.find((o) =>
+            isEqual(o.products, order.products)
+          )
+          if (found) {
+            found.quantity += order.quantity
+          } else {
+            ordersArr.push({
+              products: JSON.parse(JSON.stringify(order.products)),
+              quantity: order.quantity
+            })
+          }
+        })
+      })
+
+      return {
+        startDate,
+        endDate,
+        items: mergedItems,
+        orders: ordersArr
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(

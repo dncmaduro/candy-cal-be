@@ -10,8 +10,9 @@ import {
 } from "@nestjs/common"
 import { LogsService } from "./logs.service"
 import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
-import { Log } from "src/database/mongoose/schemas/Log"
+import { Log, LogProduct } from "src/database/mongoose/schemas/Log"
 import { LogDto } from "./dto/log.dto"
+import { Types } from "mongoose"
 
 @Controller("logs")
 export class LogsController {
@@ -35,9 +36,20 @@ export class LogsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get(":id")
+  @Get("range")
   @HttpCode(HttpStatus.OK)
-  async getLog(@Query("id") id: string): Promise<Log> {
-    return this.logsService.getLog(id)
+  async getLogsByRange(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string
+  ): Promise<{
+    startDate: Date
+    endDate: Date
+    items: { _id: Types.ObjectId; quantity: number }[]
+    orders: { products: LogProduct[]; quantity: number }[]
+  }> {
+    return this.logsService.getLogsByRange(
+      new Date(startDate),
+      new Date(endDate)
+    )
   }
 }
