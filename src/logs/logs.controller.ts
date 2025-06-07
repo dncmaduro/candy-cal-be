@@ -9,8 +9,8 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { LogsService } from "./logs.service"
-import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
-import { Log, LogProduct } from "src/database/mongoose/schemas/Log"
+import { JwtAuthGuard } from "../auth/jwt-auth-guard"
+import { Log, LogProduct } from "../database/mongoose/schemas/Log"
 import { LogDto } from "./dto/log.dto"
 import { Types } from "mongoose"
 

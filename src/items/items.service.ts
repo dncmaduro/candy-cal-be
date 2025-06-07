@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { IItemsService } from "./items"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
-import { Item } from "src/database/mongoose/schemas/Item"
+import { Item } from "../database/mongoose/schemas/Item"
 import { ItemDto } from "./dto/item.dto"
 
 @Injectable()

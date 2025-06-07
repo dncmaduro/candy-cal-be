@@ -11,8 +11,8 @@ import {
 } from "@nestjs/common"
 import { ItemsService } from "./items.service"
 import { ItemDto } from "./dto/item.dto"
-import { Item } from "src/database/mongoose/schemas/Item"
-import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
+import { Item } from "../database/mongoose/schemas/Item"
+import { JwtAuthGuard } from "../auth/jwt-auth-guard"
 
 @Controller("items")
 export class ItemsController {

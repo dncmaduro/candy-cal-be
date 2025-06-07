@@ -1,4 +1,4 @@
-import { Item } from "src/database/mongoose/schemas/Item"
+import { Item } from "../database/mongoose/schemas/Item"
 import { ItemDto } from "./dto/item.dto"
 
 export interface IItemsService {

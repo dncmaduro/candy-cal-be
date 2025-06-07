@@ -1,4 +1,4 @@
-import { CommonOrder } from "src/database/mongoose/schemas/CommonOrder"
+import { CommonOrder } from "../database/mongoose/schemas/CommonOrder"
 import { CommonOrderDto } from "./dto/commonOrder.dto"
 
 export interface ICommonOrdersService {

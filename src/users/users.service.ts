@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { IUsersService } from "./users"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
-import { User } from "src/database/mongoose/schemas/User"
+import { User } from "../database/mongoose/schemas/User"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
 import { JwtService } from "@nestjs/jwt"
 

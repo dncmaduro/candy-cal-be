@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { CalItemsResponse, IProductsService, XlsxData } from "./products"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
-import { Product } from "src/database/mongoose/schemas/Product"
+import { Product } from "../database/mongoose/schemas/Product"
 import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
 import * as XLSX from "xlsx"
 

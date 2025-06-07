@@ -1,4 +1,4 @@
-import { Product } from "src/database/mongoose/schemas/Product"
+import { Product } from "../database/mongoose/schemas/Product"
 import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
 
 export interface CalItemsResponse {

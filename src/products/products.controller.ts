@@ -14,9 +14,9 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ProductsService } from "./products.service"
 import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
-import { Product } from "src/database/mongoose/schemas/Product"
+import { Product } from "../database/mongoose/schemas/Product"
 import { CalItemsResponse } from "./products"
-import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
+import { JwtAuthGuard } from "../auth/jwt-auth-guard"
 
 @Controller("products")
 export class ProductsController {

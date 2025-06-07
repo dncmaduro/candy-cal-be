@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { ICommonOrdersService } from "./commonOrders"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
-import { CommonOrder } from "src/database/mongoose/schemas/CommonOrder"
+import { CommonOrder } from "../database/mongoose/schemas/CommonOrder"
 import { CommonOrderDto } from "./dto/commonOrder.dto"
 
 @Injectable()

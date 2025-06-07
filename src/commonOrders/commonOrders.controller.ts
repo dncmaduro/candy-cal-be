@@ -11,8 +11,8 @@ import {
 } from "@nestjs/common"
 import { CommonOrdersService } from "./commonOrders.service"
 import { CommonOrderDto } from "./dto/commonOrder.dto"
-import { CommonOrder } from "src/database/mongoose/schemas/CommonOrder"
-import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
+import { CommonOrder } from "../database/mongoose/schemas/CommonOrder"
+import { JwtAuthGuard } from "../auth/jwt-auth-guard"
 
 @Controller("common-orders")
 export class CommonOrdersController {
