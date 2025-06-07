@@ -43,7 +43,6 @@ export class UsersService implements IUsersService {
       if (error instanceof HttpException) {
         throw error
       }
-      console.log(error)
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -73,6 +72,34 @@ export class UsersService implements IUsersService {
       return { valid: true }
     } catch (error) {
       return { valid: false }
+    }
+  }
+
+  async getMe(
+    username: string
+  ): Promise<{ username: string; name: string; role: string }> {
+    try {
+      const existingUser = await this.userModel
+        .findOne({
+          username
+        })
+        .exec()
+
+      if (!existingUser) {
+        throw new HttpException("User not found", HttpStatus.NOT_FOUND)
+      }
+
+      return {
+        username: existingUser.username,
+        name: existingUser.name,
+        role: existingUser.role
+      }
+    } catch (error) {
+      console.log(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
     }
   }
 }

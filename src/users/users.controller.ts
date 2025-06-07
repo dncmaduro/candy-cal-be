@@ -1,6 +1,17 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from "@nestjs/common"
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Get,
+  UseGuards,
+  Request,
+  Req
+} from "@nestjs/common"
 import { UsersService } from "./users.service"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
+import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
 
 @Controller("users")
 export class UsersController {
@@ -28,5 +39,14 @@ export class UsersController {
     @Body() credential: ValidTokenDto
   ): Promise<{ valid: boolean }> {
     return this.usersService.isTokenValid(credential)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("me")
+  @HttpCode(HttpStatus.OK)
+  async getMe(
+    @Req() req
+  ): Promise<{ username: string; name: string; role: string }> {
+    return this.usersService.getMe(req.user.username)
   }
 }
