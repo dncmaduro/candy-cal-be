@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ProductsService } from "./products.service"
-import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
+import { ProductDto } from "./dto/product.dto"
 import { Product } from "../database/mongoose/schemas/Product"
 import { CalItemsResponse } from "./products"
 import { JwtAuthGuard } from "../auth/jwt-auth-guard"

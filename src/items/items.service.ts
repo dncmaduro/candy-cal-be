@@ -1,12 +1,11 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
-import { IItemsService } from "./items"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { Item } from "../database/mongoose/schemas/Item"
 import { ItemDto } from "./dto/item.dto"
 
 @Injectable()
-export class ItemsService implements IItemsService {
+export class ItemsService {
   constructor(
     @InjectModel("items")
     private readonly itemModel: Model<Item>
@@ -47,9 +46,10 @@ export class ItemsService implements IItemsService {
     }
   }
 
-  async getAllItems(): Promise<Item[]> {
+  async getAllItemsForOrderPage(): Promise<string[]> {
     try {
-      return await this.itemModel.find().exec()
+      const items = await this.itemModel.find().exec()
+      return items.map((i) => i.get("name"))
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -84,6 +84,19 @@ export class ItemsService implements IItemsService {
           name: { $regex: `.*${searchText}.*`, $options: "i" }
         })
         .exec()
+      return items
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getAllItemsForStoragePage(): Promise<Item[]> {
+    try {
+      const items = await this.itemModel.find().exec()
       return items
     } catch (error) {
       console.error(error)

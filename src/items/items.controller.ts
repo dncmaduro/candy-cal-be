@@ -33,10 +33,10 @@ export class ItemsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get()
+  @Get("/order-page")
   @HttpCode(HttpStatus.OK)
-  async getAllItems(): Promise<Item[]> {
-    return this.itemsService.getAllItems()
+  async getAllItemsForOrderPage(): Promise<string[]> {
+    return this.itemsService.getAllItemsForOrderPage()
   }
 
   @UseGuards(JwtAuthGuard)
