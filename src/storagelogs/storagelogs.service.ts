@@ -3,7 +3,7 @@ import { Model } from "mongoose"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { StorageLogDto } from "./dto/storagelog.dto"
 import { Item } from "../database/mongoose/schemas/Item"
-import { startOfMonth, endOfMonth } from "date-fns"
+import { startOfMonth, endOfMonth, getDate } from "date-fns"
 import { GetMonthStorageLogsReponse } from "./dto/month"
 
 export class StorageLogsService {
@@ -169,42 +169,83 @@ export class StorageLogsService {
         date: { $gte: start, $lte: end }
       })
 
+      // === Tổng hợp theo từng item toàn tháng
       const itemMap = new Map<
         string,
         { deliveredQuantity: number; receivedQuantity: number }
       >()
 
+      // === Tổng hợp từng ngày
+      const byDayMap = new Map<
+        number,
+        Map<string, { deliveredQuantity: number; receivedQuantity: number }>
+      >()
+
       logs.forEach((log) => {
         const itemId = log.item._id.toString()
         const quantity = log.item.quantity
+        const day = getDate(log.date) // 1 - 31
 
+        // Tổng tháng
         if (!itemMap.has(itemId)) {
-          itemMap.set(itemId, {
-            deliveredQuantity: 0,
-            receivedQuantity: 0
-          })
+          itemMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
+        }
+        const totalStats = itemMap.get(itemId)!
+        if (log.status === "delivered") {
+          totalStats.deliveredQuantity += quantity
+        } else if (log.status === "received") {
+          totalStats.receivedQuantity += quantity
         }
 
-        const itemStats = itemMap.get(itemId)!
+        // Tổng từng ngày
+        if (!byDayMap.has(day)) byDayMap.set(day, new Map())
+        const dayMap = byDayMap.get(day)!
+        if (!dayMap.has(itemId)) {
+          dayMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
+        }
+        const dayStats = dayMap.get(itemId)!
         if (log.status === "delivered") {
-          itemStats.deliveredQuantity += quantity
+          dayStats.deliveredQuantity += quantity
         } else if (log.status === "received") {
-          itemStats.receivedQuantity += quantity
+          dayStats.receivedQuantity += quantity
         }
       })
 
       const itemIds = Array.from(itemMap.keys())
       const items = await this.itemModel.find({ _id: { $in: itemIds } })
 
-      return {
-        items: items.map((item) => ({
-          _id: item._id.toString(),
-          name: item.name,
-          deliveredQuantity:
-            itemMap.get(item._id.toString())?.deliveredQuantity || 0,
-          receivedQuantity:
-            itemMap.get(item._id.toString())?.receivedQuantity || 0
+      // Map itemId to name for fast lookup
+      const itemNameMap = new Map<string, string>()
+      items.forEach((item) => itemNameMap.set(item._id.toString(), item.name))
+
+      // === Trả về phần tổng hợp tháng
+      const monthItems = items.map((item) => ({
+        _id: item._id.toString(),
+        name: item.name,
+        deliveredQuantity:
+          itemMap.get(item._id.toString())?.deliveredQuantity || 0,
+        receivedQuantity:
+          itemMap.get(item._id.toString())?.receivedQuantity || 0
+      }))
+
+      // === Trả về phần byDay
+      const byDay: GetMonthStorageLogsReponse["byDay"] = Array.from(
+        byDayMap.entries()
+      )
+        .sort((a, b) => a[0] - b[0]) // sort theo ngày tăng dần
+        .map(([day, itemStatsMap]) => ({
+          day,
+          items: Array.from(itemStatsMap.entries()).map(([itemId, stats]) => ({
+            _id: itemId,
+            name: itemNameMap.get(itemId) || "",
+            deliveredQuantity: stats.deliveredQuantity,
+            receivedQuantity: stats.receivedQuantity
+          }))
         }))
+
+      return {
+        items: monthItems,
+        byDay
       }
     } catch (error) {
       console.error(error)
