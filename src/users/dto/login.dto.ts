@@ -10,3 +10,13 @@ export class RefreshTokenDto {
 export class ValidTokenDto {
   accessToken: string
 }
+
+export class ForgotPasswordDto {
+  username: string
+  oldPassword: string
+  newPassword: string
+}
+
+export class UpdateUserDto {
+  name: string
+}

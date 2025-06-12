@@ -5,13 +5,15 @@ export interface User extends Document {
   password: string
   name: string
   role: string
+  avatarUrl?: string
 }
 
 export const UserSchema = new Schema<User>({
-  username: { type: String, required: true },
+  username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
-  role: { type: String, required: true }
+  role: { type: String, required: true },
+  avatarUrl: { type: String, required: false }
 })
 
 export const UserModel = model<User>("User", UserSchema)

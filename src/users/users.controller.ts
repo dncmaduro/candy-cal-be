@@ -6,11 +6,13 @@ import {
   HttpStatus,
   Get,
   UseGuards,
-  Req
+  Req,
+  Patch
 } from "@nestjs/common"
 import { UsersService } from "./users.service"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
 import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
+import { User } from "src/database/mongoose/schemas/User"
 
 @Controller("users")
 export class UsersController {
@@ -47,5 +49,39 @@ export class UsersController {
     @Req() req
   ): Promise<{ username: string; name: string; role: string }> {
     return this.usersService.getMe(req.user.username)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("change-password")
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Body() body: { oldPassword: string; newPassword: string },
+    @Req() req
+  ): Promise<{ message: string }> {
+    return this.usersService.changePassword({
+      username: req.user.username,
+      oldPassword: body.oldPassword,
+      newPassword: body.newPassword
+    })
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("avatar")
+  @HttpCode(HttpStatus.OK)
+  async updateAvatar(
+    @Body() body: { avatarUrl: string },
+    @Req() req
+  ): Promise<{ message: string }> {
+    return this.usersService.updateAvatar(req.user.username, body.avatarUrl)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("update")
+  @HttpCode(HttpStatus.OK)
+  async updateUser(
+    @Body() body: { name: string },
+    @Req() req
+  ): Promise<{ message: string }> {
+    return this.usersService.updateUser(req.user.username, { name: body.name })
   }
 }
