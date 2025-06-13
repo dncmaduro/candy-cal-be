@@ -231,13 +231,15 @@ export class ProductsService implements IProductsService {
       const orders = Object.values(groupedOrders)
       orders.shift()
 
+      const total = orders.reduce((acc, order) => acc + order.quantity, 0)
+
       const result = Object.entries(itemQuantities).map(
         ([itemId, quantity]) => ({
           _id: itemId,
           quantity
         })
       )
-      return { items: result, orders }
+      return { items: result, orders, total }
     } catch (error) {
       console.error("Error in calFromXlsx:", error)
       throw new HttpException(

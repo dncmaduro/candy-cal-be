@@ -13,6 +13,7 @@ export interface CalItemsResponse {
     }[]
     quantity: number
   }[]
+  total: number
 }
 
 export interface XlsxData {
