@@ -7,7 +7,9 @@ import {
   HttpCode,
   HttpStatus,
   Query,
-  UseGuards
+  UseGuards,
+  Delete,
+  Param
 } from "@nestjs/common"
 import { ItemsService } from "./items.service"
 import { ItemDto } from "./dto/item.dto"
@@ -51,5 +53,12 @@ export class ItemsController {
   @HttpCode(HttpStatus.OK)
   async searchItems(@Query("searchText") searchText: string): Promise<Item[]> {
     return this.itemsService.searchItems(searchText)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(":id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteItem(@Param("id") id: string): Promise<void> {
+    return this.itemsService.deleteItem(id)
   }
 }

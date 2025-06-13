@@ -106,4 +106,16 @@ export class ItemsService {
       )
     }
   }
+
+  async deleteItem(id: string): Promise<void> {
+    try {
+      await this.itemModel.findByIdAndDelete(id)
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
 }

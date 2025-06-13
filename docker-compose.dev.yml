@@ -1,0 +1,12 @@
+services:
+  nestjs-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3333:3333"
+    env_file:
+      - .env
+    restart: always
+    volumes:
+      - .:/app
