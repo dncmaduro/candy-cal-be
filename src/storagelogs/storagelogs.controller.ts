@@ -14,8 +14,7 @@ import {
 import { StorageLogsService } from "./storagelogs.service"
 import { JwtAuthGuard } from "../auth/jwt-auth-guard"
 import { StorageLogDto } from "./dto/storagelog.dto"
-import { StorageLog } from "src/database/mongoose/schemas/StorageLog"
-import { Item } from "src/database/mongoose/schemas/Item"
+import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { GetMonthStorageLogsReponse } from "./dto/month"
 
 @Controller("storagelogs")

@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  nestjs-app:
+    build: .
+    ports:
+      - "3333:3333"
+    env_file:
+      - .env
+    restart: always

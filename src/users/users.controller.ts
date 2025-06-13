@@ -11,8 +11,7 @@ import {
 } from "@nestjs/common"
 import { UsersService } from "./users.service"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
-import { JwtAuthGuard } from "src/auth/jwt-auth-guard"
-import { User } from "src/database/mongoose/schemas/User"
+import { JwtAuthGuard } from "../auth/jwt-auth-guard"
 
 @Controller("users")
 export class UsersController {
