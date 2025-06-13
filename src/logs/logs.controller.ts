@@ -46,6 +46,7 @@ export class LogsController {
     endDate: Date
     items: { _id: Types.ObjectId; quantity: number }[]
     orders: { products: LogProduct[]; quantity: number }[]
+    total: number
   }> {
     return this.logsService.getLogsByRange(
       new Date(startDate),

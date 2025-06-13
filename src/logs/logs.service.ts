@@ -58,6 +58,7 @@ export class LogsService {
     endDate: Date
     items: { _id: Types.ObjectId; quantity: number }[]
     orders: { products: LogProduct[]; quantity: number }[]
+    total: number
   }> {
     try {
       const logs = await this.logModel
@@ -107,11 +108,14 @@ export class LogsService {
         })
       })
 
+      const total = ordersArr.reduce((acc, order) => acc + order.quantity, 0)
+
       return {
         startDate,
         endDate,
         items: mergedItems,
-        orders: ordersArr
+        orders: ordersArr,
+        total
       }
     } catch (error) {
       console.error(error)
