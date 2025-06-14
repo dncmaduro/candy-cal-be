@@ -14,48 +14,51 @@ import {
 import { ItemsService } from "./items.service"
 import { ItemDto } from "./dto/item.dto"
 import { Item } from "../database/mongoose/schemas/Item"
-import { JwtAuthGuard } from "../auth/jwt-auth-guard"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "src/roles/roles.guard"
+import { Roles } from "src/roles/roles.decorator"
 
 @Controller("items")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ItemsController {
   constructor(private readonly itemsService: ItemsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createItem(@Body() item: ItemDto): Promise<Item> {
     return this.itemsService.createItem(item)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateItem(@Body() item: Item): Promise<Item> {
     return this.itemsService.updateItem(item)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Get("/order-page")
   @HttpCode(HttpStatus.OK)
   async getAllItemsForOrderPage(): Promise<string[]> {
     return this.itemsService.getAllItemsForOrderPage()
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp", "accounting-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getItem(@Query("id") id: string): Promise<Item> {
     return this.itemsService.getItem(id)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp", "accounting-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(@Query("searchText") searchText: string): Promise<Item[]> {
     return this.itemsService.searchItems(searchText)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteItem(@Param("id") id: string): Promise<void> {

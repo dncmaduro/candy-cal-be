@@ -12,16 +12,19 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { StorageLogsService } from "./storagelogs.service"
-import { JwtAuthGuard } from "../auth/jwt-auth-guard"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { StorageLogDto } from "./dto/storagelog.dto"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { GetMonthStorageLogsReponse } from "./dto/month"
+import { RolesGuard } from "src/roles/roles.guard"
+import { Roles } from "src/roles/roles.decorator"
 
 @Controller("storagelogs")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class StorageLogsController {
   constructor(private readonly storageLogsService: StorageLogsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createStorageLog(
@@ -30,7 +33,7 @@ export class StorageLogsController {
     return this.storageLogsService.createRequest(storageLog)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getStorageLogs(
@@ -53,7 +56,7 @@ export class StorageLogsController {
     )
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Get("month")
   @HttpCode(HttpStatus.OK)
   async getStorageLogsByMonth(
@@ -66,14 +69,14 @@ export class StorageLogsController {
     )
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getStorageLogById(@Query("id") id: string): Promise<StorageLog | null> {
     return this.storageLogsService.getStorageLogById(id)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateStorageLog(
@@ -83,7 +86,7 @@ export class StorageLogsController {
     return this.storageLogsService.updateStorageLog(id, storageLog)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "accounting-emp")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteStorageLog(@Param("id") id: string): Promise<void> {

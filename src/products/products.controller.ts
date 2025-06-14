@@ -16,27 +16,30 @@ import { ProductsService } from "./products.service"
 import { ProductDto } from "./dto/product.dto"
 import { Product } from "../database/mongoose/schemas/Product"
 import { CalItemsResponse } from "./products"
-import { JwtAuthGuard } from "../auth/jwt-auth-guard"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "src/roles/roles.guard"
+import { Roles } from "src/roles/roles.decorator"
 
 @Controller("products")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createProduct(@Body() product: ProductDto): Promise<Product> {
     return this.productsService.createProduct(product)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateProduct(@Body() product: Product): Promise<Product> {
     return this.productsService.updateProduct(product)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Put("/items")
   @HttpCode(HttpStatus.OK)
   async updateItemsForProduct(
@@ -46,21 +49,22 @@ export class ProductsController {
     return this.productsService.updateItemsForProduct(productId, items)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllProducts(): Promise<Product[]> {
+    console.log("kkkkk")
     return this.productsService.getAllProducts()
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Get("/product")
   @HttpCode(HttpStatus.OK)
   async getProduct(@Query("id") id: string): Promise<Product> {
     return this.productsService.getProduct(id)
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
@@ -77,7 +81,7 @@ export class ProductsController {
   //   return this.productsService.calToItems(products)
   // }
 
-  @UseGuards(JwtAuthGuard)
+  @Roles("admin", "order-emp")
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor("file"))

@@ -75,6 +75,7 @@ export class ProductsService implements IProductsService {
 
   async getAllProducts(): Promise<Product[]> {
     try {
+      console.log("Fetching all products")
       return await this.productModel.find().exec()
     } catch (error) {
       console.error(error)

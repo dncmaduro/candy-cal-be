@@ -12,41 +12,37 @@ import {
 import { CommonOrdersService } from "./commonOrders.service"
 import { CommonOrderDto } from "./dto/commonOrder.dto"
 import { CommonOrder } from "../database/mongoose/schemas/CommonOrder"
-import { JwtAuthGuard } from "../auth/jwt-auth-guard"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 
 @Controller("common-orders")
+@UseGuards(JwtAuthGuard)
 export class CommonOrdersController {
   constructor(private readonly commonOrdersService: CommonOrdersService) {}
 
-  @UseGuards(JwtAuthGuard)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createOrder(@Body() commonOrder: CommonOrderDto): Promise<CommonOrder> {
     return this.commonOrdersService.createOrder(commonOrder)
   }
 
-  @UseGuards(JwtAuthGuard)
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateOrder(@Body() commonOrder: CommonOrder): Promise<CommonOrder> {
     return this.commonOrdersService.updateOrder(commonOrder)
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllOrders(): Promise<CommonOrder[]> {
     return this.commonOrdersService.getAllOrders()
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get("/order")
   @HttpCode(HttpStatus.OK)
   async getOrder(@Query("id") id: string): Promise<CommonOrder> {
     return this.commonOrdersService.getOrder(id)
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchOrders(

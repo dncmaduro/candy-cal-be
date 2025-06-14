@@ -37,7 +37,11 @@ export class UsersService {
         throw new HttpException("Wrong password", HttpStatus.UNAUTHORIZED)
       }
 
-      const payload = { username: existingUser.username, sub: existingUser._id }
+      const payload = {
+        username: existingUser.username,
+        sub: existingUser._id,
+        role: existingUser.role
+      }
       const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
         expiresIn: "120 days"
@@ -60,7 +64,11 @@ export class UsersService {
   ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
       const decoded = this.jwtService.verify(credential.refreshToken)
-      const payload = { username: decoded.username, sub: decoded.sub }
+      const payload = {
+        username: decoded.username,
+        sub: decoded.sub,
+        role: decoded.role
+      }
       const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
         expiresIn: "120 days"
