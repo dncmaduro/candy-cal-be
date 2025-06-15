@@ -5,6 +5,7 @@ import { ProductSchema } from "./mongoose/schemas/Product"
 import { ItemSchema } from "./mongoose/schemas/Item"
 import { CommonOrderSchema } from "./mongoose/schemas/CommonOrder"
 import { LogSchema } from "./mongoose/schemas/Log"
+import { StorageItemSchema } from "./mongoose/schemas/StorageItem"
 
 @Module({
   imports: [
@@ -13,7 +14,8 @@ import { LogSchema } from "./mongoose/schemas/Log"
       { name: "products", schema: ProductSchema },
       { name: "items", schema: ItemSchema },
       { name: "commonorders", schema: CommonOrderSchema },
-      { name: "logs", schema: LogSchema }
+      { name: "logs", schema: LogSchema },
+      { name: "storageitems", schema: StorageItemSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

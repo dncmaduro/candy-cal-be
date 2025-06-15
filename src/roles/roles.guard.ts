@@ -19,7 +19,6 @@ export class RolesGuard implements CanActivate {
     if (!requiredRoles) return true
 
     const { user } = context.switchToHttp().getRequest()
-    console.log(context.switchToHttp().getRequest())
     if (!user) throw new ForbiddenException("No user")
 
     if (!requiredRoles.includes(user.role)) {

@@ -2,16 +2,16 @@ import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { StorageLogDto } from "./dto/storagelog.dto"
-import { Item } from "../database/mongoose/schemas/Item"
 import { startOfMonth, endOfMonth, getDate } from "date-fns"
 import { GetMonthStorageLogsReponse } from "./dto/month"
+import { StorageItem } from "../database/mongoose/schemas/StorageItem"
 
 export class StorageLogsService {
   constructor(
     @InjectModel("storagelogs")
     private readonly storageLogsModel: Model<StorageLog>,
-    @InjectModel("items")
-    private readonly itemModel: Model<Item>
+    @InjectModel("storageitems")
+    private readonly storageItemModel: Model<StorageItem>
   ) {}
 
   async createRequest(storageLog: StorageLogDto): Promise<StorageLog> {
@@ -19,7 +19,7 @@ export class StorageLogsService {
       const newStorageLog = new this.storageLogsModel(storageLog)
       const savedLog = await newStorageLog.save()
 
-      const item = await this.itemModel.findById(storageLog.item._id)
+      const item = await this.storageItemModel.findById(storageLog.item._id)
       if (!item) throw new Error("Item not found")
 
       if (storageLog.status === "received") {
@@ -99,13 +99,13 @@ export class StorageLogsService {
       const oldItemId = existingLog.item._id.toString()
       const newItemId = updatedLog.item._id.toString()
 
-      const oldItem = await this.itemModel.findById(oldItemId)
+      const oldItem = await this.storageItemModel.findById(oldItemId)
       if (!oldItem) throw new Error("Old item not found")
 
       let newItem =
         oldItemId === newItemId
           ? oldItem
-          : await this.itemModel.findById(newItemId)
+          : await this.storageItemModel.findById(newItemId)
       if (!newItem) throw new Error("New item not found")
 
       // 1. Rollback old item's quantity
@@ -212,7 +212,7 @@ export class StorageLogsService {
       })
 
       const itemIds = Array.from(itemMap.keys())
-      const items = await this.itemModel.find({ _id: { $in: itemIds } })
+      const items = await this.storageItemModel.find({ _id: { $in: itemIds } })
 
       // Map itemId to name for fast lookup
       const itemNameMap = new Map<string, string>()
@@ -258,7 +258,7 @@ export class StorageLogsService {
       const log = await this.storageLogsModel.findById(id)
       if (!log) throw new Error("Storage log not found")
 
-      const item = await this.itemModel.findById(log.item._id)
+      const item = await this.storageItemModel.findById(log.item._id)
       if (!item) throw new Error("Item not found")
 
       if (log.status === "received") {

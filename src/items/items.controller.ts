@@ -37,13 +37,6 @@ export class ItemsController {
     return this.itemsService.updateItem(item)
   }
 
-  @Roles("admin", "order-emp")
-  @Get("/order-page")
-  @HttpCode(HttpStatus.OK)
-  async getAllItemsForOrderPage(): Promise<string[]> {
-    return this.itemsService.getAllItemsForOrderPage()
-  }
-
   @Roles("admin", "order-emp", "accounting-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
