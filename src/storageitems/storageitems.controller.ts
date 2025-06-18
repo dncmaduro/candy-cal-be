@@ -13,9 +13,9 @@ import {
 } from "@nestjs/common"
 import { StorageItemsService } from "./storageitems.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
-import { StorageItem } from "src/database/mongoose/schemas/StorageItem"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
+import { StorageItem } from "../database/mongoose/schemas/StorageItem"
 import { StorageItemDto } from "./dto/storageitems.dto"
 
 @Controller("storageitems")

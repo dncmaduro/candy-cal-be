@@ -17,8 +17,8 @@ import { ProductDto } from "./dto/product.dto"
 import { Product } from "../database/mongoose/schemas/Product"
 import { CalItemsResponse } from "./products"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 
 @Controller("products")
 @UseGuards(JwtAuthGuard, RolesGuard)

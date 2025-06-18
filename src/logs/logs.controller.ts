@@ -13,8 +13,8 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { Log, LogProduct } from "../database/mongoose/schemas/Log"
 import { LogDto } from "./dto/log.dto"
 import { Types } from "mongoose"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 
 @Controller("logs")
 @UseGuards(JwtAuthGuard, RolesGuard)

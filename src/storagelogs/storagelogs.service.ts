@@ -19,7 +19,9 @@ export class StorageLogsService {
       const newStorageLog = new this.storageLogsModel(storageLog)
       const savedLog = await newStorageLog.save()
 
+      console.log(storageLog)
       const item = await this.storageItemModel.findById(storageLog.item._id)
+      console.log("cc", item)
       if (!item) throw new Error("Item not found")
 
       if (storageLog.status === "received") {
@@ -51,7 +53,6 @@ export class StorageLogsService {
     try {
       const skip = (page - 1) * limit
       const query: any = {}
-
       if (startDate && endDate) {
         query.date = {
           $gte: new Date(startDate),

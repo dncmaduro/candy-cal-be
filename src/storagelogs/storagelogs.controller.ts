@@ -16,8 +16,8 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { StorageLogDto } from "./dto/storagelog.dto"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { GetMonthStorageLogsReponse } from "./dto/month"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 
 @Controller("storagelogs")
 @UseGuards(JwtAuthGuard, RolesGuard)

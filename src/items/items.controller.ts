@@ -15,8 +15,8 @@ import { ItemsService } from "./items.service"
 import { ItemDto } from "./dto/item.dto"
 import { Item } from "../database/mongoose/schemas/Item"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 
 @Controller("items")
 @UseGuards(JwtAuthGuard, RolesGuard)

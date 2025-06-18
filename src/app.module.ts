@@ -10,6 +10,7 @@ import { AuthModule } from "./auth/auth.module"
 import { LogsModule } from "./logs/logs.module"
 import { StorageLogsModule } from "./storagelogs/storagelogs.module"
 import { StorageItemsModule } from "./storageitems/storageitems.module"
+import { DeliveredRequestModule } from "./deliveredrequests/deliveredrequest.module"
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { StorageItemsModule } from "./storageitems/storageitems.module"
     ProductsModule,
     JwtModule,
     StorageItemsModule,
+    DeliveredRequestModule,
     MongooseModule.forRoot(process.env.DATABASE_URL, {
       dbName: "data"
     }),
