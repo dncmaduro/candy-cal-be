@@ -4,6 +4,7 @@ export class ProductDto {
     _id: string
     quantity: number // Updated from string to number
   }[]
+  isReady: boolean
 }
 
 export class CalProductsDto {

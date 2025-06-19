@@ -112,7 +112,7 @@ export class UsersService {
         avatarUrl: existingUser.avatarUrl
       }
     } catch (error) {
-      console.log(error)
+      console.error(error)
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR

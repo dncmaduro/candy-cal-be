@@ -1,16 +1,22 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
-import { CalItemsResponse, IProductsService, XlsxData } from "./products"
+import { CalItemsResponse, XlsxData } from "./products"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { Product } from "../database/mongoose/schemas/Product"
-import { CalProductsDto, CalXlsxDto, ProductDto } from "./dto/product.dto"
+import { CalXlsxDto, ProductDto } from "./dto/product.dto"
 import * as XLSX from "xlsx"
+import { StorageItem } from "../database/mongoose/schemas/StorageItem"
+import { Item } from "../database/mongoose/schemas/Item"
 
 @Injectable()
-export class ProductsService implements IProductsService {
+export class ProductsService {
   constructor(
     @InjectModel("products")
-    private readonly productModel: Model<Product>
+    private readonly productModel: Model<Product>,
+    @InjectModel("items")
+    private readonly itemModel: Model<Item>,
+    @InjectModel("storageitems")
+    private readonly storageItemModel: Model<StorageItem>
   ) {}
 
   async createProduct(product: ProductDto): Promise<Product> {
@@ -20,7 +26,7 @@ export class ProductsService implements IProductsService {
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Internal server error",
+        "Lỗi khi tạo sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -35,14 +41,14 @@ export class ProductsService implements IProductsService {
       )
 
       if (!updatedProduct) {
-        throw new HttpException("Product not found", HttpStatus.NOT_FOUND)
+        throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
 
       return updatedProduct
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Internal server error",
+        "Lỗi khi cập nhật sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -60,14 +66,14 @@ export class ProductsService implements IProductsService {
       )
 
       if (!updatedProduct) {
-        throw new HttpException("Product not found", HttpStatus.NOT_FOUND)
+        throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
 
       return updatedProduct
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Internal server error",
+        "Lỗi khi cập nhật sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -75,12 +81,11 @@ export class ProductsService implements IProductsService {
 
   async getAllProducts(): Promise<Product[]> {
     try {
-      console.log("Fetching all products")
       return await this.productModel.find().exec()
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Internal server error",
+        "Lỗi khi lấy danh sách sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -91,14 +96,14 @@ export class ProductsService implements IProductsService {
       const product = await this.productModel.findById(id).exec()
 
       if (!product) {
-        throw new HttpException("Product not found", HttpStatus.NOT_FOUND)
+        throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
 
       return product
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Internal server error",
+        "Lỗi khi lấy sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -115,7 +120,7 @@ export class ProductsService implements IProductsService {
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Internal server error",
+        "Lỗi khi tìm kiếm sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -153,14 +158,33 @@ export class ProductsService implements IProductsService {
   //   }
   // }
 
+  async changeReadyStatus(productId: string): Promise<Product> {
+    try {
+      const product = await this.productModel.findById(productId).exec()
+      if (!product) {
+        throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
+      }
+      product.isReady = !product.isReady
+      await product.save()
+      return product
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi thay đổi trạng thái sẵn hàng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   async calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse> {
     try {
+      // Đọc excel
       const workbook = XLSX.read(dto.file.buffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
       const data = XLSX.utils.sheet_to_json(sheet) as XlsxData[]
-      // const data = tempData.slice(0, tempData.length - 1)
 
+      // 1. Tính quantity cho từng item (key: itemId, value: quantity)
       const itemQuantities: Record<string, number> = {}
 
       for (const row of data as any[]) {
@@ -179,6 +203,7 @@ export class ProductsService implements IProductsService {
         }
       }
 
+      // 2. Orders group logic giữ nguyên
       const convertedOrders = data.reduce(
         (acc, row) => {
           if (acc[row["Order ID"]]) {
@@ -231,20 +256,43 @@ export class ProductsService implements IProductsService {
 
       const orders = Object.values(groupedOrders)
       orders.shift()
-
       const total = orders.reduce((acc, order) => acc + order.quantity, 0)
 
-      const result = Object.entries(itemQuantities).map(
-        ([itemId, quantity]) => ({
-          _id: itemId,
-          quantity
-        })
+      // 3. Lấy chi tiết các item và storage item liên quan
+      const itemIds = Object.keys(itemQuantities)
+      const itemDocs = await this.itemModel
+        .find({ _id: { $in: itemIds } })
+        .lean()
+
+      // Lấy toàn bộ storage item liên quan đến các variants
+      const allVariantIds = itemDocs.flatMap((item) => item.variants)
+      const uniqueVariantIds = Array.from(
+        new Set(allVariantIds.map((id) => id.toString()))
       )
-      return { items: result, orders, total }
+      const storageItems = await this.storageItemModel
+        .find({ _id: { $in: uniqueVariantIds } })
+        .lean()
+
+      // Map storageItemId -> storageItem
+      const storageItemMap = new Map(
+        storageItems.map((item) => [item._id.toString(), item])
+      )
+
+      // Map lại kết quả cho đúng yêu cầu
+      const resultWithStorageItems = itemDocs.map((itemDoc) => ({
+        _id: itemDoc._id.toString(),
+        name: itemDoc.name,
+        quantity: itemQuantities[itemDoc._id.toString()] || 0,
+        storageItems: (itemDoc.variants || [])
+          .map((variantId) => storageItemMap.get(variantId.toString()))
+          .filter(Boolean)
+      }))
+
+      return { items: resultWithStorageItems, orders, total }
     } catch (error) {
       console.error("Error in calFromXlsx:", error)
       throw new HttpException(
-        "Failed to process XLSX file",
+        "Có lỗi khi tính toán từ file Excel",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

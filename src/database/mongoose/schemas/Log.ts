@@ -3,6 +3,23 @@ import { model, Schema, Types, Document } from "mongoose"
 export interface LogItem {
   _id: Types.ObjectId
   quantity: number
+  storageItems: {
+    code: string
+    name: string
+    receivedQuantity: {
+      quantity: number
+      real: number
+    }
+    deliveredQuantity: {
+      quantity: number
+      real: number
+    }
+    restQuantity: {
+      quantity: number
+      real: number
+    }
+    note?: string
+  }[]
 }
 
 export interface LogProduct {
@@ -27,7 +44,26 @@ export const LogSchema = new Schema<Log>({
   items: [
     {
       _id: { type: Schema.Types.ObjectId, ref: "Item", required: true },
-      quantity: { type: Number, required: true }
+      quantity: { type: Number, required: true },
+      storageItems: [
+        {
+          code: { type: String, required: true },
+          name: { type: String, required: true },
+          receivedQuantity: {
+            quantity: { type: Number, required: true, default: 0 },
+            real: { type: Number, required: true, default: 0 }
+          },
+          deliveredQuantity: {
+            quantity: { type: Number, required: true, default: 0 },
+            real: { type: Number, required: true, default: 0 }
+          },
+          restQuantity: {
+            quantity: { type: Number, required: true, default: 0 },
+            real: { type: Number, required: true, default: 0 }
+          },
+          note: { type: String, required: false }
+        }
+      ]
     }
   ],
   orders: [

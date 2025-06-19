@@ -27,7 +27,6 @@ export class StorageItemsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createItem(@Body() item: StorageItemDto): Promise<StorageItem> {
-    console.log("okela")
     return this.storageItemsService.createItem(item)
   }
 

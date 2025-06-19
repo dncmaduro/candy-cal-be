@@ -4,7 +4,7 @@ import {
   InternalServerErrorException
 } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model, Types } from "mongoose"
+import { Model } from "mongoose"
 import { DeliveredRequest } from "../database/mongoose/schemas/DeliveredRequest"
 import { DeliveredRequestDto } from "./dto/deliveredrequests.dto"
 import { startOfDay, endOfDay } from "date-fns"

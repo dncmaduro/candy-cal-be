@@ -9,7 +9,8 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
-  UseGuards
+  UseGuards,
+  Patch
 } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ProductsService } from "./products.service"
@@ -53,7 +54,6 @@ export class ProductsController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllProducts(): Promise<Product[]> {
-    console.log("kkkkk")
     return this.productsService.getAllProducts()
   }
 
@@ -89,5 +89,14 @@ export class ProductsController {
     @UploadedFile() file: Express.Multer.File
   ): Promise<CalItemsResponse> {
     return this.productsService.calFromXlsx({ file })
+  }
+
+  @Roles("admin", "order-emp")
+  @Patch(":productId/change-ready-status")
+  @HttpCode(HttpStatus.OK)
+  async changeReadyStatus(
+    @Query("productId") productId: string
+  ): Promise<Product> {
+    return this.productsService.changeReadyStatus(productId)
   }
 }

@@ -19,9 +19,7 @@ export class StorageLogsService {
       const newStorageLog = new this.storageLogsModel(storageLog)
       const savedLog = await newStorageLog.save()
 
-      console.log(storageLog)
       const item = await this.storageItemModel.findById(storageLog.item._id)
-      console.log("cc", item)
       if (!item) throw new Error("Item not found")
 
       if (storageLog.status === "received") {
@@ -29,6 +27,9 @@ export class StorageLogsService {
       } else if (storageLog.status === "delivered") {
         item.deliveredQuantity.quantity += storageLog.item.quantity
       }
+
+      item.restQuantity.quantity =
+        item.receivedQuantity.quantity - item.deliveredQuantity.quantity
 
       await item.save()
       return savedLog
@@ -109,46 +110,30 @@ export class StorageLogsService {
           : await this.storageItemModel.findById(newItemId)
       if (!newItem) throw new Error("New item not found")
 
-      // 1. Rollback old item's quantity
       if (existingLog.status === "received") {
         oldItem.receivedQuantity.quantity -= existingLog.item.quantity
       } else if (existingLog.status === "delivered") {
         oldItem.deliveredQuantity.quantity -= existingLog.item.quantity
       }
 
-      // Check không âm
-      if (
-        oldItem.receivedQuantity.quantity < 0 ||
-        oldItem.deliveredQuantity.quantity < 0
-      ) {
-        throw new Error("Item quantity cannot be negative")
-      }
-
+      oldItem.restQuantity.quantity =
+        oldItem.receivedQuantity.quantity - oldItem.deliveredQuantity.quantity
       await oldItem.save()
 
-      // 2. Apply new quantity
       if (updatedLog.status === "received") {
         newItem.receivedQuantity.quantity += updatedLog.item.quantity
       } else if (updatedLog.status === "delivered") {
         newItem.deliveredQuantity.quantity += updatedLog.item.quantity
       }
 
-      if (
-        newItem.receivedQuantity.quantity < 0 ||
-        newItem.deliveredQuantity.quantity < 0
-      ) {
-        throw new Error("Item quantity cannot be negative after update")
-      }
-
+      newItem.restQuantity.quantity =
+        newItem.receivedQuantity.quantity - newItem.deliveredQuantity.quantity
       await newItem.save()
 
-      // 3. Update log
       const updated = await this.storageLogsModel.findByIdAndUpdate(
         id,
         updatedLog,
-        {
-          new: true
-        }
+        { new: true }
       )
 
       return updated
@@ -170,13 +155,11 @@ export class StorageLogsService {
         date: { $gte: start, $lte: end }
       })
 
-      // === Tổng hợp theo từng item toàn tháng
       const itemMap = new Map<
         string,
         { deliveredQuantity: number; receivedQuantity: number }
       >()
 
-      // === Tổng hợp từng ngày
       const byDayMap = new Map<
         number,
         Map<string, { deliveredQuantity: number; receivedQuantity: number }>
@@ -185,9 +168,8 @@ export class StorageLogsService {
       logs.forEach((log) => {
         const itemId = log.item._id.toString()
         const quantity = log.item.quantity
-        const day = getDate(log.date) // 1 - 31
+        const day = getDate(log.date)
 
-        // Tổng tháng
         if (!itemMap.has(itemId)) {
           itemMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
         }
@@ -198,7 +180,6 @@ export class StorageLogsService {
           totalStats.receivedQuantity += quantity
         }
 
-        // Tổng từng ngày
         if (!byDayMap.has(day)) byDayMap.set(day, new Map())
         const dayMap = byDayMap.get(day)!
         if (!dayMap.has(itemId)) {
@@ -215,11 +196,9 @@ export class StorageLogsService {
       const itemIds = Array.from(itemMap.keys())
       const items = await this.storageItemModel.find({ _id: { $in: itemIds } })
 
-      // Map itemId to name for fast lookup
       const itemNameMap = new Map<string, string>()
       items.forEach((item) => itemNameMap.set(item._id.toString(), item.name))
 
-      // === Trả về phần tổng hợp tháng
       const monthItems = items.map((item) => ({
         _id: item._id.toString(),
         name: item.name,
@@ -229,11 +208,10 @@ export class StorageLogsService {
           itemMap.get(item._id.toString())?.receivedQuantity || 0
       }))
 
-      // === Trả về phần byDay
       const byDay: GetMonthStorageLogsReponse["byDay"] = Array.from(
         byDayMap.entries()
       )
-        .sort((a, b) => a[0] - b[0]) // sort theo ngày tăng dần
+        .sort((a, b) => a[0] - b[0])
         .map(([day, itemStatsMap]) => ({
           day,
           items: Array.from(itemStatsMap.entries()).map(([itemId, stats]) => ({
@@ -268,10 +246,13 @@ export class StorageLogsService {
         item.deliveredQuantity.quantity -= log.item.quantity
       }
 
-      // Check không âm
+      item.restQuantity.quantity =
+        item.receivedQuantity.quantity - item.deliveredQuantity.quantity
+
       if (
         item.receivedQuantity.quantity < 0 ||
-        item.deliveredQuantity.quantity < 0
+        item.deliveredQuantity.quantity < 0 ||
+        item.restQuantity.quantity < 0
       ) {
         throw new Error("Item quantity cannot be negative after deletion")
       }

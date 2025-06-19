@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
-import { Log, LogProduct } from "../database/mongoose/schemas/Log"
+import { Log, LogItem, LogProduct } from "../database/mongoose/schemas/Log"
 import { LogDto } from "./dto/log.dto"
 import { Types } from "mongoose"
 import { isEqual } from "lodash"
@@ -56,7 +56,11 @@ export class LogsService {
   ): Promise<{
     startDate: Date
     endDate: Date
-    items: { _id: Types.ObjectId; quantity: number }[]
+    items: {
+      _id: Types.ObjectId
+      quantity: number
+      storageItems: LogItem["storageItems"]
+    }[]
     orders: { products: LogProduct[]; quantity: number }[]
     total: number
   }> {
@@ -77,7 +81,11 @@ export class LogsService {
 
       const itemsMap = new Map<
         string,
-        { _id: Types.ObjectId; quantity: number }
+        {
+          _id: Types.ObjectId
+          quantity: number
+          storageItems: LogItem["storageItems"]
+        }
       >()
       logs.forEach((log) => {
         log.items.forEach((item) => {
@@ -85,7 +93,11 @@ export class LogsService {
           if (itemsMap.has(key)) {
             itemsMap.get(key)!.quantity += item.quantity
           } else {
-            itemsMap.set(key, { _id: item._id, quantity: item.quantity })
+            itemsMap.set(key, {
+              _id: item._id,
+              quantity: item.quantity,
+              storageItems: item.storageItems
+            })
           }
         })
       })
