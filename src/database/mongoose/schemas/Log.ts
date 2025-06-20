@@ -25,6 +25,7 @@ export interface LogItem {
 export interface LogProduct {
   name: string
   quantity: number
+  isReady: boolean
 }
 
 export interface LogOrder {
@@ -71,7 +72,8 @@ export const LogSchema = new Schema<Log>({
       products: [
         {
           name: { type: String, required: true },
-          quantity: { type: Number, required: true }
+          quantity: { type: Number, required: true },
+          isReady: { type: Boolean, default: false }
         }
       ],
       quantity: { type: Number, required: true }

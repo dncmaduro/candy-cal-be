@@ -183,16 +183,20 @@ export class ProductsService {
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
       const data = XLSX.utils.sheet_to_json(sheet) as XlsxData[]
+      const productNames = Array.from(
+        new Set(data.map((row) => row["Seller SKU"]))
+      )
+      // Map name -> product
+      const productsDocs = await this.productModel
+        .find({ name: { $in: productNames } })
+        .lean()
+      const productMap = new Map(productsDocs.map((prod) => [prod.name, prod]))
 
       // 1. Tính quantity cho từng item (key: itemId, value: quantity)
       const itemQuantities: Record<string, number> = {}
 
       for (const row of data as any[]) {
-        const product = await this.productModel
-          .findOne({
-            name: row["Seller SKU"]
-          })
-          .exec()
+        const product = productMap.get(row["Seller SKU"])
         if (product) {
           for (const item of product.items) {
             if (!itemQuantities[item._id.toString()]) {
@@ -209,13 +213,15 @@ export class ProductsService {
           if (acc[row["Order ID"]]) {
             acc[row["Order ID"]].push({
               name: row["Seller SKU"],
-              quantity: row["Quantity"]
+              quantity: row["Quantity"],
+              isReady: productMap.get(row["Seller SKU"])?.isReady ?? false
             })
           } else {
             acc[row["Order ID"]] = [
               {
                 name: row["Seller SKU"],
-                quantity: row["Quantity"]
+                quantity: row["Quantity"],
+                isReady: productMap.get(row["Seller SKU"])?.isReady ?? false
               }
             ]
           }
@@ -226,6 +232,7 @@ export class ProductsService {
           {
             name: string
             quantity: number
+            isReady: boolean
           }[]
         >
       )
@@ -248,6 +255,7 @@ export class ProductsService {
             products: {
               name: string
               quantity: number
+              isReady: boolean
             }[]
             quantity: number
           }

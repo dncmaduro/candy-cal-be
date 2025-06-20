@@ -7,6 +7,7 @@ export interface CalItemsResponse {
     products: {
       name: string
       quantity: number
+      isReady: boolean
     }[]
     quantity: number
   }[]

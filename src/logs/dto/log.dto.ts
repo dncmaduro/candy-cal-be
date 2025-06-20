@@ -25,6 +25,7 @@ export class LogDto {
     products: {
       name: string
       quantity: number
+      isReady: boolean
     }[]
     quantity: number
   }[]
