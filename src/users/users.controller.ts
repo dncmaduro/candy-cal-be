@@ -46,7 +46,13 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async getMe(
     @Req() req
-  ): Promise<{ username: string; name: string; role: string }> {
+  ): Promise<{
+    username: string
+    name: string
+    role: string
+    avatarUrl?: string
+    _id: string
+  }> {
     return this.usersService.getMe(req.user.username)
   }
 

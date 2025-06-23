@@ -93,6 +93,7 @@ export class UsersService {
     name: string
     role: string
     avatarUrl?: string
+    _id: string
   }> {
     try {
       const existingUser = await this.userModel
@@ -109,7 +110,8 @@ export class UsersService {
         username: existingUser.username,
         name: existingUser.name,
         role: existingUser.role,
-        avatarUrl: existingUser.avatarUrl
+        avatarUrl: existingUser.avatarUrl,
+        _id: existingUser._id.toString()
       }
     } catch (error) {
       console.error(error)

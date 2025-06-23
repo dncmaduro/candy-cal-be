@@ -9,13 +9,16 @@ import { DeliveredRequest } from "../database/mongoose/schemas/DeliveredRequest"
 import { DeliveredRequestDto } from "./dto/deliveredrequests.dto"
 import { startOfDay, endOfDay } from "date-fns"
 import { StorageLogsService } from "../storagelogs/storagelogs.service"
+import { NotificationsService } from "../notifications/notifications.service"
+import { NotificationDto } from "../notifications/dto/notifications.dto"
 
 @Injectable()
 export class DeliveredRequestsService {
   constructor(
     @InjectModel("deliveredrequests")
     private readonly deliveredRequestModel: Model<DeliveredRequest>,
-    private readonly storageLogsService: StorageLogsService
+    private readonly storageLogsService: StorageLogsService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   async createRequest(request: DeliveredRequestDto): Promise<DeliveredRequest> {
@@ -44,6 +47,19 @@ export class DeliveredRequestsService {
         }
       },
       { upsert: true, new: true }
+    )
+
+    const notification: NotificationDto = {
+      title: "Yêu cầu xuất kho cho vận đơn",
+      content: `Yêu cầu giao hàng đã được cập nhật cho ngày ${newRequest.date.toLocaleDateString()}`,
+      createdAt: new Date(),
+      type: "delivered-request",
+      link: `/delivered-requests`
+    }
+
+    this.notificationsService.createNotificationsForRoles(
+      notification,
+      "accounting-emp"
     )
 
     return newRequest
