@@ -23,14 +23,14 @@ import { Roles } from "../roles/roles.decorator"
 export class ItemsController {
   constructor(private readonly itemsService: ItemsService) {}
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "order-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createItem(@Body() item: ItemDto): Promise<Item> {
     return this.itemsService.createItem(item)
   }
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "order-emp")
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateItem(@Body() item: Item): Promise<Item> {
@@ -51,7 +51,7 @@ export class ItemsController {
     return this.itemsService.searchItems(searchText)
   }
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "order-emp")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteItem(@Param("id") id: string): Promise<void> {

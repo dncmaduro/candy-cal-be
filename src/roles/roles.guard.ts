@@ -19,10 +19,11 @@ export class RolesGuard implements CanActivate {
     if (!requiredRoles) return true
 
     const { user } = context.switchToHttp().getRequest()
-    if (!user) throw new ForbiddenException("No user")
+    if (!user) throw new ForbiddenException("Bạn chưa đăng nhập")
 
     if (!requiredRoles.includes(user.role)) {
-      throw new ForbiddenException("You do not have permission")
+      console.log(user)
+      throw new ForbiddenException("Bạn không có quyền truy cập")
     }
     return true
   }
