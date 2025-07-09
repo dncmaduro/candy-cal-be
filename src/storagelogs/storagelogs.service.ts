@@ -60,6 +60,10 @@ export class StorageLogsService {
           $gte: new Date(startDate),
           $lte: new Date(endDate)
         }
+      } else if (startDate) {
+        query.date = { $gte: new Date(startDate) }
+      } else if (endDate) {
+        query.date = { $lte: new Date(endDate) }
       }
       if (status) {
         query.status = status
@@ -72,7 +76,12 @@ export class StorageLogsService {
       }
 
       const [data, total] = await Promise.all([
-        this.storageLogsModel.find(query).skip(skip).limit(limit).exec(),
+        this.storageLogsModel
+          .find(query)
+          .sort({ date: -1 })
+          .skip(skip)
+          .limit(limit)
+          .exec(),
         this.storageLogsModel.countDocuments(query).exec()
       ])
       return { data, total }
