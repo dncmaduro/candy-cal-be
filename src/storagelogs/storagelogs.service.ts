@@ -5,6 +5,7 @@ import { StorageLogDto } from "./dto/storagelog.dto"
 import { startOfMonth, endOfMonth, getDate } from "date-fns"
 import { GetMonthStorageLogsReponse } from "./dto/month"
 import { StorageItem } from "../database/mongoose/schemas/StorageItem"
+import { toZonedTime } from "date-fns-tz"
 
 export class StorageLogsService {
   constructor(
@@ -168,7 +169,10 @@ export class StorageLogsService {
       logs.forEach((log) => {
         const itemId = log.item._id.toString()
         const quantity = log.item.quantity
-        const day = getDate(log.date)
+        const timeZone = "Asia/Ho_Chi_Minh"
+        const gmt7Date = toZonedTime(log.date, timeZone)
+        const day = gmt7Date.getDate()
+        console.log(day, log.date, log.date.getUTCDate())
 
         if (!itemMap.has(itemId)) {
           itemMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
