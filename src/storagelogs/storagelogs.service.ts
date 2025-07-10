@@ -5,7 +5,7 @@ import { StorageLogDto } from "./dto/storagelog.dto"
 import { startOfMonth, endOfMonth, getDate } from "date-fns"
 import { GetMonthStorageLogsReponse } from "./dto/month"
 import { StorageItem } from "../database/mongoose/schemas/StorageItem"
-import { toZonedTime } from "date-fns-tz"
+import { toZonedTime, getTimezoneOffset } from "date-fns-tz"
 
 export class StorageLogsService {
   constructor(
@@ -158,8 +158,16 @@ export class StorageLogsService {
     year: number
   ): Promise<GetMonthStorageLogsReponse> {
     try {
-      const start = startOfMonth(new Date(year, month - 1))
-      const end = endOfMonth(new Date(year, month - 1))
+      const localStart = startOfMonth(new Date(year, month - 1))
+      const timeZone = "Asia/Ho_Chi_Minh"
+      // Convert local time to UTC by subtracting the timezone offset
+      const start = new Date(
+        localStart.getTime() - getTimezoneOffset(timeZone, localStart)
+      )
+      const end = new Date(
+        endOfMonth(new Date(year, month - 1)).getTime() -
+          getTimezoneOffset(timeZone, endOfMonth(new Date(year, month - 1)))
+      )
 
       const logs = await this.storageLogsModel.find({
         date: { $gte: start, $lte: end }
@@ -178,10 +186,8 @@ export class StorageLogsService {
       logs.forEach((log) => {
         const itemId = log.item._id.toString()
         const quantity = log.item.quantity
-        const timeZone = "Asia/Ho_Chi_Minh"
         const gmt7Date = toZonedTime(log.date, timeZone)
         const day = gmt7Date.getDate()
-        console.log(day, log.date, log.date.getUTCDate())
 
         if (!itemMap.has(itemId)) {
           itemMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
@@ -201,6 +207,7 @@ export class StorageLogsService {
         const dayStats = dayMap.get(itemId)!
         if (log.status === "delivered") {
           dayStats.deliveredQuantity += quantity
+          console.log(dayStats.deliveredQuantity, log.date)
         } else if (log.status === "received") {
           dayStats.receivedQuantity += quantity
         }
