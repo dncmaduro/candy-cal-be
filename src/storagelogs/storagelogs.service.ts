@@ -155,7 +155,8 @@ export class StorageLogsService {
 
   async getDeliveredLogsByMonth(
     month: number,
-    year: number
+    year: number,
+    tag?: string
   ): Promise<GetMonthStorageLogsReponse> {
     try {
       const localStart = startOfMonth(new Date(year, month - 1))
@@ -170,8 +171,11 @@ export class StorageLogsService {
       )
 
       const logs = await this.storageLogsModel.find({
+        ...(tag && { tag }),
         date: { $gte: start, $lte: end }
       })
+
+      console.log(logs.length, tag)
 
       const itemMap = new Map<
         string,
@@ -207,7 +211,6 @@ export class StorageLogsService {
         const dayStats = dayMap.get(itemId)!
         if (log.status === "delivered") {
           dayStats.deliveredQuantity += quantity
-          console.log(dayStats.deliveredQuantity, log.date)
         } else if (log.status === "received") {
           dayStats.receivedQuantity += quantity
         }

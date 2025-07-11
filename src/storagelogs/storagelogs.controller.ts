@@ -61,11 +61,13 @@ export class StorageLogsController {
   @HttpCode(HttpStatus.OK)
   async getStorageLogsByMonth(
     @Query("month") month: string,
-    @Query("year") year: string
+    @Query("year") year: string,
+    @Query("tag") tag?: string
   ): Promise<GetMonthStorageLogsReponse> {
     return this.storageLogsService.getDeliveredLogsByMonth(
       Number(month),
-      Number(year)
+      Number(year),
+      tag
     )
   }
 
