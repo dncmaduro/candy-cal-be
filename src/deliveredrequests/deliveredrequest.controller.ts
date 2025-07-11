@@ -76,4 +76,13 @@ export class DeliveredRequestsController {
   ): Promise<DeliveredRequest> {
     return this.deliveredRequestsService.getRequest(requestId)
   }
+
+  @Roles("admin", "accounting-emp")
+  @Patch(":requestId/undo-request")
+  @HttpCode(HttpStatus.OK)
+  async undoAcceptRequest(
+    @Param("requestId") requestId: string
+  ): Promise<DeliveredRequest> {
+    return this.deliveredRequestsService.undoAcceptRequest(requestId)
+  }
 }

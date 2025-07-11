@@ -103,7 +103,8 @@ export class DeliveredRequestsService {
           item: { _id: item._id.toString(), quantity: item.quantity },
           status: "delivered",
           date: req.date,
-          note: req.note
+          note: req.note,
+          deliveredRequestId: requestId
         })
       }
 
@@ -168,6 +169,28 @@ export class DeliveredRequestsService {
       console.error(error)
       if (error instanceof BadRequestException) throw error
       throw new InternalServerErrorException("Internal server error")
+    }
+  }
+
+  async undoAcceptRequest(requestId: string): Promise<DeliveredRequest> {
+    try {
+      const req = await this.deliveredRequestModel.findById(requestId)
+      if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
+      if (!req.accepted) throw new BadRequestException("Chưa được chấp nhận")
+
+      req.accepted = false
+      req.updatedAt = new Date()
+      await req.save()
+
+      // Undo all storage logs related to this request
+      await this.storageLogsService.deleteStorageLogsCreatedByDeliveredRequest(
+        requestId
+      )
+
+      return req
+    } catch (error) {
+      console.error(error)
+      throw error
     }
   }
 }

@@ -287,4 +287,21 @@ export class StorageLogsService {
       throw new Error("Internal server error")
     }
   }
+
+  async deleteStorageLogsCreatedByDeliveredRequest(deliveredRequestId: string) {
+    try {
+      const logs = await this.storageLogsModel.find({
+        deliveredRequestId
+      })
+
+      if (logs.length === 0) return
+
+      logs.forEach(async (log) => {
+        await this.deleteStorageLog(log._id.toString())
+      })
+    } catch (error) {
+      console.error(error)
+      throw new Error("Internal server error")
+    }
+  }
 }

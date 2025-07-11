@@ -11,6 +11,7 @@ export interface StorageLog extends Document {
   status: string
   date: Date
   tag?: string
+  deliveredRequestId?: Types.ObjectId
 }
 
 const StorageLogItemSchema = new Schema<StorageLogItem>({
@@ -23,7 +24,12 @@ export const StorageLogSchema = new Schema<StorageLog>({
   note: { type: String, required: false },
   status: { type: String, required: true },
   date: { type: Date, required: true },
-  tag: { type: String, required: false }
+  tag: { type: String, required: false },
+  deliveredRequestId: {
+    type: Schema.Types.ObjectId,
+    ref: "DeliveredRequest",
+    required: false
+  }
 })
 
 export const StorageLogModel = model<StorageLog>("StorageLog", StorageLogSchema)

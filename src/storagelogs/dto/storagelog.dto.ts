@@ -6,4 +6,5 @@ export class StorageLogDto {
   note?: string
   status: string
   date: Date
+  deliveredRequestId?: string
 }
