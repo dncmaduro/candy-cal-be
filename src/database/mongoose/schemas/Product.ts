@@ -8,7 +8,6 @@ export interface ProductItem {
 export interface Product extends Document {
   name: string
   items: ProductItem[]
-  isReady: boolean
 }
 
 const ProductItemSchema = new Schema<ProductItem>({
@@ -18,8 +17,7 @@ const ProductItemSchema = new Schema<ProductItem>({
 
 export const ProductSchema = new Schema<Product>({
   name: { type: String, required: true },
-  items: { type: [ProductItemSchema], required: true },
-  isReady: { type: Boolean, default: false }
+  items: { type: [ProductItemSchema], required: true }
 })
 
 export const ProductModel = model<Product>("Product", ProductSchema)

@@ -164,7 +164,6 @@ export class ProductsService {
       if (!product) {
         throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
-      product.isReady = !product.isReady
       await product.save()
       return product
     } catch (error) {
@@ -213,15 +212,13 @@ export class ProductsService {
           if (acc[row["Order ID"]]) {
             acc[row["Order ID"]].push({
               name: row["Seller SKU"],
-              quantity: row["Quantity"],
-              isReady: productMap.get(row["Seller SKU"])?.isReady ?? false
+              quantity: row["Quantity"]
             })
           } else {
             acc[row["Order ID"]] = [
               {
                 name: row["Seller SKU"],
-                quantity: row["Quantity"],
-                isReady: productMap.get(row["Seller SKU"])?.isReady ?? false
+                quantity: row["Quantity"]
               }
             ]
           }
@@ -232,7 +229,6 @@ export class ProductsService {
           {
             name: string
             quantity: number
-            isReady: boolean
           }[]
         >
       )
@@ -255,7 +251,6 @@ export class ProductsService {
             products: {
               name: string
               quantity: number
-              isReady: boolean
             }[]
             quantity: number
           }

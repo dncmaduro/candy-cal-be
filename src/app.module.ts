@@ -12,6 +12,7 @@ import { StorageLogsModule } from "./storagelogs/storagelogs.module"
 import { StorageItemsModule } from "./storageitems/storageitems.module"
 import { DeliveredRequestModule } from "./deliveredrequests/deliveredrequest.module"
 import { NotificationsModule } from "./notifications/notifications.module"
+import { ReadyCombosModule } from "./readycombos/readycombos.module"
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationsModule } from "./notifications/notifications.module"
     StorageItemsModule,
     DeliveredRequestModule,
     NotificationsModule,
+    ReadyCombosModule,
     MongooseModule.forRoot(process.env.DATABASE_URL, {
       dbName: "data"
     }),

@@ -8,6 +8,7 @@ import { LogSchema } from "./mongoose/schemas/Log"
 import { StorageItemSchema } from "./mongoose/schemas/StorageItem"
 import { StorageLogSchema } from "./mongoose/schemas/StorageLog"
 import { DeliveredRequestSchema } from "./mongoose/schemas/DeliveredRequest"
+import { ReadyComboSchema } from "./mongoose/schemas/ReadyCombo"
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { DeliveredRequestSchema } from "./mongoose/schemas/DeliveredRequest"
       { name: "logs", schema: LogSchema },
       { name: "storageitems", schema: StorageItemSchema },
       { name: "storagelogs", schema: StorageLogSchema },
-      { name: "deliveredrequests", schema: DeliveredRequestSchema }
+      { name: "deliveredrequests", schema: DeliveredRequestSchema },
+      { name: "readycombos", schema: ReadyComboSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules
