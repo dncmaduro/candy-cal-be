@@ -13,6 +13,7 @@ import { StorageItemsModule } from "./storageitems/storageitems.module"
 import { DeliveredRequestModule } from "./deliveredrequests/deliveredrequest.module"
 import { NotificationsModule } from "./notifications/notifications.module"
 import { ReadyCombosModule } from "./readycombos/readycombos.module"
+import { OrderLogsModule } from "./orderlogs/orderlogs.module"
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ReadyCombosModule } from "./readycombos/readycombos.module"
     DeliveredRequestModule,
     NotificationsModule,
     ReadyCombosModule,
+    OrderLogsModule,
     MongooseModule.forRoot(process.env.DATABASE_URL, {
       dbName: "data"
     }),
