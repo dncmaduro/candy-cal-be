@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common"
 import { MongooseModule } from "@nestjs/mongoose"
-import { ReadyComboSchema } from "src/database/mongoose/schemas/ReadyCombo"
+import { ReadyComboSchema } from "../database/mongoose/schemas/ReadyCombo"
 import { ReadyCombosController } from "./readycombos.controller"
 import { ReadyCombosService } from "./readycombos.service"
 
