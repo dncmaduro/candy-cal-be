@@ -14,6 +14,9 @@ import { DeliveredRequestModule } from "./deliveredrequests/deliveredrequest.mod
 import { NotificationsModule } from "./notifications/notifications.module"
 import { ReadyCombosModule } from "./readycombos/readycombos.module"
 import { OrderLogsModule } from "./orderlogs/orderlogs.module"
+import { PackingRulesModule } from "./packingrules/packingrules.module"
+import { IncomeModule } from "./income/income.module"
+import { MonthGoalModule } from "./monthgoals/monthgoals.module"
 
 @Module({
   imports: [
@@ -30,9 +33,12 @@ import { OrderLogsModule } from "./orderlogs/orderlogs.module"
     NotificationsModule,
     ReadyCombosModule,
     OrderLogsModule,
+    PackingRulesModule,
     MongooseModule.forRoot(process.env.DATABASE_URL, {
       dbName: "data"
     }),
+    IncomeModule,
+    MonthGoalModule,
     AuthModule
   ],
   controllers: [],

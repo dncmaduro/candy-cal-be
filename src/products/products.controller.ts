@@ -84,7 +84,13 @@ export class ProductsController {
   @Roles("admin", "order-emp")
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: {
+        fileSize: 50 * 1024 * 1024 // 50 MB
+      }
+    })
+  )
   async calXlsx(
     @UploadedFile() file: Express.Multer.File
   ): Promise<CalItemsResponse> {

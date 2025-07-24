@@ -10,6 +10,9 @@ import { StorageLogSchema } from "./mongoose/schemas/StorageLog"
 import { DeliveredRequestSchema } from "./mongoose/schemas/DeliveredRequest"
 import { ReadyComboSchema } from "./mongoose/schemas/ReadyCombo"
 import { OrderLogSchema } from "./mongoose/schemas/OrderLog"
+import { MonthGoalSchema } from "./mongoose/schemas/MonthGoal"
+import { IncomeSchema } from "./mongoose/schemas/Income"
+import { PackingRuleSchema } from "./mongoose/schemas/PackingRule"
 
 @Module({
   imports: [
@@ -23,7 +26,10 @@ import { OrderLogSchema } from "./mongoose/schemas/OrderLog"
       { name: "storagelogs", schema: StorageLogSchema },
       { name: "deliveredrequests", schema: DeliveredRequestSchema },
       { name: "readycombos", schema: ReadyComboSchema },
-      { name: "orderlogs", schema: OrderLogSchema }
+      { name: "orderlogs", schema: OrderLogSchema },
+      { name: "monthgoals", schema: MonthGoalSchema },
+      { name: "incomes", schema: IncomeSchema },
+      { name: "packingrules", schema: PackingRuleSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

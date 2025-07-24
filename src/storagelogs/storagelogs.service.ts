@@ -175,8 +175,6 @@ export class StorageLogsService {
         date: { $gte: start, $lte: end }
       })
 
-      console.log(logs.length, tag)
-
       const itemMap = new Map<
         string,
         { deliveredQuantity: number; receivedQuantity: number }
