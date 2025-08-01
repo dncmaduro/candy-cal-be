@@ -18,6 +18,7 @@ export class XlsxIncomeData {
   "Quantity": number
   "SKU Unit Original Price": number
   "SKU Subtotal Before Discount": number
+  "Cancelation/Return Type": string
 }
 
 export class UpdateAffiliateTypeDto {

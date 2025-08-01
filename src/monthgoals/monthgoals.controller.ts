@@ -5,7 +5,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Param,
   Patch,
   Post,
   Query,
@@ -33,11 +32,17 @@ export class MonthGoalController {
   @Roles("admin", "order-emp", "accounting-emp")
   @Get("year")
   @HttpCode(HttpStatus.OK)
-  async getGoals(
-    @Query("year") year?: string,
-    @Query("page") page = 1,
-    @Query("limit") limit = 10
-  ): Promise<{ monthGoals: MonthGoal[]; total: number }> {
+  async getGoals(@Query("year") year?: string): Promise<{
+    monthGoals: {
+      month: number
+      year: number
+      goal: number
+      totalIncome: number
+      totalQuantity: number
+      KPIPercentage: number
+    }[]
+    total: number
+  }> {
     return this.monthGoalService.getGoals(year ? Number(year) : undefined)
   }
 

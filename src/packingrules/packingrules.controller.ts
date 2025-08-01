@@ -35,7 +35,7 @@ export class PackingRulesController {
   @HttpCode(HttpStatus.OK)
   async updateRule(
     @Param("productCode") productCode: string,
-    @Body() dto: PackingRuleDto
+    @Body() dto: Omit<PackingRuleDto, "productCode">
   ): Promise<PackingRule> {
     return this.packingRulesService.updateRule(productCode, dto)
   }
@@ -62,7 +62,7 @@ export class PackingRulesController {
   async searchRules(
     @Query("searchText") searchText: string,
     @Query("packingType") packingType?: string
-  ): Promise<PackingRule[]> {
+  ): Promise<{ rules: PackingRule[] }> {
     return this.packingRulesService.searchRules(searchText, packingType)
   }
 }

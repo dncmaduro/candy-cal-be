@@ -28,30 +28,78 @@ export class IncomeService {
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
       const readData = XLSX.utils.sheet_to_json(sheet) as XlsxIncomeData[]
-      const data = readData.slice(1)
+      const data = readData
+        .slice(1)
+        .filter((line) => line["Cancelation/Return Type"] !== "Cancel")
 
-      const incomes = data.reduce(
+      const start = new Date(dto.date)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(dto.date)
+      end.setHours(23, 59, 59, 999)
+
+      // 1. Lấy toàn bộ incomes trong ngày
+      const incomes = await this.incomeModel.find({
+        date: { $gte: start, $lte: end }
+      })
+
+      // 2. Với từng income, filter lại products
+      for (const income of incomes) {
+        const oldLength = income.products.length
+        // Loại bỏ products cùng source
+        income.products = income.products.filter((p) => p.source !== dto.type)
+        if (income.products.length === 0) {
+          // Nếu sau filter rỗng thì xoá hẳn document
+          await this.incomeModel.deleteOne({ _id: income._id })
+        } else if (income.products.length < oldLength) {
+          await income.save()
+        }
+      }
+
+      // 3. Build lại data mới từ file, giữ nguyên các logic đặc biệt của mày
+      const existed = await this.incomeModel
+        .find(
+          {
+            date: { $gte: start, $lte: end }
+          },
+          { orderId: 1 }
+        )
+        .lean()
+      const existedOrderIds = new Set(existed.map((x) => x.orderId))
+
+      // group
+      const newIncomesMap = data.reduce(
         (acc, line) => {
-          const existedOrder = acc[line["Order ID"]]
-          if (existedOrder) {
-            existedOrder.products.push({
+          const orderId = line["Order ID"]
+          if (!acc[orderId]) acc[orderId] = []
+          acc[orderId].push(line)
+          return acc
+        },
+        {} as Record<string, XlsxIncomeData[]>
+      )
+
+      for (const orderId in newIncomesMap) {
+        const lines = newIncomesMap[orderId]
+        if (existedOrderIds.has(orderId)) {
+          // Đã tồn tại: update thêm products mới cho đúng logic
+          const doc = await this.incomeModel.findOne({
+            orderId,
+            date: { $gte: start, $lte: end }
+          })
+          // Build new products theo rule
+          let newProducts: any[] = []
+          if (dto.type === "affiliate") {
+            newProducts = lines.map((line) => ({
               code: line["Seller SKU"],
               name: line["Product Name"],
-              source: dto.type,
+              source: "affiliate",
               quantity: line["Quantity"],
               quotation: line["SKU Unit Original Price"],
               price: line["SKU Subtotal Before Discount"],
               sourceChecked: false
-            })
-            return acc
-          }
-          acc[line["Order ID"]] = {
-            orderId: line["Order ID"],
-            customer: line["Buyer Username"],
-            province: line["Province"],
-            date: dto.date,
-            products: [
-              {
+            }))
+          } else {
+            if (lines.length > 1) {
+              newProducts = lines.slice(1).map((line) => ({
                 code: line["Seller SKU"],
                 name: line["Product Name"],
                 source: dto.type,
@@ -59,17 +107,34 @@ export class IncomeService {
                 quotation: line["SKU Unit Original Price"],
                 price: line["SKU Subtotal Before Discount"],
                 sourceChecked: false
-              }
-            ]
+              }))
+            }
           }
-          return acc
-        },
-        {} as {
-          [key: string]: Income
+          // Thêm vào cuối mảng products và save lại doc
+          if (newProducts.length > 0) {
+            doc.products = [...doc.products, ...newProducts]
+            await doc.save()
+          }
+        } else {
+          // orderId mới: add mới bình thường
+          const products = lines.map((line) => ({
+            code: line["Seller SKU"],
+            name: line["Product Name"],
+            source: dto.type,
+            quantity: line["Quantity"],
+            quotation: line["SKU Unit Original Price"],
+            price: line["SKU Subtotal Before Discount"],
+            sourceChecked: false
+          }))
+          await this.incomeModel.create({
+            orderId,
+            customer: lines[0]["Buyer Username"],
+            province: lines[0]["Province"],
+            date: dto.date,
+            products
+          })
         }
-      )
-
-      this.incomeModel.insertMany(Object.values(incomes))
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -92,12 +157,6 @@ export class IncomeService {
           $lte: end
         }
       })
-      if (result.deletedCount === 0) {
-        throw new HttpException(
-          "Không có bản ghi nào để xoá!",
-          HttpStatus.NOT_FOUND
-        )
-      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -125,27 +184,29 @@ export class IncomeService {
           const foundProduct = existedOrder.products.find((p) => {
             return (
               p.code === line["Sku người bán"] &&
-              p.quantity === line["Số lượng"] &&
+              p.quantity === Number(line["Số lượng"]) &&
               p.sourceChecked === false
             )
           })
 
           if (foundProduct) {
             foundProduct.sourceChecked = true
-            foundProduct.creator = line["Tên người dùng"]
-            foundProduct.source = ownUsers.includes(line["Tên người dùng"])
+            foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
+            foundProduct.source = ownUsers.includes(
+              line["Tên người dùng nhà sáng tạo"]
+            )
               ? "ads"
-              : !line["Tỉ lệ hoa hồng Quảng cáo cửa hàng"] &&
-                  line["Tỉ lệ hoa hồng tiêu chuẩn"]
+              : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
+                  !line["Tỷ lệ hoa hồng tiêu chuẩn ước tính"]
                 ? "affiliate-ads"
-                : !line["Tỉ lệ hoa hồng tiêu chuẩn"] &&
-                    line["Tỉ lệ hoa hồng Quảng cáo cửa hàng"]
+                : line["Tỷ lệ hoa hồng tiêu chuẩn ước tính"] &&
+                    !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
                   ? "affiliate"
                   : "other"
             foundProduct.content = line["Loại nội dung"]
-            foundProduct.affliateAdsPercentage =
-              line["Tỉ lệ hoa hồng Quảng cáo cửa hàng"]
-
+            foundProduct.affliateAdsPercentage = Number(
+              line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+            )
             await existedOrder.save()
           }
         }
@@ -163,32 +224,37 @@ export class IncomeService {
     startDate: Date,
     endDate: Date,
     page = 1,
-    limit = 10
+    limit = 10,
+    orderId?: string,
+    productCode?: string,
+    productSource?: string
   ): Promise<{ incomes: Income[]; total: number }> {
     try {
-      const start = new Date(startDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(endDate)
-      end.setHours(23, 59, 59, 999)
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
 
-      const [incomes, total] = await Promise.all([
-        this.incomeModel
-          .find({
-            date: {
-              $gte: start,
-              $lte: end
-            }
-          })
-          .skip((page - 1) * limit)
-          .limit(limit)
-          .exec(),
-        this.incomeModel.countDocuments({
-          date: {
-            $gte: start,
-            $lte: end
-          }
-        })
-      ])
+      const start = new Date(startDate)
+      start.setUTCHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setUTCHours(23, 59, 59, 999)
+
+      // Build filter
+      const filter: any = {
+        date: { $gte: start, $lte: end }
+      }
+      if (orderId) filter.orderId = String(orderId).trim()
+      // Lọc theo các trường trong mảng products
+      if (productCode) filter["products.code"] = productCode
+      if (productSource) filter["products.source"] = productSource
+
+      const total = await this.incomeModel.countDocuments(filter)
+
+      const incomes = await this.incomeModel
+        .find(filter)
+        .sort({ date: 1, _id: 1 })
+        .skip((safePage - 1) * safeLimit)
+        .limit(safeLimit)
+        .exec()
 
       return { incomes, total }
     } catch (error) {

@@ -62,13 +62,19 @@ export class IncomeController {
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
     @Query("page") page = 1,
-    @Query("limit") limit = 10
+    @Query("limit") limit = 10,
+    @Query("orderId") orderId?: string,
+    @Query("productCode") productCode?: string,
+    @Query("productSource") productSource?: string
   ): Promise<{ incomes: Income[]; total: number }> {
     const data = await this.incomeService.getIncomesByDateRange(
       new Date(startDate),
       new Date(endDate),
       Number(page),
-      Number(limit)
+      Number(limit),
+      orderId,
+      productCode,
+      productSource
     )
     return data
   }

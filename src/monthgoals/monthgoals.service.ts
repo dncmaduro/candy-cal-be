@@ -3,12 +3,14 @@ import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { CreateMonthGoalDto, UpdateMonthGoalDto } from "./dto/monthgoals.dto"
+import { IncomeService } from "../income/income.service"
 
 @Injectable()
 export class MonthGoalService {
   constructor(
     @InjectModel("MonthGoal")
-    private readonly monthGoalModel: Model<MonthGoal>
+    private readonly monthGoalModel: Model<MonthGoal>,
+    private readonly incomeService: IncomeService
   ) {}
 
   async createGoal(dto: CreateMonthGoalDto): Promise<MonthGoal> {
@@ -39,33 +41,49 @@ export class MonthGoalService {
     return this.monthGoalModel.findOne({ month, year }).lean()
   }
 
-  async getGoals(
-    year?: number,
-    page = 1,
-    limit = 10
-  ): Promise<{ monthGoals: MonthGoal[]; total: number }> {
+  async getGoals(year?: number): Promise<{
+    monthGoals: {
+      month: number
+      year: number
+      goal: number
+      totalIncome: number
+      totalQuantity: number
+      KPIPercentage: number
+    }[]
+    total: number
+  }> {
+    let monthGoals: MonthGoal[] = []
+    let total: number = 0
+
     if (year) {
-      const [monthGoals, total] = await Promise.all([
-        this.monthGoalModel
-          .find({ year })
-          .sort({ month: 1 })
-          .skip((page - 1) * limit)
-          .limit(limit)
-          .lean(),
+      ;[monthGoals, total] = await Promise.all([
+        this.monthGoalModel.find({ year }).sort({ month: 1 }).lean(),
         this.monthGoalModel.countDocuments({ year }).exec()
       ])
-      return { monthGoals, total }
+    } else {
+      ;[monthGoals, total] = await Promise.all([
+        this.monthGoalModel.find({}).sort({ year: -1, month: 1 }).lean(),
+        this.monthGoalModel.countDocuments().exec()
+      ])
     }
-    const [monthGoals, total] = await Promise.all([
-      this.monthGoalModel
-        .find({})
-        .sort({ year: -1, month: 1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean(),
-      this.monthGoalModel.countDocuments().exec()
-    ])
-    return { monthGoals, total }
+
+    const results = await Promise.all(
+      monthGoals.map(async (goal) => {
+        const [totalIncome, totalQuantity, KPIPercentage] = await Promise.all([
+          this.incomeService.totalIncomeByMonth(goal.month),
+          this.incomeService.totalQuantityByMonth(goal.month),
+          this.incomeService.KPIPercentageByMonth(goal.month, goal.year)
+        ])
+        return {
+          ...goal,
+          totalIncome,
+          totalQuantity,
+          KPIPercentage
+        }
+      })
+    )
+
+    return { monthGoals: results, total }
   }
 
   async updateGoal(

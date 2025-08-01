@@ -149,12 +149,14 @@ export class OrderLogsService {
           })
           sess.orders.forEach((order) => {
             const found = ordersArr.find((o) => {
-              return order.products.every((p) => {
-                return (
-                  p.quantity ===
-                  o.products.find((op) => isEqual(op.name, p.name))?.quantity
-                )
-              })
+              return (
+                order.products.every((p) => {
+                  return (
+                    p.quantity ===
+                    o.products.find((op) => isEqual(op.name, p.name))?.quantity
+                  )
+                }) && o.products.length === order.products.length
+              )
             })
             if (found) {
               found.quantity += order.quantity

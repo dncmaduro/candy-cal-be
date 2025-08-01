@@ -1,6 +1,6 @@
 import { Document, model, Schema, Types } from "mongoose"
 
-export interface PackingRule {
+export interface PackingRule extends Document {
   productCode: string
   requirements: {
     minQuantity: number | null

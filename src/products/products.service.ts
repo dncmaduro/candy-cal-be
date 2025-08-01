@@ -177,111 +177,88 @@ export class ProductsService {
 
   async calFromXlsx(dto: CalXlsxDto): Promise<CalItemsResponse> {
     try {
-      // Đọc excel
+      // 1. Đọc file, chỉ lấy các trường cần thiết
       const workbook = XLSX.read(dto.file.buffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
-      const data = XLSX.utils.sheet_to_json(sheet) as XlsxData[]
-      const productNames = Array.from(
-        new Set(data.map((row) => row["Seller SKU"]))
-      )
-      // Map name -> product
+      const dataRaw = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][]
+      const headerRow = dataRaw[0]
+      const colSellerSKU = headerRow.indexOf("Seller SKU")
+      const colQuantity = headerRow.indexOf("Quantity")
+      const colOrderId = headerRow.indexOf("Order ID")
+      if (colSellerSKU === -1 || colQuantity === -1 || colOrderId === -1)
+        throw new HttpException("File thiếu cột", HttpStatus.BAD_REQUEST)
+
+      const data = dataRaw
+        .slice(1)
+        .map((row) => ({
+          sellerSKU: row[colSellerSKU],
+          quantity: Number(row[colQuantity]) || 0,
+          orderId: row[colOrderId]
+        }))
+        .filter((row) => row.sellerSKU && row.orderId)
+
+      // 2. Query products 1 lần
+      const productNames = Array.from(new Set(data.map((row) => row.sellerSKU)))
       const productsDocs = await this.productModel
-        .find({ name: { $in: productNames } })
+        .find({ name: { $in: productNames } }, { name: 1, items: 1 })
         .lean()
       const productMap = new Map(productsDocs.map((prod) => [prod.name, prod]))
 
-      // 1. Tính quantity cho từng item (key: itemId, value: quantity)
+      // 3. Tính item quantities + gom order trong 1 vòng lặp
       const itemQuantities: Record<string, number> = {}
-
-      for (const row of data as any[]) {
-        const product = productMap.get(row["Seller SKU"])
-        if (product) {
-          for (const item of product.items) {
-            if (!itemQuantities[item._id.toString()]) {
-              itemQuantities[item._id.toString()] = 0
-            }
-            itemQuantities[item._id.toString()] += item.quantity * row.Quantity
-          }
+      const orderMap: Record<string, { name: string; quantity: number }[]> = {}
+      for (const row of data) {
+        const product = productMap.get(row.sellerSKU)
+        if (!product) continue
+        for (const item of product.items) {
+          const id = item._id.toString()
+          itemQuantities[id] =
+            (itemQuantities[id] || 0) + item.quantity * row.quantity
         }
+        if (!orderMap[row.orderId]) orderMap[row.orderId] = []
+        orderMap[row.orderId].push({
+          name: row.sellerSKU,
+          quantity: row.quantity
+        })
       }
 
-      // 2. Orders group logic giữ nguyên
-      const convertedOrders = data.reduce(
-        (acc, row) => {
-          if (acc[row["Order ID"]]) {
-            acc[row["Order ID"]].push({
-              name: row["Seller SKU"],
-              quantity: row["Quantity"]
-            })
-          } else {
-            acc[row["Order ID"]] = [
-              {
-                name: row["Seller SKU"],
-                quantity: row["Quantity"]
-              }
-            ]
-          }
-          return acc
-        },
-        {} as Record<
-          string,
-          {
-            name: string
-            quantity: number
-          }[]
-        >
-      )
-
-      const groupedOrders = Object.values(convertedOrders).reduce(
+      // 4. Group orders
+      const groupedOrders = Object.values(orderMap).reduce(
         (acc, products) => {
           const key = products
-            .map((product) => `${product.name}${product.quantity}`)
+            .map((p) => `${p.name}${p.quantity}`)
             .sort()
             .join(",")
-          if (!acc[key]) {
-            acc[key] = { products, quantity: 0 }
-          }
+          if (!acc[key]) acc[key] = { products, quantity: 0 }
           acc[key].quantity += 1
           return acc
         },
         {} as Record<
           string,
-          {
-            products: {
-              name: string
-              quantity: number
-            }[]
-            quantity: number
-          }
+          { products: { name: string; quantity: number }[]; quantity: number }
         >
       )
-
       const orders = Object.values(groupedOrders)
-      orders.shift()
       const total = orders.reduce((acc, order) => acc + order.quantity, 0)
 
-      // 3. Lấy chi tiết các item và storage item liên quan
+      // 5. Query items và storageItems 1 lần
       const itemIds = Object.keys(itemQuantities)
       const itemDocs = await this.itemModel
-        .find({ _id: { $in: itemIds } })
+        .find({ _id: { $in: itemIds } }, { name: 1, variants: 1 })
         .lean()
-
-      // Lấy toàn bộ storage item liên quan đến các variants
-      const allVariantIds = itemDocs.flatMap((item) => item.variants)
+      const allVariantIds = itemDocs.flatMap((item) => item.variants || [])
       const uniqueVariantIds = Array.from(
         new Set(allVariantIds.map((id) => id.toString()))
       )
       const storageItems = await this.storageItemModel
         .find({ _id: { $in: uniqueVariantIds } })
         .lean()
-
-      // Map storageItemId -> storageItem
       const storageItemMap = new Map(
-        storageItems.map((item) => [item._id.toString(), item])
+        storageItems.map((i) => [i._id.toString(), i])
       )
 
-      // Map lại kết quả cho đúng yêu cầu
+      // 6. Kết quả cuối
       const resultWithStorageItems = itemDocs.map((itemDoc) => ({
         _id: itemDoc._id.toString(),
         name: itemDoc.name,

@@ -26,7 +26,7 @@ export class PackingRulesService {
 
   async updateRule(
     productCode: string,
-    dto: PackingRuleDto
+    dto: Omit<PackingRuleDto, "productCode">
   ): Promise<PackingRule> {
     try {
       const updated = await this.packingRuleModel.findOneAndUpdate(
@@ -62,19 +62,21 @@ export class PackingRulesService {
   async searchRules(
     searchText: string,
     packingType?: string
-  ): Promise<PackingRule[]> {
+  ): Promise<{ rules: PackingRule[] }> {
     try {
       const filter: any = {}
 
       if (searchText) {
-        filter.productCode = { $regex: searchText, $options: "i" }
+        filter.productCode = { $regex: `.*${searchText}.*`, $options: "i" }
       }
 
       if (packingType) {
         filter["requirements.packingType"] = packingType
       }
 
-      return await this.packingRuleModel.find(filter).lean()
+      const rules = await this.packingRuleModel.find(filter).lean()
+
+      return { rules }
     } catch (error) {
       console.error(error)
       throw new HttpException(
