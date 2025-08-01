@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors
@@ -19,6 +20,7 @@ import { IncomeService } from "./income.service"
 import { InsertIncomeRequest } from "./dto/income.dto"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { Income } from "../database/mongoose/schemas/Income"
+import { Response } from "express"
 
 @Controller("incomes")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -117,5 +119,24 @@ export class IncomeController {
       Number(year)
     )
     return { percentage }
+  }
+
+  @Get("export-xlsx")
+  async exportIncomesToXlsx(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @Res() res: Response,
+    @Query("productSource") productSource?: string,
+    @Query("productCode") productCode?: string,
+    @Query("orderId") orderId?: string
+  ) {
+    await this.incomeService.exportIncomesToXlsx(
+      new Date(startDate),
+      new Date(endDate),
+      res,
+      productSource,
+      productCode,
+      orderId
+    )
   }
 }

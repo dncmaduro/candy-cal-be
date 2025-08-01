@@ -3,7 +3,7 @@ import { MongooseModule } from "@nestjs/mongoose"
 import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
 import { MonthGoalController } from "./monthgoals.controller"
 import { MonthGoalService } from "./monthgoals.service"
-import { IncomeModule } from "src/income/income.module"
+import { IncomeModule } from "../income/income.module"
 
 @Module({
   imports: [

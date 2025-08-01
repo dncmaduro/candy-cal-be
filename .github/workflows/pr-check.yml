@@ -1,0 +1,31 @@
+name: Check Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "22"
+
+      - name: Create .env file
+        run: |
+          echo "PORT=3333" >> .env
+          echo "DATABASE_URL=mongodb+srv://admin:JgwY2q04RYT6CWbw@candy.x42d9.mongodb.net/?retryWrites=true&w=majority&tls=true" >> .env
+          echo "JWT_SECRET=ede16a0cc171d8ab9c5cc77686e9544e58fa6a3fe4f55b1faa3f734f4d444308873fc357fdd1d0d22439fb338535388bf7d5d68ce02da189d908b00182c802e45307eabd54eaf408dd60aff110670b9489a523a63fefb28a9d7ebc3de074708c17f4ba4294d94d6f3bdc5c4574085f1e404a165bbd9da4a24ef529b2b9f6f808311a3ad5b8765c68d080f8441fa8dd0c7d7faa06e2e56e4ae451f5ab836b4e6c8dc9de029633388a60426a5c601e0b04c62d5d2e3a99db1b5b127c90863ec55a889cfa9c5910b8068e6b02ad44d8a99645a7cd109e9483ba954ad21f876be97697319ddd2f94c2a74d8910676b814de64f86d3fd85a7986ee44d910a3325a4d3" >> .env
+
+      - name: Install dependencies
+        run: npm install --force
+
+      - name: Build project
+        run: npm run build
