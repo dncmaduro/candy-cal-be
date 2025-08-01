@@ -11,6 +11,7 @@ import {
 import * as XLSX from "xlsx"
 import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
+import { Response } from "express"
 
 @Injectable()
 export class IncomeService {
@@ -401,6 +402,112 @@ export class IncomeService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi tính phần trăm KPI tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async exportIncomesToXlsx(
+    startDate: Date,
+    endDate: Date,
+    res: Response,
+    orderId?: string,
+    productCode?: string,
+    productSource?: string
+  ): Promise<void> {
+    try {
+      const start = new Date(startDate)
+      start.setUTCHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setUTCHours(23, 59, 59, 999)
+
+      const packingTypesMap = {
+        small: "Hộp bé",
+        big: "Hộp to",
+        long: "Hộp dài",
+        "big-35": "Hộp to 35",
+        square: "Hộp vuông"
+      }
+
+      const sourcesMap = {
+        ads: "ADS",
+        affiliate: "AFFILIATE",
+        "affiliate-ads": "AFFILIATE ADS",
+        other: "KHÁC"
+      }
+
+      // Build filter
+      const filter: any = {
+        date: { $gte: start, $lte: end }
+      }
+      if (orderId) filter.orderId = String(orderId).trim()
+      if (productCode) filter["products.code"] = productCode
+      if (productSource) filter["products.source"] = productSource
+
+      // Lấy toàn bộ incomes
+      const incomes = await this.incomeModel
+        .find(filter)
+        .sort({ date: 1, _id: 1 })
+        .lean()
+
+      // Flatten dữ liệu thành từng dòng sản phẩm
+      const rows = []
+      const merges = []
+      let rowIndex = 1 // 0 là header
+
+      incomes.forEach((income) => {
+        income.products.forEach((product, idx) => {
+          rows.push({
+            "Ngày xuất đơn": idx === 0 ? income.date : "",
+            "Mã đơn hàng": idx === 0 ? income.orderId : "",
+            "Khách hàng": idx === 0 ? income.customer : "",
+            "Tỉnh thành": idx === 0 ? income.province : "",
+            "Mã SP": product.code,
+            "Tên SP": product.name,
+            Nguồn: sourcesMap[product.source],
+            "Số lượng": product.quantity,
+            "Báo giá": product.quotation,
+            "Giá bán": product.price,
+            "Phần trăm Affiliate": product.affliateAdsPercentage ?? "",
+            "Loại nội dung": product.content ?? "",
+            "Quy cách đóng hộp": packingTypesMap[product.box ?? ""],
+            "Nhà sáng tạo": product.creator ?? ""
+          })
+        })
+        if (income.products.length > 1) {
+          ;[0, 1, 2, 3].forEach((colIdx) => {
+            merges.push({
+              s: { r: rowIndex, c: colIdx },
+              e: { r: rowIndex + income.products.length - 1, c: colIdx }
+            })
+          })
+        }
+        rowIndex += income.products.length
+      })
+
+      // Tạo workbook & worksheet
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws["!merges"] = merges
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "DoanhThu")
+
+      // Ghi ra buffer
+      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" })
+
+      // Xuất file về FE (dùng @Res())
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=DoanhThu_${startDate.toISOString().slice(0, 10)}_${endDate.toISOString().slice(0, 10)}.xlsx`
+      )
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      )
+      res.send(buffer)
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi xuất file doanh thu",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
