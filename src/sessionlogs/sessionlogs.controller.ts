@@ -9,7 +9,7 @@ import {
   Query
 } from "@nestjs/common"
 import { SessionLogsService } from "./sessionlogs.service"
-import { Roles } from "src/roles/roles.decorator"
+import { Roles } from "../roles/roles.decorator"
 import { SessionLogDto } from "./dto/sessionlogs.dto"
 import { SessionLog } from "../database/mongoose/schemas/SessionLog"
 
