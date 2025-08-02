@@ -17,6 +17,8 @@ import { OrderLogsModule } from "./orderlogs/orderlogs.module"
 import { PackingRulesModule } from "./packingrules/packingrules.module"
 import { IncomeModule } from "./income/income.module"
 import { MonthGoalModule } from "./monthgoals/monthgoals.module"
+import { SessionLogsModule } from "./sessionlogs/sessionlogs.module"
+import { DailyLogsModule } from "./dailylogs/dailylogs.module"
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { MonthGoalModule } from "./monthgoals/monthgoals.module"
     }),
     IncomeModule,
     MonthGoalModule,
+    SessionLogsModule,
+    DailyLogsModule,
     AuthModule
   ],
   controllers: [],
