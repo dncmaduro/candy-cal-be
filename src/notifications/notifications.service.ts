@@ -41,6 +41,7 @@ export class NotificationsService {
       const newNotification = new this.notificationModel({
         ...notification,
         read: false,
+        viewed: false,
         userId
       })
       this.notificationsGateway.notifyUser(userId, newNotification)
@@ -64,6 +65,7 @@ export class NotificationsService {
       const notifications = users.map((userId) => ({
         ...notification,
         read: false,
+        viewed: false,
         userId: userId.toString()
       }))
 
@@ -174,6 +176,36 @@ export class NotificationsService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi xóa thông báo",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async markAllAsViewed(userId: string): Promise<void> {
+    try {
+      await this.notificationModel.updateMany(
+        { userId, viewed: false },
+        { viewed: true }
+      )
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi đánh dấu tất cả thông báo đã xem",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getUnviewedCount(userId: string): Promise<number> {
+    try {
+      return await this.notificationModel.countDocuments({
+        userId,
+        viewed: false
+      })
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi lấy số lượng thông báo chưa xem",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

@@ -62,4 +62,22 @@ export class NotificationsController {
     await this.notificationsService.deleteNotification(id)
     return { message: "Thông báo đã được xóa" }
   }
+
+  @Roles("admin", "order-emp", "accounting-emp")
+  @Post("allviewed")
+  @HttpCode(HttpStatus.OK)
+  async markAllAsViewed(@Req() req): Promise<{ message: string }> {
+    await this.notificationsService.markAllAsViewed(req.user.userId)
+    return { message: "Đã đánh dấu tất cả thông báo là đã xem" }
+  }
+
+  @Roles("admin", "order-emp", "accounting-emp")
+  @Get("unviewed-count")
+  @HttpCode(HttpStatus.OK)
+  async getUnviewedCount(@Req() req): Promise<{ count: number }> {
+    const count = await this.notificationsService.getUnviewedCount(
+      req.user.userId
+    )
+    return { count }
+  }
 }
