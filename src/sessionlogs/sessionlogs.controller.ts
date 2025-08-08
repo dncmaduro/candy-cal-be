@@ -6,14 +6,18 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Query
+  Query,
+  UseGuards
 } from "@nestjs/common"
 import { SessionLogsService } from "./sessionlogs.service"
 import { Roles } from "../roles/roles.decorator"
 import { SessionLogDto } from "./dto/sessionlogs.dto"
 import { SessionLog } from "../database/mongoose/schemas/SessionLog"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "../roles/roles.guard"
 
 @Controller("sessionlogs")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SessionLogsController {
   constructor(private readonly sessionLogsService: SessionLogsService) {}
 

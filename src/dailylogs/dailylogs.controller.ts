@@ -5,14 +5,18 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Query
+  Query,
+  UseGuards
 } from "@nestjs/common"
 import { DailyLogsService } from "./dailylogs.service"
 import { Roles } from "../roles/roles.decorator"
 import { DailyLogDto } from "./dto/dailylogs.dto"
 import { DailyLog } from "../database/mongoose/schemas/DailyLog"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "../roles/roles.guard"
 
 @Controller("dailylogs")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class DailyLogsController {
   constructor(private readonly dailyLogsService: DailyLogsService) {}
 
