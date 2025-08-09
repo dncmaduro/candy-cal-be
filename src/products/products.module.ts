@@ -5,17 +5,19 @@ import { ProductsController } from "./products.controller"
 import { ProductsService } from "./products.service"
 import { ItemSchema } from "../database/mongoose/schemas/Item"
 import { StorageItemSchema } from "../database/mongoose/schemas/StorageItem"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: "products", schema: ProductSchema },
       { name: "items", schema: ItemSchema },
-      { name: "storageitems", schema: StorageItemSchema } // Assuming StorageItem uses the same schema as Item
-    ]) // Register the Product schema
+      { name: "storageitems", schema: StorageItemSchema }
+    ]),
+    SystemLogsModule
   ],
   controllers: [ProductsController],
   providers: [ProductsService],
-  exports: [ProductsService] // Export ProductsService if needed elsewhere
+  exports: [ProductsService]
 })
 export class ProductsModule {}

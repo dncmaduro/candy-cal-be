@@ -3,15 +3,17 @@ import { MongooseModule } from "@nestjs/mongoose"
 import { StorageItemsController } from "./storageitems.controller"
 import { StorageItemsService } from "./storageitems.service"
 import { StorageItemSchema } from "../database/mongoose/schemas/StorageItem"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: "storageitems", schema: StorageItemSchema }
-    ]) // Register the User schema
+    ]),
+    SystemLogsModule
   ],
   controllers: [StorageItemsController],
   providers: [StorageItemsService],
-  exports: [StorageItemsService] // Export UsersService if needed elsewhere
+  exports: [StorageItemsService]
 })
 export class StorageItemsModule {}

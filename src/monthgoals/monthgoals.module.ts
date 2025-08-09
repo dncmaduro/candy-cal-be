@@ -4,11 +4,13 @@ import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
 import { MonthGoalController } from "./monthgoals.controller"
 import { MonthGoalService } from "./monthgoals.service"
 import { IncomeModule } from "../income/income.module"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: "MonthGoal", schema: MonthGoalSchema }]),
-    IncomeModule
+    IncomeModule,
+    SystemLogsModule
   ],
   controllers: [MonthGoalController],
   providers: [MonthGoalService],

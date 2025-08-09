@@ -5,6 +5,7 @@ import { StorageLogsModule } from "../storagelogs/storagelogs.module"
 import { DeliveredRequestsController } from "./deliveredrequest.controller"
 import { DeliveredRequestsService } from "./deliveredrequests.service"
 import { NotificationsModule } from "../notifications/notifications.module"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { NotificationsModule } from "../notifications/notifications.module"
       { name: "deliveredrequests", schema: DeliveredRequestSchema }
     ]),
     StorageLogsModule,
-    NotificationsModule
+    NotificationsModule,
+    SystemLogsModule
   ],
   controllers: [DeliveredRequestsController],
   providers: [DeliveredRequestsService],

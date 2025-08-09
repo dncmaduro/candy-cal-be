@@ -11,7 +11,8 @@ import {
   Res,
   UploadedFile,
   UseGuards,
-  UseInterceptors
+  UseInterceptors,
+  Req
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
@@ -21,11 +22,15 @@ import { InsertIncomeRequest } from "./dto/income.dto"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { Income } from "../database/mongoose/schemas/Income"
 import { Response } from "express"
+import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("incomes")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class IncomeController {
-  constructor(private readonly incomeService: IncomeService) {}
+  constructor(
+    private readonly incomeService: IncomeService,
+    private readonly systemLogsService: SystemLogsService
+  ) {}
 
   @Roles("admin", "accounting-emp")
   @Post("")
@@ -33,17 +38,41 @@ export class IncomeController {
   @HttpCode(HttpStatus.CREATED)
   async insertIncome(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: InsertIncomeRequest
+    @Body() body: InsertIncomeRequest,
+    @Req() req
   ): Promise<{ success: true }> {
     await this.incomeService.insertIncome({ ...body, file })
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "inserted",
+        entity: "income",
+        result: "success",
+        meta: { type: body.type, fileSize: file?.size }
+      },
+      req.user.userId
+    )
     return { success: true }
   }
 
   @Roles("admin", "accounting-emp")
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteIncomeByDate(@Query("date") date: string): Promise<void> {
+  async deleteIncomeByDate(
+    @Query("date") date: string,
+    @Req() req
+  ): Promise<void> {
     await this.incomeService.deleteIncomeByDate(new Date(date))
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "deleted_by_date",
+        entity: "income",
+        result: "success",
+        meta: { date }
+      },
+      req.user.userId
+    )
   }
 
   @Roles("admin", "accounting-emp")
@@ -51,9 +80,20 @@ export class IncomeController {
   @UseInterceptors(FileInterceptor("file"))
   @HttpCode(HttpStatus.OK)
   async updateAffiliateType(
-    @UploadedFile() file: Express.Multer.File
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req
   ): Promise<{ success: true }> {
     await this.incomeService.updateAffiliateType({ file })
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "update_affiliate",
+        entity: "income",
+        result: "success",
+        meta: { fileSize: file?.size }
+      },
+      req.user.userId
+    )
     return { success: true }
   }
 
@@ -85,9 +125,20 @@ export class IncomeController {
   @Patch("update-box")
   @HttpCode(HttpStatus.OK)
   async updateIncomesBox(
-    @Query("date") date: string
+    @Query("date") date: string,
+    @Req() req
   ): Promise<{ success: true }> {
     await this.incomeService.updateIncomesBox(new Date(date))
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "update_box",
+        entity: "income",
+        result: "success",
+        meta: { date }
+      },
+      req.user.userId
+    )
     return { success: true }
   }
 
@@ -128,7 +179,8 @@ export class IncomeController {
     @Res() res: Response,
     @Query("productSource") productSource?: string,
     @Query("productCode") productCode?: string,
-    @Query("orderId") orderId?: string
+    @Query("orderId") orderId?: string,
+    @Req() req?
   ) {
     await this.incomeService.exportIncomesToXlsx(
       new Date(startDate),
@@ -137,6 +189,17 @@ export class IncomeController {
       productSource,
       productCode,
       orderId
+    )
+    // best-effort log (no await)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "export_xlsx",
+        entity: "income",
+        result: "success",
+        meta: { startDate, endDate, productSource, productCode, orderId }
+      },
+      (req as any)?.user?.userId ?? "unknown"
     )
   }
 }

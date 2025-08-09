@@ -5,6 +5,7 @@ import { IncomeController } from "./income.controller"
 import { IncomeService } from "./income.service"
 import { PackingRulesModule } from "../packingrules/packingrules.module"
 import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
       { name: "incomes", schema: IncomeSchema },
       { name: "monthgoals", schema: MonthGoalSchema }
     ]),
-    PackingRulesModule
+    PackingRulesModule,
+    SystemLogsModule
   ],
   controllers: [IncomeController],
   providers: [IncomeService],

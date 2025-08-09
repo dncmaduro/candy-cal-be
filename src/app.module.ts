@@ -19,6 +19,9 @@ import { IncomeModule } from "./income/income.module"
 import { MonthGoalModule } from "./monthgoals/monthgoals.module"
 import { SessionLogsModule } from "./sessionlogs/sessionlogs.module"
 import { DailyLogsModule } from "./dailylogs/dailylogs.module"
+import { SystemLogsModule } from "./systemlogs/systemlogs.module"
+import { APP_FILTER } from "@nestjs/core"
+import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter"
 
 @Module({
   imports: [
@@ -43,9 +46,15 @@ import { DailyLogsModule } from "./dailylogs/dailylogs.module"
     MonthGoalModule,
     SessionLogsModule,
     DailyLogsModule,
+    SystemLogsModule,
     AuthModule
   ],
   controllers: [],
-  providers: []
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter
+    }
+  ]
 })
 export class AppModule {}

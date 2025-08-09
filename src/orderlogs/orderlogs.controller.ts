@@ -6,7 +6,8 @@ import {
   HttpStatus,
   Post,
   Query,
-  UseGuards
+  UseGuards,
+  Req
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
@@ -19,11 +20,15 @@ import {
 } from "../database/mongoose/schemas/OrderLog"
 import { OrderLogSessionDto } from "./dto/orderlogs.dto"
 import { Types } from "mongoose"
+import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("orderlogs")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class OrderLogsController {
-  constructor(private readonly orderLogsService: OrderLogsService) {}
+  constructor(
+    private readonly orderLogsService: OrderLogsService,
+    private readonly systemLogsService: SystemLogsService
+  ) {}
 
   @Roles("admin", "order-emp")
   @Get()
@@ -39,9 +44,21 @@ export class OrderLogsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLogSession(
-    @Body() sessionDto: OrderLogSessionDto
+    @Body() sessionDto: OrderLogSessionDto,
+    @Req() req
   ): Promise<OrderLog> {
-    return this.orderLogsService.createLogSession(sessionDto)
+    const created = await this.orderLogsService.createLogSession(sessionDto)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "orders",
+        action: "log_session_created",
+        entity: "order_log_session",
+        entityId: created._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return created
   }
 
   @Roles("admin", "order-emp")
@@ -50,7 +67,8 @@ export class OrderLogsController {
   async getOrderLogsByRange(
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
-    @Query("session") session: "morning" | "afternoon" | "all"
+    @Query("session") session: "morning" | "afternoon" | "all",
+    @Req() req
   ): Promise<{
     startDate: Date
     endDate: Date
@@ -62,10 +80,21 @@ export class OrderLogsController {
     orders: { products: OrderLogProduct[]; quantity: number }[]
     total: number
   }> {
-    return this.orderLogsService.getOrderLogsByRange(
+    const res = await this.orderLogsService.getOrderLogsByRange(
       new Date(startDate),
       new Date(endDate),
       session
     )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "orders",
+        action: "range_queried",
+        entity: "order_logs",
+        result: "success",
+        meta: { startDate, endDate, session }
+      },
+      req.user.userId
+    )
+    return res
   }
 }
