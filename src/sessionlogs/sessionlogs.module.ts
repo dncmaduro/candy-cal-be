@@ -3,12 +3,14 @@ import { SessionLogsController } from "./sessionlogs.controller"
 import { MongooseModule } from "@nestjs/mongoose"
 import { SessionLogsService } from "./sessionlogs.service"
 import { SessionLogSchema } from "../database/mongoose/schemas/SessionLog"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: "sessionlogs", schema: SessionLogSchema }
-    ])
+    ]),
+    SystemLogsModule
   ],
   controllers: [SessionLogsController],
   providers: [SessionLogsService],

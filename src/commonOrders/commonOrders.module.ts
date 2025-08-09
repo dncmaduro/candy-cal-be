@@ -3,13 +3,15 @@ import { MongooseModule } from "@nestjs/mongoose"
 import { ItemSchema } from "../database/mongoose/schemas/Item"
 import { CommonOrdersController } from "./commonOrders.controller"
 import { CommonOrdersService } from "./commonOrders.service"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: "commonOrders", schema: ItemSchema }]) // Register the User schema
+    MongooseModule.forFeature([{ name: "commonOrders", schema: ItemSchema }]),
+    SystemLogsModule
   ],
   controllers: [CommonOrdersController],
   providers: [CommonOrdersService],
-  exports: [CommonOrdersService] // Export UsersService if needed elsewhere
+  exports: [CommonOrdersService]
 })
-export class ItemsModule {}
+export class CommonOrdersModule {}

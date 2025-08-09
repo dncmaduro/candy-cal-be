@@ -32,7 +32,6 @@ export class NotificationsGateway
   }
 
   notifyUser(userId: string, payload: any) {
-    console.log(userId, payload)
     this.server.to(userId).emit("notification", payload)
   }
 }

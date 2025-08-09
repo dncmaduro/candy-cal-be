@@ -9,22 +9,41 @@ import {
   Patch,
   Post,
   Put,
-  Query
+  Query,
+  Req
 } from "@nestjs/common"
 import { ReadyCombosService } from "./readycombos.service"
 import { Roles } from "../roles/roles.decorator"
 import { ReadyComboDto } from "./dto/readycombos.dto"
 import { ReadyCombo } from "../database/mongoose/schemas/ReadyCombo"
+import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("readycombos")
 export class ReadyCombosController {
-  constructor(private readonly readyCombosService: ReadyCombosService) {}
+  constructor(
+    private readonly readyCombosService: ReadyCombosService,
+    private readonly systemLogsService: SystemLogsService
+  ) {}
 
   @Roles("admin", "order-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createCombo(@Body() combo: ReadyComboDto): Promise<ReadyCombo> {
-    return this.readyCombosService.createCombo(combo)
+  async createCombo(
+    @Body() combo: ReadyComboDto,
+    @Req() req
+  ): Promise<ReadyCombo> {
+    const created = await this.readyCombosService.createCombo(combo)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "combos",
+        action: "created",
+        entity: "ready_combo",
+        entityId: created._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return created
   }
 
   @Roles("admin", "order-emp")
@@ -32,18 +51,42 @@ export class ReadyCombosController {
   @HttpCode(HttpStatus.OK)
   async updateCombo(
     @Body() combo: ReadyComboDto,
-    @Param("comboId") comboId: string
+    @Param("comboId") comboId: string,
+    @Req() req
   ): Promise<ReadyCombo> {
-    return this.readyCombosService.updateCombo(comboId, combo)
+    const updated = await this.readyCombosService.updateCombo(comboId, combo)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "combos",
+        action: "updated",
+        entity: "ready_combo",
+        entityId: updated._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
   }
 
   @Roles("admin", "order-emp")
   @Patch("/:comboId/toggle")
   @HttpCode(HttpStatus.OK)
   async toggleReadyCombo(
-    @Param("comboId") comboId: string
+    @Param("comboId") comboId: string,
+    @Req() req
   ): Promise<ReadyCombo> {
-    return this.readyCombosService.toggleReadyCombo(comboId)
+    const updated = await this.readyCombosService.toggleReadyCombo(comboId)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "combos",
+        action: "toggled",
+        entity: "ready_combo",
+        entityId: updated._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
   }
 
   @Roles("admin", "order-emp", "accounting-emp")
@@ -59,7 +102,20 @@ export class ReadyCombosController {
   @Roles("admin", "order-emp", "accounting-emp")
   @Delete("/:comboId")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteCombo(@Param("comboId") comboId: string): Promise<void> {
-    return this.readyCombosService.deleteCombo(comboId)
+  async deleteCombo(
+    @Param("comboId") comboId: string,
+    @Req() req
+  ): Promise<void> {
+    await this.readyCombosService.deleteCombo(comboId)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "combos",
+        action: "deleted",
+        entity: "ready_combo",
+        entityId: comboId,
+        result: "success"
+      },
+      req.user.userId
+    )
   }
 }

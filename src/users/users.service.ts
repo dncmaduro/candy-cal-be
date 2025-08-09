@@ -10,18 +10,21 @@ import {
   ValidTokenDto
 } from "./dto/login.dto"
 import { JwtService } from "@nestjs/jwt"
+import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel("users")
     private readonly userModel: Model<User>,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
+    private readonly systemLogsService: SystemLogsService
   ) {}
 
   async login(
     credential: LoginDto
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    const username = credential.username
     try {
       const existingUser = await this.userModel
         .findOne({
@@ -30,10 +33,32 @@ export class UsersService {
         .exec()
 
       if (!existingUser) {
+        // log failed login
+        void this.systemLogsService.createSystemLog(
+          {
+            type: "auth",
+            action: "login_failed",
+            entity: "user",
+            entityId: username,
+            result: "failed"
+          },
+          "unknown"
+        )
         throw new HttpException("Wrong username", HttpStatus.UNAUTHORIZED)
       }
 
       if (existingUser.password !== credential.password) {
+        // log failed login
+        void this.systemLogsService.createSystemLog(
+          {
+            type: "auth",
+            action: "login_failed",
+            entity: "user",
+            entityId: username,
+            result: "failed"
+          },
+          existingUser._id.toString()
+        )
         throw new HttpException("Wrong password", HttpStatus.UNAUTHORIZED)
       }
 
@@ -47,11 +72,35 @@ export class UsersService {
         expiresIn: "120 days"
       })
 
+      // log success login
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "auth",
+          action: "login_success",
+          entity: "user",
+          entityId: existingUser._id.toString(),
+          result: "success"
+        },
+        existingUser._id.toString()
+      )
+
       return { accessToken, refreshToken }
     } catch (error) {
       if (error instanceof HttpException) {
         throw error
       }
+      // unexpected error log
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "system",
+          action: "unexpected_error",
+          entity: "auth",
+          entityId: username,
+          result: "failed",
+          meta: { scope: "login" }
+        },
+        "unknown"
+      )
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -73,8 +122,11 @@ export class UsersService {
       const refreshToken = this.jwtService.sign(payload, {
         expiresIn: "120 days"
       })
+
+      // per request, do not log token refresh actions
       return { accessToken, refreshToken }
     } catch (error) {
+      // per request, do not log token refresh failures
       throw new HttpException("Invalid refresh token", HttpStatus.UNAUTHORIZED)
     }
   }
@@ -140,6 +192,18 @@ export class UsersService {
 
       existingUser.password = dto.newPassword
       await existingUser.save()
+
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "users",
+          action: "password_changed",
+          entity: "user",
+          entityId: existingUser._id.toString(),
+          result: "success"
+        },
+        existingUser._id.toString()
+      )
+
       return { message: "Password changed successfully" }
     } catch (error) {
       console.error(error)
@@ -167,6 +231,18 @@ export class UsersService {
 
       existingUser.avatarUrl = avatarUrl
       await existingUser.save()
+
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "users",
+          action: "avatar_updated",
+          entity: "user",
+          entityId: existingUser._id.toString(),
+          result: "success"
+        },
+        existingUser._id.toString()
+      )
+
       return { message: "Avatar updated successfully" }
     } catch (error) {
       console.error(error)
@@ -194,6 +270,19 @@ export class UsersService {
 
       existingUser.name = dto.name
       await existingUser.save()
+
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "users",
+          action: "profile_updated",
+          entity: "user",
+          entityId: existingUser._id.toString(),
+          result: "success",
+          meta: { fields: Object.keys(dto) }
+        },
+        existingUser._id.toString()
+      )
+
       return { message: "User updated successfully" }
     } catch (error) {
       console.error(error)
