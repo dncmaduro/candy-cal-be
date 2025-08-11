@@ -5,6 +5,7 @@ import { UsersController } from "./users.controller"
 import { UserSchema } from "../database/mongoose/schemas/User"
 import { JwtModule } from "@nestjs/jwt"
 import { ConfigModule, ConfigService } from "@nestjs/config"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { ConfigModule, ConfigService } from "@nestjs/config"
         secret: process.env.JWT_SECRET,
         signOptions: { expiresIn: "30m" }
       })
-    })
+    }),
+    SystemLogsModule
   ],
   controllers: [UsersController],
   providers: [UsersService],
