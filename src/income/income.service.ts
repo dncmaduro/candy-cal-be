@@ -201,9 +201,9 @@ export class IncomeService {
             )
               ? "ads"
               : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
-                  !line["Tỷ lệ hoa hồng tiêu chuẩn ước tính"]
+                  !line["Tỷ lệ hoa hồng tiêu chuẩn"]
                 ? "affiliate-ads"
-                : line["Tỷ lệ hoa hồng tiêu chuẩn ước tính"] &&
+                : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
                     !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
                   ? "affiliate"
                   : "other"
@@ -542,7 +542,7 @@ export class IncomeService {
   }> {
     try {
       const start = new Date(date)
-      start.setHours(0, 0, 0, 0)
+      start.setHours(0, 0, 0)
       const end = new Date(date)
       end.setHours(23, 59, 59, 999)
 
@@ -580,6 +580,129 @@ export class IncomeService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi tính thống kê ngày",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getTopCreators(
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    affiliate: { creator: string; totalIncome: number; percentage: number }[]
+    affiliateAds: { creator: string; totalIncome: number; percentage: number }[]
+  }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      const rows: Array<{
+        _id: { source: string; creator: string }
+        totalIncome: number
+      }> = await this.incomeModel.aggregate([
+        { $match: { date: { $gte: start, $lte: end } } },
+        { $unwind: "$products" },
+        {
+          $match: { "products.source": { $in: ["affiliate", "affiliate-ads"] } }
+        },
+        {
+          $group: {
+            _id: {
+              source: "$products.source",
+              creator: { $ifNull: ["$products.creator", "(unknown)"] }
+            },
+            totalIncome: { $sum: { $ifNull: ["$products.price", 0] } }
+          }
+        }
+      ])
+
+      const bySource: Record<
+        string,
+        { creator: string; totalIncome: number }[]
+      > = {
+        affiliate: [],
+        "affiliate-ads": []
+      }
+      for (const r of rows) {
+        bySource[r._id.source].push({
+          creator: r._id.creator,
+          totalIncome: r.totalIncome
+        })
+      }
+
+      // Tính tổng của từng source (toàn bộ creators của source đó)
+      const sourceTotals: Record<string, number> = {
+        affiliate: bySource["affiliate"].reduce((s, v) => s + v.totalIncome, 0),
+        "affiliate-ads": bySource["affiliate-ads"].reduce(
+          (s, v) => s + v.totalIncome,
+          0
+        )
+      }
+
+      function buildTop(
+        arr: { creator: string; totalIncome: number }[],
+        totalSource: number
+      ): { creator: string; totalIncome: number; percentage: number }[] {
+        return arr
+          .sort((a, b) => b.totalIncome - a.totalIncome)
+          .slice(0, 10)
+          .map((x) => ({
+            creator: x.creator,
+            totalIncome: x.totalIncome,
+            // phần trăm trên tổng của chính source đó
+            percentage:
+              totalSource === 0
+                ? 0
+                : Math.round((x.totalIncome / totalSource) * 100 * 100) / 100
+          }))
+      }
+
+      return {
+        affiliate: buildTop(bySource["affiliate"], sourceTotals["affiliate"]),
+        affiliateAds: buildTop(
+          bySource["affiliate-ads"],
+          sourceTotals["affiliate-ads"]
+        )
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tính top nhà sáng tạo",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async resetSourceChecked(date: Date): Promise<{ updated: number }> {
+    try {
+      const start = new Date(date)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(date)
+      end.setHours(23, 59, 59, 999)
+
+      const incomes = await this.incomeModel.find({
+        date: { $gte: start, $lte: end }
+      })
+
+      let updated = 0
+      for (const income of incomes) {
+        let needSave = false
+        for (const p of income.products) {
+          if (p.sourceChecked) {
+            p.sourceChecked = false
+            needSave = true
+            updated++
+          }
+        }
+        if (needSave) await income.save()
+      }
+      return { updated }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi reset sourceChecked",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
