@@ -25,7 +25,12 @@ export class MonthGoalService {
           HttpStatus.CONFLICT
         )
 
-      const goal = new this.monthGoalModel(dto)
+      const goal = new this.monthGoalModel({
+        month: dto.month,
+        year: dto.year,
+        liveStreamGoal: dto.liveStreamGoal,
+        shopGoal: dto.shopGoal
+      })
       return await goal.save()
     } catch (error) {
       throw error instanceof HttpException
@@ -45,10 +50,11 @@ export class MonthGoalService {
     monthGoals: {
       month: number
       year: number
-      goal: number
-      totalIncome: number
-      totalQuantity: number
-      KPIPercentage: number
+      liveStreamGoal: number
+      shopGoal: number
+      totalIncome: { live: number; shop: number }
+      totalQuantity: { live: number; shop: number }
+      KPIPercentage: { live: number; shop: number }
     }[]
     total: number
   }> {
@@ -69,16 +75,19 @@ export class MonthGoalService {
 
     const results = await Promise.all(
       monthGoals.map(async (goal) => {
-        const [totalIncome, totalQuantity, KPIPercentage] = await Promise.all([
-          this.incomeService.totalIncomeByMonth(goal.month),
-          this.incomeService.totalQuantityByMonth(goal.month),
-          this.incomeService.KPIPercentageByMonth(goal.month, goal.year)
+        const [incomeSplit, quantitySplit, kpiSplit] = await Promise.all([
+          this.incomeService.totalIncomeByMonthSplit(goal.month, goal.year),
+          this.incomeService.totalQuantityByMonthSplit(goal.month, goal.year),
+          this.incomeService.KPIPercentageByMonthSplit(goal.month, goal.year)
         ])
         return {
-          ...goal,
-          totalIncome,
-          totalQuantity,
-          KPIPercentage
+          month: goal.month,
+          year: goal.year,
+          liveStreamGoal: goal.liveStreamGoal,
+          shopGoal: goal.shopGoal,
+          totalIncome: incomeSplit,
+          totalQuantity: quantitySplit,
+          KPIPercentage: kpiSplit
         }
       })
     )
@@ -93,7 +102,7 @@ export class MonthGoalService {
   ): Promise<MonthGoal> {
     const updated = await this.monthGoalModel.findOneAndUpdate(
       { month, year },
-      { $set: dto },
+      { $set: { liveStreamGoal: dto.liveStreamGoal, shopGoal: dto.shopGoal } },
       { new: true }
     )
     if (!updated)

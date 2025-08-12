@@ -92,7 +92,7 @@ export class PackingRulesController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get(":productCode")
   @HttpCode(HttpStatus.OK)
   async getRuleByProductCode(
@@ -101,7 +101,7 @@ export class PackingRulesController {
     return this.packingRulesService.getRuleByProductCode(productCode)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchRules(

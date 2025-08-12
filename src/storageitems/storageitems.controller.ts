@@ -71,14 +71,14 @@ export class StorageItemsController {
     return updated
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getItem(@Query("id") id: string): Promise<StorageItem> {
     return this.storageItemsService.getItem(id)
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(

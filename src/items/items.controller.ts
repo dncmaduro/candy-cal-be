@@ -65,14 +65,14 @@ export class ItemsController {
     return updated
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getItem(@Query("id") id: string): Promise<Item> {
     return this.itemsService.getItem(id)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(@Query("searchText") searchText: string): Promise<Item[]> {

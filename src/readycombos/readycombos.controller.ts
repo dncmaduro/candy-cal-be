@@ -89,7 +89,7 @@ export class ReadyCombosController {
     return updated
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchCombos(

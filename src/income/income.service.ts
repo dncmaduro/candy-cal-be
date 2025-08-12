@@ -136,6 +136,9 @@ export class IncomeService {
           })
         }
       }
+
+      // Sau khi insert/update xong thì cập nhật quy cách đóng hộp ngay
+      await this.updateIncomesBox(new Date(dto.date))
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -205,8 +208,17 @@ export class IncomeService {
                   ? "affiliate"
                   : "other"
             foundProduct.content = line["Loại nội dung"]
-            foundProduct.affliateAdsPercentage = Number(
+            foundProduct.affiliateAdsPercentage = Number(
               line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+            )
+            foundProduct.affiliateAdsAmount = Number(
+              line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
+            )
+            foundProduct.standardAffPercentage = Number(
+              line["Tỷ lệ hoa hồng tiêu chuẩn"]
+            )
+            foundProduct.standardAffAmount = Number(
+              line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
             )
             await existedOrder.save()
           }
@@ -311,97 +323,96 @@ export class IncomeService {
     }
   }
 
-  async totalIncomeByMonth(month: number): Promise<number> {
+  async totalIncomeByMonthSplit(
+    month: number,
+    year: number
+  ): Promise<{ live: number; shop: number }> {
     try {
-      const start = new Date(new Date().getFullYear(), month, 1)
-      const end = new Date(new Date().getFullYear(), month + 1, 0)
-
+      const start = new Date(year, month, 1)
+      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
       const incomes = await this.incomeModel
-        .find({
-          date: {
-            $gte: start,
-            $lte: end
-          }
-        })
-        .exec()
+        .find({ date: { $gte: start, $lte: end } })
+        .lean()
 
-      return incomes.reduce((total, income) => {
-        return (
-          total +
-          income.products.reduce((sum, product) => sum + product.price, 0)
+      let live = 0
+      let shop = 0
+      for (const income of incomes) {
+        const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
+          income.products || []
         )
-      }, 0)
+        live += this.sumProductsAmount(liveProducts)
+        shop += this.sumProductsAmount(shopProducts)
+      }
+      return { live, shop }
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Lỗi khi tính tổng doanh thu theo tháng",
+        "Lỗi khi tính doanh thu theo kênh",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
   }
 
-  async totalQuantityByMonth(month: number): Promise<number> {
+  async totalQuantityByMonthSplit(
+    month: number,
+    year: number
+  ): Promise<{ live: number; shop: number }> {
     try {
-      const start = new Date(new Date().getFullYear(), month, 1)
-      const end = new Date(new Date().getFullYear(), month + 1, 0)
-
+      const start = new Date(year, month, 1)
+      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
       const incomes = await this.incomeModel
-        .find({
-          date: {
-            $gte: start,
-            $lte: end
-          }
-        })
-        .exec()
+        .find({ date: { $gte: start, $lte: end } })
+        .lean()
 
-      return incomes.reduce((total, income) => {
-        return (
-          total +
-          income.products.reduce((sum, product) => sum + product.quantity, 0)
+      let live = 0
+      let shop = 0
+      for (const income of incomes) {
+        const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
+          income.products || []
         )
-      }, 0)
+        live += this.sumProductsQuantity(liveProducts)
+        shop += this.sumProductsQuantity(shopProducts)
+      }
+      return { live, shop }
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Lỗi khi tính tổng số lượng theo tháng",
+        "Lỗi khi tính số lượng theo kênh",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
   }
 
-  async KPIPercentageByMonth(month: number, year: number): Promise<number> {
+  async KPIPercentageByMonthSplit(
+    month: number,
+    year: number
+  ): Promise<{ live: number; shop: number }> {
     try {
       const goal = await this.monthGoalModel.findOne({ month, year }).lean()
-      if (!goal || !goal.goal) {
+      if (!goal) {
         throw new HttpException(
           "Chưa thiết lập mục tiêu tháng này",
           HttpStatus.NOT_FOUND
         )
       }
 
-      const start = new Date(year, month, 1)
-      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
-
-      const incomes = await this.incomeModel
-        .find({
-          date: { $gte: start, $lte: end }
-        })
-        .lean()
-
-      const totalIncome = incomes.reduce(
-        (total, income) =>
-          total +
-          (income.products?.reduce((sum, p) => sum + (p.price || 0), 0) || 0),
-        0
-      )
-
-      const percent = goal.goal === 0 ? 0 : (totalIncome / goal.goal) * 100
-
-      return Math.min(Math.round(percent * 100) / 100, 999)
+      const { live, shop } = await this.totalIncomeByMonthSplit(month, year)
+      const livePct =
+        goal.liveStreamGoal === 0
+          ? 0
+          : Math.min(
+              Math.round((live / goal.liveStreamGoal) * 10000) / 100,
+              999
+            )
+      const shopPct =
+        goal.shopGoal === 0
+          ? 0
+          : Math.min(Math.round((shop / goal.shopGoal) * 10000) / 100, 999)
+      return { live: livePct, shop: shopPct }
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Lỗi khi tính phần trăm KPI tháng",
+        "Lỗi khi tính KPI theo kênh",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -468,10 +479,16 @@ export class IncomeService {
             "Số lượng": product.quantity,
             "Báo giá": product.quotation,
             "Giá bán": product.price,
-            "Phần trăm Affiliate": product.affliateAdsPercentage ?? "",
+            "Phần trăm Affiliate": product.affiliateAdsPercentage ?? "",
+            "Phần trăm Affiliate tiêu chuẩn":
+              product.standardAffPercentage ?? "",
             "Loại nội dung": product.content ?? "",
             "Quy cách đóng hộp": packingTypesMap[product.box ?? ""],
-            "Nhà sáng tạo": product.creator ?? ""
+            "Nhà sáng tạo": product.creator ?? "",
+            "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính":
+              product.affiliateAdsAmount ?? "",
+            "Thanh toán hoa hồng tiêu chuẩn ước tính":
+              product.standardAffAmount ?? ""
           })
         })
         if (income.products.length > 1) {
@@ -511,5 +528,77 @@ export class IncomeService {
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
+  }
+
+  async getDailyStats(date: Date): Promise<{
+    boxes: { box: string; quantity: number }[]
+    totalIncome: number
+    sources: {
+      ads: number
+      affiliate: number
+      affiliateAds: number
+      other: number
+    }
+  }> {
+    try {
+      const start = new Date(date)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(date)
+      end.setHours(23, 59, 59, 999)
+
+      const incomes = await this.incomeModel
+        .find({ date: { $gte: start, $lte: end } })
+        .lean()
+
+      const boxMap: Record<string, number> = {}
+      let totalIncome = 0
+      const sourceTotals = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
+
+      for (const income of incomes) {
+        for (const p of income.products || []) {
+          const price = p.price || 0
+          totalIncome += price
+          // nguồn
+          if (p.source === "ads") sourceTotals.ads += price
+          else if (p.source === "affiliate") sourceTotals.affiliate += price
+          else if (p.source === "affiliate-ads")
+            sourceTotals.affiliateAds += price
+          else sourceTotals.other += price
+          // hộp
+          if (p.box) {
+            boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
+          }
+        }
+      }
+
+      const boxes = Object.entries(boxMap)
+        .map(([box, quantity]) => ({ box, quantity }))
+        .sort((a, b) => a.box.localeCompare(b.box))
+
+      return { boxes, totalIncome, sources: sourceTotals }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tính thống kê ngày",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  private splitByChannel(products: Income["products"]) {
+    const isLive = (p: any) =>
+      typeof p.content === "string" &&
+      /Phát trực tiếp|livestream/i.test(p.content)
+    const live = products.filter(isLive)
+    const shop = products.filter((p) => !isLive(p))
+    return { live, shop }
+  }
+
+  private sumProductsAmount(products: any[]) {
+    return products.reduce((sum, p) => sum + (p.price || 0), 0)
+  }
+
+  private sumProductsQuantity(products: any[]) {
+    return products.reduce((sum, p) => sum + (p.quantity || 0), 0)
   }
 }

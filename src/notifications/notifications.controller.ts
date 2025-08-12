@@ -26,7 +26,7 @@ export class NotificationsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getNotifications(
@@ -131,7 +131,7 @@ export class NotificationsController {
     return { message: "Đã đánh dấu tất cả thông báo là đã xem" }
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("unviewed-count")
   @HttpCode(HttpStatus.OK)
   async getUnviewedCount(@Req() req): Promise<{ count: number }> {

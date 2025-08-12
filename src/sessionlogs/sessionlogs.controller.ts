@@ -62,7 +62,7 @@ export class SessionLogsController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getSessionLogs(
@@ -72,7 +72,7 @@ export class SessionLogsController {
     return this.sessionLogsService.getSessionLogs(page, limit)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getSessionLogById(@Query("id") id: string): Promise<SessionLog | null> {

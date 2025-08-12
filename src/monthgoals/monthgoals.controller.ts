@@ -29,24 +29,25 @@ export class MonthGoalController {
     return this.monthGoalService.createGoal(dto)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("year")
   @HttpCode(HttpStatus.OK)
   async getGoals(@Query("year") year?: string): Promise<{
     monthGoals: {
       month: number
       year: number
-      goal: number
-      totalIncome: number
-      totalQuantity: number
-      KPIPercentage: number
+      liveStreamGoal: number
+      shopGoal: number
+      totalIncome: { live: number; shop: number }
+      totalQuantity: { live: number; shop: number }
+      KPIPercentage: { live: number; shop: number }
     }[]
     total: number
   }> {
     return this.monthGoalService.getGoals(year ? Number(year) : undefined)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("month")
   @HttpCode(HttpStatus.OK)
   async getGoal(

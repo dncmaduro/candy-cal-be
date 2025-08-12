@@ -1,11 +1,13 @@
 export class CreateMonthGoalDto {
   month: number
   year: number
-  goal: number
+  liveStreamGoal: number
+  shopGoal: number
 }
 
 export class UpdateMonthGoalDto {
   month: number
   year: number
-  goal: number
+  liveStreamGoal: number
+  shopGoal: number
 }
