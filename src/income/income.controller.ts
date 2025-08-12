@@ -232,4 +232,41 @@ export class IncomeController {
     const res = await this.incomeService.getDailyStats(new Date(date))
     return res
   }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("top-creators")
+  @HttpCode(HttpStatus.OK)
+  async getTopCreators(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string
+  ): Promise<{
+    affiliate: { creator: string; totalIncome: number; percentage: number }[]
+    affiliateAds: { creator: string; totalIncome: number; percentage: number }[]
+  }> {
+    return this.incomeService.getTopCreators(
+      new Date(startDate),
+      new Date(endDate)
+    )
+  }
+
+  @Roles("admin")
+  @Patch("reset-source-checked")
+  @HttpCode(HttpStatus.OK)
+  async resetSourceChecked(
+    @Query("date") date: string,
+    @Req() req
+  ): Promise<{ updated: number }> {
+    const result = await this.incomeService.resetSourceChecked(new Date(date))
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "reset_source_checked",
+        entity: "income",
+        result: "success",
+        meta: { date, updated: result.updated }
+      },
+      req.user.userId
+    )
+    return result
+  }
 }
