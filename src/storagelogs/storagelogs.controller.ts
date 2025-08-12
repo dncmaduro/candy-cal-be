@@ -51,7 +51,7 @@ export class StorageLogsController {
     return created
   }
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getStorageLogs(
@@ -74,7 +74,7 @@ export class StorageLogsController {
     )
   }
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "accounting-emp", "system-emp")
   @Get("month")
   @HttpCode(HttpStatus.OK)
   async getStorageLogsByMonth(
@@ -89,10 +89,10 @@ export class StorageLogsController {
     )
   }
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "accounting-emp", "system-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
-  async getStorageLogById(@Query("id") id: string): Promise<StorageLog | null> {
+  async getStorageLogById(@Param("id") id: string): Promise<StorageLog | null> {
     return this.storageLogsService.getStorageLogById(id)
   }
 

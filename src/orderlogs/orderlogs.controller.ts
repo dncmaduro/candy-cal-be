@@ -30,7 +30,7 @@ export class OrderLogsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getOrderLogs(
@@ -61,7 +61,7 @@ export class OrderLogsController {
     return created
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get("range")
   @HttpCode(HttpStatus.OK)
   async getOrderLogsByRange(

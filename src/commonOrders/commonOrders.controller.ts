@@ -15,9 +15,11 @@ import { CommonOrderDto } from "./dto/commonOrder.dto"
 import { CommonOrder } from "../database/mongoose/schemas/CommonOrder"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 
 @Controller("common-orders")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class CommonOrdersController {
   constructor(
     private readonly commonOrdersService: CommonOrdersService,
@@ -64,18 +66,21 @@ export class CommonOrdersController {
     return updated
   }
 
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllOrders(): Promise<CommonOrder[]> {
     return this.commonOrdersService.getAllOrders()
   }
 
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("/order")
   @HttpCode(HttpStatus.OK)
   async getOrder(@Query("id") id: string): Promise<CommonOrder> {
     return this.commonOrdersService.getOrder(id)
   }
 
+  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchOrders(

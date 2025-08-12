@@ -26,7 +26,7 @@ export class LogsController {
     private readonly systemLogsService: SystemLogsService // Ensure SystemLogsService is injected
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLogs(
@@ -54,7 +54,7 @@ export class LogsController {
     return created
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get("range")
   @HttpCode(HttpStatus.OK)
   async getLogsByRange(

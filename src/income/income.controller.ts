@@ -97,7 +97,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getIncomesByDateRange(
@@ -142,36 +142,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
-  @Get("total-income-by-month")
-  @HttpCode(HttpStatus.OK)
-  async totalIncomeByMonth(@Query("month") month: string) {
-    const total = await this.incomeService.totalIncomeByMonth(Number(month))
-    return { total }
-  }
-
-  @Roles("admin", "accounting-emp", "order-emp")
-  @Get("total-quantity-by-month")
-  @HttpCode(HttpStatus.OK)
-  async totalQuantityByMonth(@Query("month") month: string) {
-    const total = await this.incomeService.totalQuantityByMonth(Number(month))
-    return { total }
-  }
-
-  @Roles("admin", "accounting-emp", "order-emp")
-  @Get("kpi-percentage-by-month")
-  @HttpCode(HttpStatus.OK)
-  async KPIPercentageByMonth(
-    @Query("month") month: string,
-    @Query("year") year: string
-  ) {
-    const percentage = await this.incomeService.KPIPercentageByMonth(
-      Number(month),
-      Number(year)
-    )
-    return { percentage }
-  }
-
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get("export-xlsx")
   async exportIncomesToXlsx(
     @Query("startDate") startDate: string,
@@ -181,7 +152,7 @@ export class IncomeController {
     @Query("productCode") productCode?: string,
     @Query("orderId") orderId?: string,
     @Req() req?
-  ) {
+  ): Promise<void> {
     await this.incomeService.exportIncomesToXlsx(
       new Date(startDate),
       new Date(endDate),
@@ -201,5 +172,64 @@ export class IncomeController {
       },
       (req as any)?.user?.userId ?? "unknown"
     )
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("income-split-by-month")
+  @HttpCode(HttpStatus.OK)
+  async totalIncomeByMonthSplit(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ): Promise<{ totalIncome: { live: number; shop: number } }> {
+    const totalIncome = await this.incomeService.totalIncomeByMonthSplit(
+      Number(month),
+      Number(year)
+    )
+    return { totalIncome }
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("quantity-split-by-month")
+  @HttpCode(HttpStatus.OK)
+  async totalQuantityByMonthSplit(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ): Promise<{ totalQuantity: { live: number; shop: number } }> {
+    const totalQuantity = await this.incomeService.totalQuantityByMonthSplit(
+      Number(month),
+      Number(year)
+    )
+    return { totalQuantity }
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("kpi-percentage-split-by-month")
+  @HttpCode(HttpStatus.OK)
+  async KPIPercentageByMonthSplit(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ): Promise<{ KPIPercentage: { live: number; shop: number } }> {
+    const KPIPercentage = await this.incomeService.KPIPercentageByMonthSplit(
+      Number(month),
+      Number(year)
+    )
+    return { KPIPercentage }
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("daily-stats")
+  @HttpCode(HttpStatus.OK)
+  async getDailyStats(@Query("date") date: string): Promise<{
+    boxes: { box: string; quantity: number }[]
+    totalIncome: number
+    sources: {
+      ads: number
+      affiliate: number
+      affiliateAds: number
+      other: number
+    }
+  }> {
+    const res = await this.incomeService.getDailyStats(new Date(date))
+    return res
   }
 }

@@ -13,10 +13,13 @@ export interface Income {
     quantity: number
     quotation: number
     price: number
-    affliateAdsPercentage?: number
+    affiliateAdsPercentage?: number
+    affiliateAdsAmount?: number
     sourceChecked: boolean
     content?: string
     box?: string
+    standardAffPercentage?: number
+    standardAffAmount?: number
   }[]
 }
 
@@ -34,10 +37,13 @@ export const IncomeSchema = new Schema<Income>({
       quantity: { type: Number, required: true },
       quotation: { type: Number, required: true },
       price: { type: Number, required: true },
-      affliateAdsPercentage: { type: Number, required: false },
+      affiliateAdsPercentage: { type: Number, required: false },
+      affiliateAdsAmount: { type: Number, required: false },
       sourceChecked: { type: Boolean, required: true, default: false },
       content: { type: String, required: false },
-      box: { type: String, required: false }
+      box: { type: String, required: false },
+      standardAffPercentage: { type: Number, required: false },
+      standardAffAmount: { type: Number, required: false }
     }
   ]
 })

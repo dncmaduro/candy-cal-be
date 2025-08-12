@@ -97,21 +97,21 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllProducts(): Promise<Product[]> {
     return this.productsService.getAllProducts()
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get("/product")
   @HttpCode(HttpStatus.OK)
   async getProduct(@Query("id") id: string): Promise<Product> {
     return this.productsService.getProduct(id)
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
