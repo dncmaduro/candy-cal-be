@@ -228,6 +228,7 @@ export class IncomeController {
       affiliateAds: number
       other: number
     }
+    liveIncome: number
   }> {
     const res = await this.incomeService.getDailyStats(new Date(date))
     return res

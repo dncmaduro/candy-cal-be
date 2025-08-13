@@ -539,6 +539,7 @@ export class IncomeService {
       affiliateAds: number
       other: number
     }
+    liveIncome: number
   }> {
     try {
       const start = new Date(date)
@@ -552,6 +553,7 @@ export class IncomeService {
 
       const boxMap: Record<string, number> = {}
       let totalIncome = 0
+      let liveIncome = 0
       const sourceTotals = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
 
       for (const income of incomes) {
@@ -564,6 +566,13 @@ export class IncomeService {
           else if (p.source === "affiliate-ads")
             sourceTotals.affiliateAds += price
           else sourceTotals.other += price
+          // livestream
+          if (
+            typeof p.content === "string" &&
+            /Phát trực tiếp|livestream/i.test(p.content)
+          ) {
+            liveIncome += price
+          }
           // hộp
           if (p.box) {
             boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
@@ -575,7 +584,7 @@ export class IncomeService {
         .map(([box, quantity]) => ({ box, quantity }))
         .sort((a, b) => a.box.localeCompare(b.box))
 
-      return { boxes, totalIncome, sources: sourceTotals }
+      return { boxes, totalIncome, sources: sourceTotals, liveIncome }
     } catch (error) {
       console.error(error)
       throw new HttpException(
