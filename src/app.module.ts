@@ -20,8 +20,11 @@ import { MonthGoalModule } from "./monthgoals/monthgoals.module"
 import { SessionLogsModule } from "./sessionlogs/sessionlogs.module"
 import { DailyLogsModule } from "./dailylogs/dailylogs.module"
 import { SystemLogsModule } from "./systemlogs/systemlogs.module"
-import { APP_FILTER } from "@nestjs/core"
+import { APP_FILTER, APP_INTERCEPTOR } from "@nestjs/core"
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter"
+import { DailyTasksModule } from "./dailytasks/dailytasks.module"
+import { RequestAuditSchema } from "./database/mongoose/schemas/RequestAudit"
+import { RequestAuditInterceptor } from "./dailytasks/interceptors/request-audit.interceptor"
 
 @Module({
   imports: [
@@ -47,14 +50,19 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter"
     SessionLogsModule,
     DailyLogsModule,
     SystemLogsModule,
-    AuthModule
+    AuthModule,
+    DailyTasksModule,
+    MongooseModule.forFeature([
+      { name: "RequestAudit", schema: RequestAuditSchema }
+    ])
   ],
   controllers: [],
   providers: [
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter
-    }
+    },
+    { provide: APP_INTERCEPTOR, useClass: RequestAuditInterceptor }
   ]
 })
 export class AppModule {}
