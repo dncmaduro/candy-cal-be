@@ -10,11 +10,9 @@ import { DailyTasksCron } from "./dailytasks.cron"
 import { ApiEndpointSchema } from "../database/mongoose/schemas/ApiEndpoint"
 import { ApiEndpointsService } from "./endpoints/apiendpoints.service"
 import { ApiEndpointsController } from "./endpoints/apiendpoints.controller"
-import { SystemLogsModule } from "src/systemlogs/systemlogs.module"
+import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 import { ApiEndpointAutoDiscoverService } from "./endpoints/apiendpoints.autodiscover"
 import { RequestAuditSchema } from "../database/mongoose/schemas/RequestAudit"
-import { APP_INTERCEPTOR } from "@nestjs/core"
-import { RequestAuditInterceptor } from "./interceptors/request-audit.interceptor"
 
 @Module({
   imports: [
@@ -39,8 +37,7 @@ import { RequestAuditInterceptor } from "./interceptors/request-audit.intercepto
     DailyTasksController,
     DailyTasksCron,
     ApiEndpointsService,
-    ApiEndpointAutoDiscoverService,
-    { provide: APP_INTERCEPTOR, useClass: RequestAuditInterceptor }
+    ApiEndpointAutoDiscoverService
   ],
   controllers: [DailyTasksController, ApiEndpointsController],
   exports: [DailyTasksService, ApiEndpointsService]
