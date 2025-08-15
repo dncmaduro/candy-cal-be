@@ -64,45 +64,57 @@ export class SystemLogsService {
   }
 
   // selections for FE
-  async listUsersForSelect(): Promise<Array<{ value: string; label: string }>> {
+  async listUsersForSelect(): Promise<{
+    data: { value: string; label: string }[]
+  }> {
     const users = await this.userModel
       .find({}, { _id: 1, name: 1, username: 1 })
       .sort({ name: 1 })
       .lean()
-    return users.map((u) => ({
-      value: u._id.toString(),
-      label: u.name || u.username
-    }))
+    return {
+      data: users.map((u) => ({
+        value: u._id.toString(),
+        label: u.name || u.username
+      }))
+    }
   }
 
-  async listTypes(): Promise<Array<{ value: string; label: string }>> {
+  async listTypes(): Promise<{ data: { value: string; label: string }[] }> {
     const types = await this.systemLogModel.distinct("type")
-    return (types as string[])
-      .filter((t) => !!t && String(t).trim().length > 0)
-      .map((t) => ({ value: String(t), label: labelOf("type", String(t)) }))
+    return {
+      data: (types as string[])
+        .filter((t) => !!t && String(t).trim().length > 0)
+        .map((t) => ({ value: String(t), label: labelOf("type", String(t)) }))
+    }
   }
 
-  async listActions(): Promise<Array<{ value: string; label: string }>> {
+  async listActions(): Promise<{ data: { value: string; label: string }[] }> {
     const actions = await this.systemLogModel.distinct("action")
-    return (actions as string[])
-      .filter((a) => !!a && String(a).trim().length > 0)
-      .map((a) => ({ value: String(a), label: labelOf("action", String(a)) }))
+    return {
+      data: (actions as string[])
+        .filter((a) => !!a && String(a).trim().length > 0)
+        .map((a) => ({ value: String(a), label: labelOf("action", String(a)) }))
+    }
   }
 
-  async listEntities(): Promise<Array<{ value: string; label: string }>> {
+  async listEntities(): Promise<{ data: { value: string; label: string }[] }> {
     const entities = await this.systemLogModel.distinct("entity")
-    return (entities as string[])
-      .filter((e) => !!e && String(e).trim().length > 0)
-      .map((e) => ({ value: String(e), label: labelOf("entity", String(e)) }))
+    return {
+      data: (entities as string[])
+        .filter((e) => !!e && String(e).trim().length > 0)
+        .map((e) => ({ value: String(e), label: labelOf("entity", String(e)) }))
+    }
   }
 
   async listEntityIdsByEntity(
     entity: string
-  ): Promise<Array<{ value: string; label: string }>> {
+  ): Promise<{ data: { value: string; label: string }[] }> {
     const ids = await this.systemLogModel.distinct("entityId", { entity })
-    return (ids as string[])
-      .filter((id) => !!id && String(id).trim().length > 0)
-      .map((id) => ({ value: String(id), label: String(id) }))
+    return {
+      data: (ids as string[])
+        .filter((id) => !!id && String(id).trim().length > 0)
+        .map((id) => ({ value: String(id), label: String(id) }))
+    }
   }
 
   // Remove logs older than `retentionDays`

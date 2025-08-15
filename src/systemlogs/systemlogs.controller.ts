@@ -70,50 +70,46 @@ export class SystemLogsController {
   @Roles("admin", "system-emp")
   @Get("/options/users")
   async listUsers(): Promise<{
-    data: Array<{ value: string; label: string }>
+    data: { value: string; label: string }[]
   }> {
     const users = await this.systemLogsService.listUsersForSelect()
-    return { data: users }
+    return users
   }
 
   @Roles("admin", "system-emp")
   @Get("/options/types")
   async listTypes(): Promise<{
-    data: Array<{ value: string; label: string }>
+    data: { value: string; label: string }[]
   }> {
     const types = await this.systemLogsService.listTypes()
-    return { data: types }
+    return types
   }
 
   @Roles("admin", "system-emp")
   @Get("/options/actions")
   async listActions(): Promise<{
-    data: Array<{ value: string; label: string }>
+    data: { value: string; label: string }[]
   }> {
     const actions = await this.systemLogsService.listActions()
-    // remove token_refresh family
-    const filtered = actions.filter(
-      (a) => a.value !== "token_refreshed" && a.value !== "token_refresh_failed"
-    )
-    return { data: filtered }
+    return actions
   }
 
   @Roles("admin", "system-emp")
   @Get("/options/entities")
   async listEntities(): Promise<{
-    data: Array<{ value: string; label: string }>
+    data: { value: string; label: string }[]
   }> {
     const entities = await this.systemLogsService.listEntities()
-    return { data: entities }
+    return entities
   }
 
   @Roles("admin", "system-emp")
   @Get("/options/entity-ids")
   async listEntityIds(
     @Query("entity") entity: string
-  ): Promise<{ data: Array<{ value: string; label: string }> }> {
+  ): Promise<{ data: { value: string; label: string }[] }> {
     const ids = await this.systemLogsService.listEntityIdsByEntity(entity)
-    return { data: ids }
+    return ids
   }
 
   @Roles("admin")
