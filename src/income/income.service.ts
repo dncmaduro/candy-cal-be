@@ -80,6 +80,7 @@ export class IncomeService {
 
       for (const orderId in newIncomesMap) {
         const lines = newIncomesMap[orderId]
+        const shippingProvider = this.getShippingProviderName(lines[0] as any)
         if (existedOrderIds.has(orderId)) {
           // Đã tồn tại: update thêm products mới cho đúng logic
           const doc = await this.incomeModel.findOne({
@@ -114,8 +115,12 @@ export class IncomeService {
           // Thêm vào cuối mảng products và save lại doc
           if (newProducts.length > 0) {
             doc.products = [...doc.products, ...newProducts]
-            await doc.save()
           }
+          // Cập nhật đơn vị vận chuyển nếu có trong file
+          if (shippingProvider) {
+            doc.shippingProvider = shippingProvider
+          }
+          await doc.save()
         } else {
           // orderId mới: add mới bình thường
           const products = lines.map((line) => ({
@@ -131,6 +136,7 @@ export class IncomeService {
             orderId,
             customer: lines[0]["Buyer Username"],
             province: lines[0]["Province"],
+            shippingProvider,
             date: dto.date,
             products
           })
@@ -473,6 +479,7 @@ export class IncomeService {
             "Mã đơn hàng": idx === 0 ? income.orderId : "",
             "Khách hàng": idx === 0 ? income.customer : "",
             "Tỉnh thành": idx === 0 ? income.province : "",
+            "Đơn vị vận chuyển": idx === 0 ? income.shippingProvider || "" : "",
             "Mã SP": product.code,
             "Tên SP": product.name,
             Nguồn: sourcesMap[product.source],
@@ -492,7 +499,7 @@ export class IncomeService {
           })
         })
         if (income.products.length > 1) {
-          ;[0, 1, 2, 3].forEach((colIdx) => {
+          ;[0, 1, 2, 3, 4].forEach((colIdx) => {
             merges.push({
               s: { r: rowIndex, c: colIdx },
               e: { r: rowIndex + income.products.length - 1, c: colIdx }
@@ -540,6 +547,7 @@ export class IncomeService {
       other: number
     }
     liveIncome: number
+    shippingProviders: { provider: string; orders: number }[]
   }> {
     try {
       const start = new Date(date)
@@ -552,11 +560,16 @@ export class IncomeService {
         .lean()
 
       const boxMap: Record<string, number> = {}
+      const shipMap: Record<string, number> = {}
       let totalIncome = 0
       let liveIncome = 0
       const sourceTotals = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
 
       for (const income of incomes) {
+        // đếm số đơn theo đơn vị vận chuyển (mỗi income là một đơn)
+        const provider = income.shippingProvider || "(unknown)"
+        shipMap[provider] = (shipMap[provider] || 0) + 1
+
         for (const p of income.products || []) {
           const price = p.price || 0
           totalIncome += price
@@ -584,7 +597,17 @@ export class IncomeService {
         .map(([box, quantity]) => ({ box, quantity }))
         .sort((a, b) => a.box.localeCompare(b.box))
 
-      return { boxes, totalIncome, sources: sourceTotals, liveIncome }
+      const shippingProviders = Object.entries(shipMap)
+        .map(([provider, orders]) => ({ provider, orders }))
+        .sort((a, b) => b.orders - a.orders)
+
+      return {
+        boxes,
+        totalIncome,
+        sources: sourceTotals,
+        liveIncome,
+        shippingProviders
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -732,5 +755,28 @@ export class IncomeService {
 
   private sumProductsQuantity(products: any[]) {
     return products.reduce((sum, p) => sum + (p.quantity || 0), 0)
+  }
+
+  private getShippingProviderName(
+    row: Record<string, any>
+  ): string | undefined {
+    if (!row) return undefined
+    const directKeys = [
+      "Shipping Provider Name",
+      "Shipping Provider",
+      "Đơn vị vận chuyển",
+      "Tên đơn vị vận chuyển",
+      "Logistics Service Provider",
+      "Carrier"
+    ]
+
+    for (const k of directKeys) {
+      if (row[k]) return String(row[k])
+    }
+
+    const key = Object.keys(row).find((k) =>
+      k.toLowerCase().includes("shipping provider")
+    )
+    return key ? String(row[key]) : undefined
   }
 }
