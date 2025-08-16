@@ -4,6 +4,7 @@ export interface Income {
   orderId: string
   customer: string
   province: string
+  shippingProvider?: string
   date: Date
   products: {
     creator?: string
@@ -27,6 +28,7 @@ export const IncomeSchema = new Schema<Income>({
   orderId: { type: String, required: true },
   customer: { type: String, required: true },
   province: { type: String, required: true },
+  shippingProvider: { type: String, required: false },
   date: { type: Date, required: true },
   products: [
     {
