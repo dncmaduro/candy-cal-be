@@ -547,6 +547,7 @@ export class IncomeService {
       other: number
     }
     liveIncome: number
+    videoIncome: number
     shippingProviders: { provider: string; orders: number }[]
   }> {
     try {
@@ -563,6 +564,7 @@ export class IncomeService {
       const shipMap: Record<string, number> = {}
       let totalIncome = 0
       let liveIncome = 0
+      let videoIncome = 0
       const sourceTotals = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
 
       for (const income of incomes) {
@@ -579,12 +581,13 @@ export class IncomeService {
           else if (p.source === "affiliate-ads")
             sourceTotals.affiliateAds += price
           else sourceTotals.other += price
-          // livestream
-          if (
-            typeof p.content === "string" &&
-            /Phát trực tiếp|livestream/i.test(p.content)
-          ) {
-            liveIncome += price
+          // nội dung: live / video (ưu tiên nhận diện live, nếu không phải live mà là video thì tính video)
+          if (typeof p.content === "string") {
+            if (/Phát trực tiếp|livestream/i.test(p.content)) {
+              liveIncome += price
+            } else if (/video/i.test(p.content)) {
+              videoIncome += price
+            }
           }
           // hộp
           if (p.box) {
@@ -606,6 +609,7 @@ export class IncomeService {
         totalIncome,
         sources: sourceTotals,
         liveIncome,
+        videoIncome,
         shippingProviders
       }
     } catch (error) {
