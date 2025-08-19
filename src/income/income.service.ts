@@ -44,16 +44,23 @@ export class IncomeService {
       })
 
       // 2. Với từng income, filter lại products
+      // Build bulk ops để tránh await nhiều lần
+      const bulkOps: any[] = []
       for (const income of incomes) {
-        const oldLength = income.products.length
-        // Loại bỏ products cùng source
-        income.products = income.products.filter((p) => p.source !== dto.type)
-        if (income.products.length === 0) {
-          // Nếu sau filter rỗng thì xoá hẳn document
-          await this.incomeModel.deleteOne({ _id: income._id })
-        } else if (income.products.length < oldLength) {
-          await income.save()
+        const filtered = (income.products || []).filter((p) => p.source !== dto.type)
+        if (filtered.length === 0) {
+          bulkOps.push({ deleteOne: { filter: { _id: income._id } } })
+        } else if (filtered.length < (income.products || []).length) {
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: income._id },
+              update: { $set: { products: filtered } }
+            }
+          })
         }
+      }
+      if (bulkOps.length > 0) {
+        await this.incomeModel.bulkWrite(bulkOps, { ordered: false })
       }
 
       // 3. Build lại data mới từ file, giữ nguyên các logic đặc biệt của mày
@@ -78,49 +85,49 @@ export class IncomeService {
         {} as Record<string, XlsxIncomeData[]>
       )
 
+     const inserts: any[] = []
+     const updateOps: any[] = []
       for (const orderId in newIncomesMap) {
         const lines = newIncomesMap[orderId]
         const shippingProvider = this.getShippingProviderName(lines[0] as any)
         if (existedOrderIds.has(orderId)) {
           // Đã tồn tại: update thêm products mới cho đúng logic
-          const doc = await this.incomeModel.findOne({
-            orderId,
-            date: { $gte: start, $lte: end }
-          })
           // Build new products theo rule
           let newProducts: any[] = []
-          if (dto.type === "affiliate") {
-            newProducts = lines.map((line) => ({
-              code: line["Seller SKU"],
-              name: line["Product Name"],
-              source: "affiliate",
-              quantity: line["Quantity"],
-              quotation: line["SKU Unit Original Price"],
-              price: line["SKU Subtotal Before Discount"],
-              sourceChecked: false
-            }))
-          } else {
-            if (lines.length > 1) {
-              newProducts = lines.slice(1).map((line) => ({
-                code: line["Seller SKU"],
-                name: line["Product Name"],
-                source: dto.type,
-                quantity: line["Quantity"],
-                quotation: line["SKU Unit Original Price"],
-                price: line["SKU Subtotal Before Discount"],
-                sourceChecked: false
-              }))
-            }
+           if (dto.type === "affiliate") {
+             newProducts = lines.map((line) => ({
+               code: line["Seller SKU"],
+               name: line["Product Name"],
+               source: "affiliate",
+               quantity: line["Quantity"],
+               quotation: line["SKU Unit Original Price"],
+               price: line["SKU Subtotal Before Discount"],
+               sourceChecked: false
+             }))
+           } else {
+             if (lines.length > 1) {
+               newProducts = lines.slice(1).map((line) => ({
+                 code: line["Seller SKU"],
+                 name: line["Product Name"],
+                 source: dto.type,
+                 quantity: line["Quantity"],
+                 quotation: line["SKU Unit Original Price"],
+                 price: line["SKU Subtotal Before Discount"],
+                 sourceChecked: false
+               }))
+             }
+           }
+          const upd: any = {}
+          if (newProducts.length > 0) upd.$push = { products: { $each: newProducts } }
+          if (shippingProvider) upd.$set = { shippingProvider }
+          if (Object.keys(upd).length > 0) {
+            updateOps.push({
+              updateOne: {
+                filter: { orderId, date: { $gte: start, $lte: end } },
+                update: upd
+              }
+            })
           }
-          // Thêm vào cuối mảng products và save lại doc
-          if (newProducts.length > 0) {
-            doc.products = [...doc.products, ...newProducts]
-          }
-          // Cập nhật đơn vị vận chuyển nếu có trong file
-          if (shippingProvider) {
-            doc.shippingProvider = shippingProvider
-          }
-          await doc.save()
         } else {
           // orderId mới: add mới bình thường
           const products = lines.map((line) => ({
@@ -132,7 +139,7 @@ export class IncomeService {
             price: line["SKU Subtotal Before Discount"],
             sourceChecked: false
           }))
-          await this.incomeModel.create({
+          inserts.push({
             orderId,
             customer: lines[0]["Buyer Username"],
             province: lines[0]["Province"],
@@ -142,6 +149,8 @@ export class IncomeService {
           })
         }
       }
+     if (updateOps.length) await this.incomeModel.bulkWrite(updateOps, { ordered: false })
+     if (inserts.length) await this.incomeModel.insertMany(inserts, { ordered: false })
 
       // Sau khi insert/update xong thì cập nhật quy cách đóng hộp ngay
       await this.updateIncomesBox(new Date(dto.date))
