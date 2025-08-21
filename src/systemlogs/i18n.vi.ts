@@ -3,7 +3,7 @@
 
 export const viLabels = {
   type: {
-    auth: "Xác thực",
+    auth: "Xác thực tài khoản",
     users: "Người dùng",
     items: "Mặt hàng",
     products: "Sản phẩm",
@@ -15,6 +15,7 @@ export const viLabels = {
     "delivered-request": "Yêu cầu xuất kho",
     delivered: "Xuất kho",
     dailylogs: "Nhật ký ngày",
+    dailyads: "Quảng cáo ngày",
     income: "Doanh thu",
     packingrules: "Quy tắc đóng gói",
     system: "Hệ thống",

@@ -25,6 +25,7 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter"
 import { DailyTasksModule } from "./dailytasks/dailytasks.module"
 import { RequestAuditSchema } from "./database/mongoose/schemas/RequestAudit"
 import { RequestAuditInterceptor } from "./dailytasks/interceptors/request-audit.interceptor"
+import { DailyAdsModule } from "./dailyads/dailyads.module"
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { RequestAuditInterceptor } from "./dailytasks/interceptors/request-audit
     SystemLogsModule,
     AuthModule,
     DailyTasksModule,
+    DailyAdsModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])

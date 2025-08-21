@@ -229,6 +229,11 @@ export class IncomeController {
       other: number
     }
     liveIncome: number
+    dailyAds?: { liveAdsCost: number; videoAdsCost: number }
+    percentages?: {
+      liveAdsToLiveIncome: number
+      videoAdsToVideoIncome: number
+    }
   }> {
     const res = await this.incomeService.getDailyStats(new Date(date))
     return res
@@ -269,5 +274,34 @@ export class IncomeController {
       req.user.userId
     )
     return result
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("monthly-live-video-income")
+  @HttpCode(HttpStatus.OK)
+  async totalLiveAndVideoIncomeByMonth(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ): Promise<{ totalIncome: { live: number; video: number } }> {
+    const totalIncome = await this.incomeService.totalLiveAndVideoIncomeByMonth(
+      Number(month),
+      Number(year)
+    )
+    return { totalIncome }
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("monthly-ads-cost-split")
+  @HttpCode(HttpStatus.OK)
+  async adsCostSplitByMonth(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ): Promise<{
+    liveAdsCost: number
+    videoAdsCost: number
+    percentages: { liveAdsToLiveIncome: number; videoAdsToVideoIncome: number }
+    totalIncome: { live: number; video: number }
+  }> {
+    return this.incomeService.adsCostSplitByMonth(Number(month), Number(year))
   }
 }

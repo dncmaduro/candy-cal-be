@@ -6,12 +6,14 @@ import { IncomeService } from "./income.service"
 import { PackingRulesModule } from "../packingrules/packingrules.module"
 import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
+import { DailyAdsSchema } from "../database/mongoose/schemas/DailyAds"
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: "incomes", schema: IncomeSchema },
-      { name: "monthgoals", schema: MonthGoalSchema }
+      { name: "monthgoals", schema: MonthGoalSchema },
+      { name: "dailyads", schema: DailyAdsSchema }
     ]),
     PackingRulesModule,
     SystemLogsModule

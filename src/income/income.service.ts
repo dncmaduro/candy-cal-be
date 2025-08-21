@@ -12,6 +12,7 @@ import * as XLSX from "xlsx"
 import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
+import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 
 @Injectable()
 export class IncomeService {
@@ -20,7 +21,9 @@ export class IncomeService {
     private readonly incomeModel: Model<Income>,
     @InjectModel("monthgoals")
     private readonly monthGoalModel: Model<MonthGoal>,
-    private readonly packingRulesService: PackingRulesService
+    private readonly packingRulesService: PackingRulesService,
+    @InjectModel("dailyads")
+    private readonly dailyAdsModel: Model<DailyAds>
   ) {}
 
   async insertIncome(dto: InsertIncomeFileDto): Promise<void> {
@@ -47,7 +50,9 @@ export class IncomeService {
       // Build bulk ops để tránh await nhiều lần
       const bulkOps: any[] = []
       for (const income of incomes) {
-        const filtered = (income.products || []).filter((p) => p.source !== dto.type)
+        const filtered = (income.products || []).filter(
+          (p) => p.source !== dto.type
+        )
         if (filtered.length === 0) {
           bulkOps.push({ deleteOne: { filter: { _id: income._id } } })
         } else if (filtered.length < (income.products || []).length) {
@@ -85,8 +90,8 @@ export class IncomeService {
         {} as Record<string, XlsxIncomeData[]>
       )
 
-     const inserts: any[] = []
-     const updateOps: any[] = []
+      const inserts: any[] = []
+      const updateOps: any[] = []
       for (const orderId in newIncomesMap) {
         const lines = newIncomesMap[orderId]
         const shippingProvider = this.getShippingProviderName(lines[0] as any)
@@ -94,31 +99,32 @@ export class IncomeService {
           // Đã tồn tại: update thêm products mới cho đúng logic
           // Build new products theo rule
           let newProducts: any[] = []
-           if (dto.type === "affiliate") {
-             newProducts = lines.map((line) => ({
-               code: line["Seller SKU"],
-               name: line["Product Name"],
-               source: "affiliate",
-               quantity: line["Quantity"],
-               quotation: line["SKU Unit Original Price"],
-               price: line["SKU Subtotal Before Discount"],
-               sourceChecked: false
-             }))
-           } else {
-             if (lines.length > 1) {
-               newProducts = lines.slice(1).map((line) => ({
-                 code: line["Seller SKU"],
-                 name: line["Product Name"],
-                 source: dto.type,
-                 quantity: line["Quantity"],
-                 quotation: line["SKU Unit Original Price"],
-                 price: line["SKU Subtotal Before Discount"],
-                 sourceChecked: false
-               }))
-             }
-           }
+          if (dto.type === "affiliate") {
+            newProducts = lines.map((line) => ({
+              code: line["Seller SKU"],
+              name: line["Product Name"],
+              source: "affiliate",
+              quantity: line["Quantity"],
+              quotation: line["SKU Unit Original Price"],
+              price: line["SKU Subtotal Before Discount"],
+              sourceChecked: false
+            }))
+          } else {
+            if (lines.length > 1) {
+              newProducts = lines.slice(1).map((line) => ({
+                code: line["Seller SKU"],
+                name: line["Product Name"],
+                source: dto.type,
+                quantity: line["Quantity"],
+                quotation: line["SKU Unit Original Price"],
+                price: line["SKU Subtotal Before Discount"],
+                sourceChecked: false
+              }))
+            }
+          }
           const upd: any = {}
-          if (newProducts.length > 0) upd.$push = { products: { $each: newProducts } }
+          if (newProducts.length > 0)
+            upd.$push = { products: { $each: newProducts } }
           if (shippingProvider) upd.$set = { shippingProvider }
           if (Object.keys(upd).length > 0) {
             updateOps.push({
@@ -149,8 +155,10 @@ export class IncomeService {
           })
         }
       }
-     if (updateOps.length) await this.incomeModel.bulkWrite(updateOps, { ordered: false })
-     if (inserts.length) await this.incomeModel.insertMany(inserts, { ordered: false })
+      if (updateOps.length)
+        await this.incomeModel.bulkWrite(updateOps, { ordered: false })
+      if (inserts.length)
+        await this.incomeModel.insertMany(inserts, { ordered: false })
 
       // Sau khi insert/update xong thì cập nhật quy cách đóng hộp ngay
       await this.updateIncomesBox(new Date(dto.date))
@@ -558,6 +566,11 @@ export class IncomeService {
     liveIncome: number
     videoIncome: number
     shippingProviders: { provider: string; orders: number }[]
+    dailyAds?: { liveAdsCost: number; videoAdsCost: number }
+    percentages?: {
+      liveAdsToLiveIncome: number
+      videoAdsToVideoIncome: number
+    }
   }> {
     try {
       const start = new Date(date)
@@ -577,20 +590,18 @@ export class IncomeService {
       const sourceTotals = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
 
       for (const income of incomes) {
-        // đếm số đơn theo đơn vị vận chuyển (mỗi income là một đơn)
         const provider = income.shippingProvider || "(unknown)"
         shipMap[provider] = (shipMap[provider] || 0) + 1
 
         for (const p of income.products || []) {
           const price = p.price || 0
           totalIncome += price
-          // nguồn
           if (p.source === "ads") sourceTotals.ads += price
           else if (p.source === "affiliate") sourceTotals.affiliate += price
           else if (p.source === "affiliate-ads")
             sourceTotals.affiliateAds += price
           else sourceTotals.other += price
-          // nội dung: live / video (ưu tiên nhận diện live, nếu không phải live mà là video thì tính video)
+
           if (typeof p.content === "string") {
             if (/Phát trực tiếp|livestream/i.test(p.content)) {
               liveIncome += price
@@ -598,7 +609,7 @@ export class IncomeService {
               videoIncome += price
             }
           }
-          // hộp
+
           if (p.box) {
             boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
           }
@@ -613,13 +624,36 @@ export class IncomeService {
         .map(([provider, orders]) => ({ provider, orders }))
         .sort((a, b) => b.orders - a.orders)
 
+      // Fetch daily ads by exact date (same day)
+      const dailyAds = await this.dailyAdsModel
+        .findOne({
+          date: { $gte: start, $lte: end }
+        })
+        .lean()
+
+      const liveAdsCost = dailyAds?.liveAdsCost || 0
+      const videoAdsCost = dailyAds?.videoAdsCost || 0
+
+      const percentages = {
+        liveAdsToLiveIncome:
+          liveIncome === 0
+            ? 0
+            : Math.round((liveAdsCost / liveIncome) * 10000) / 100,
+        videoAdsToVideoIncome:
+          videoIncome === 0
+            ? 0
+            : Math.round((videoAdsCost / videoIncome) * 10000) / 100
+      }
+
       return {
         boxes,
         totalIncome,
         sources: sourceTotals,
         liveIncome,
         videoIncome,
-        shippingProviders
+        shippingProviders,
+        dailyAds: { liveAdsCost, videoAdsCost },
+        percentages
       }
     } catch (error) {
       console.error(error)
@@ -748,6 +782,99 @@ export class IncomeService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi reset sourceChecked",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async totalLiveAndVideoIncomeByMonth(
+    month: number,
+    year: number
+  ): Promise<{ live: number; video: number }> {
+    try {
+      const start = new Date(year, month, 1)
+      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
+      const incomes = await this.incomeModel
+        .find({ date: { $gte: start, $lte: end } })
+        .lean()
+
+      let live = 0
+      let video = 0
+      for (const income of incomes) {
+        for (const p of income.products || []) {
+          const price = p.price || 0
+          if (typeof p.content === "string") {
+            if (/Phát trực tiếp|livestream/i.test(p.content)) live += price
+            else if (/video/i.test(p.content)) video += price
+          }
+        }
+      }
+      return { live, video }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tính doanh thu live/video theo tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async adsCostSplitByMonth(
+    month: number,
+    year: number
+  ): Promise<{
+    liveAdsCost: number
+    videoAdsCost: number
+    percentages: {
+      liveAdsToLiveIncome: number
+      videoAdsToVideoIncome: number
+    }
+    totalIncome: { live: number; video: number }
+  }> {
+    try {
+      const start = new Date(year, month, 1)
+      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
+
+      // Sum daily ads cost in month
+      const rows = await this.dailyAdsModel
+        .aggregate([
+          { $match: { date: { $gte: start, $lte: end } } },
+          {
+            $group: {
+              _id: null,
+              liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
+              videoAdsCost: { $sum: { $ifNull: ["$videoAdsCost", 0] } }
+            }
+          }
+        ])
+        .exec()
+
+      const liveAdsCost = rows?.[0]?.liveAdsCost || 0
+      const videoAdsCost = rows?.[0]?.videoAdsCost || 0
+
+      // Get total live/video incomes in month
+      const { live, video } = await this.totalLiveAndVideoIncomeByMonth(
+        month,
+        year
+      )
+
+      const percentages = {
+        liveAdsToLiveIncome:
+          live === 0 ? 0 : Math.round((liveAdsCost / live) * 10000) / 100,
+        videoAdsToVideoIncome:
+          video === 0 ? 0 : Math.round((videoAdsCost / video) * 10000) / 100
+      }
+
+      return {
+        liveAdsCost,
+        videoAdsCost,
+        percentages,
+        totalIncome: { live, video }
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tính chi phí quảng cáo theo tháng",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
