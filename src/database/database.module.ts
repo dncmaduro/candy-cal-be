@@ -16,6 +16,7 @@ import { PackingRuleSchema } from "./mongoose/schemas/PackingRule"
 import { SessionLogSchema } from "./mongoose/schemas/SessionLog"
 import { DailyLogSchema } from "./mongoose/schemas/DailyLog"
 import { SystemLogSchema } from "./mongoose/schemas/SystemLog"
+import { DailyAdsSchema } from "./mongoose/schemas/DailyAds"
 
 @Module({
   imports: [
@@ -35,7 +36,8 @@ import { SystemLogSchema } from "./mongoose/schemas/SystemLog"
       { name: "packingrules", schema: PackingRuleSchema },
       { name: "sessionlogs", schema: SessionLogSchema },
       { name: "dailylogs", schema: DailyLogSchema },
-      { name: "systemlogs", schema: SystemLogSchema }
+      { name: "systemlogs", schema: SystemLogSchema },
+      { name: "dailyads", schema: DailyAdsSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules
