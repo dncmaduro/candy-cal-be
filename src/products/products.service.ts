@@ -186,11 +186,20 @@ export class ProductsService {
       const colSellerSKU = headerRow.indexOf("Seller SKU")
       const colQuantity = headerRow.indexOf("Quantity")
       const colOrderId = headerRow.indexOf("Order ID")
+      const colOrderStatus = headerRow.indexOf("Order Status")
       if (colSellerSKU === -1 || colQuantity === -1 || colOrderId === -1)
         throw new HttpException("File thiếu cột", HttpStatus.BAD_REQUEST)
 
       const data = dataRaw
         .slice(1)
+        // Bỏ các đơn có trạng thái "Đã hủy"
+        .filter((row) => {
+          if (colOrderStatus !== -1) {
+            const status = String(row[colOrderStatus] || "").trim()
+            if (status === "Đã hủy") return false
+          }
+          return true
+        })
         .map((row) => ({
           sellerSKU: row[colSellerSKU],
           quantity: Number(row[colQuantity]) || 0,
