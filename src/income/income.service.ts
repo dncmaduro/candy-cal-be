@@ -890,6 +890,8 @@ export class IncomeService {
       totalIncome: number
       liveIncome: number
       videoIncome: number
+      ownVideoIncome: number
+      otherVideoIncome: number
       sources: {
         ads: number
         affiliate: number
@@ -911,6 +913,8 @@ export class IncomeService {
       totalIncomePct: number
       liveIncomePct: number
       videoIncomePct: number
+      ownVideoIncomePct: number
+      otherVideoIncomePct: number
       sources: {
         adsPct: number
         affiliatePct: number
@@ -936,6 +940,7 @@ export class IncomeService {
           HttpStatus.BAD_REQUEST
         )
       const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+      const ownUsers = ["mycandyvn2023"]
 
       const buildStats = async (s: Date, e: Date) => {
         const incomes = await this.incomeModel
@@ -945,7 +950,8 @@ export class IncomeService {
         const shipMap: Record<string, number> = {}
         let totalIncome = 0
         let liveIncome = 0
-        let videoIncome = 0
+        let ownVideoIncome = 0
+        let otherVideoIncome = 0
         const sources = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
         for (const income of incomes) {
           const provider = income.shippingProvider || "(unknown)"
@@ -958,13 +964,19 @@ export class IncomeService {
             else if (p.source === "affiliate-ads") sources.affiliateAds += price
             else sources.other += price
             if (typeof p.content === "string") {
-              if (/Phát trực tiếp|livestream/i.test(p.content))
+              if (/Phát trực tiếp|livestream/i.test(p.content)) {
                 liveIncome += price
-              else if (/video/i.test(p.content)) videoIncome += price
+              } else if (/video/i.test(p.content)) {
+                const creator = p.creator
+                if (creator && ownUsers.includes(String(creator)))
+                  ownVideoIncome += price
+                else otherVideoIncome += price
+              }
             }
             if (p.box) boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
           }
         }
+        const videoIncome = ownVideoIncome + otherVideoIncome
         const boxes = Object.entries(boxMap)
           .map(([box, quantity]) => ({ box, quantity }))
           .sort((a, b) => a.box.localeCompare(b.box))
@@ -999,6 +1011,8 @@ export class IncomeService {
           totalIncome,
           liveIncome,
           videoIncome,
+          ownVideoIncome,
+          otherVideoIncome,
           sources,
           boxes,
           shippingProviders,
@@ -1007,9 +1021,8 @@ export class IncomeService {
       }
 
       const current = await buildStats(start, end)
-      if (!comparePrevious) {
+      if (!comparePrevious)
         return { period: { startDate: start, endDate: end, days }, current }
-      }
 
       const prevEnd = new Date(start.getTime() - 86400000)
       const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86400000)
@@ -1025,6 +1038,11 @@ export class IncomeService {
         totalIncomePct: pct(current.totalIncome, previous.totalIncome),
         liveIncomePct: pct(current.liveIncome, previous.liveIncome),
         videoIncomePct: pct(current.videoIncome, previous.videoIncome),
+        ownVideoIncomePct: pct(current.ownVideoIncome, previous.ownVideoIncome),
+        otherVideoIncomePct: pct(
+          current.otherVideoIncome,
+          previous.otherVideoIncome
+        ),
         sources: {
           adsPct: pct(current.sources.ads, previous.sources.ads),
           affiliatePct: pct(
