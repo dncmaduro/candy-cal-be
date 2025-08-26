@@ -304,4 +304,19 @@ export class IncomeController {
   }> {
     return this.incomeService.adsCostSplitByMonth(Number(month), Number(year))
   }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("range-stats")
+  @HttpCode(HttpStatus.OK)
+  async getRangeStats(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @Query("comparePrevious") comparePrevious?: string
+  ) {
+    return this.incomeService.getRangeStats(
+      new Date(startDate),
+      new Date(endDate),
+      comparePrevious !== "false"
+    )
+  }
 }

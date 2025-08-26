@@ -880,6 +880,201 @@ export class IncomeService {
     }
   }
 
+  async getRangeStats(
+    startDate: Date,
+    endDate: Date,
+    comparePrevious = true
+  ): Promise<{
+    period: { startDate: Date; endDate: Date; days: number }
+    current: {
+      totalIncome: number
+      liveIncome: number
+      videoIncome: number
+      sources: {
+        ads: number
+        affiliate: number
+        affiliateAds: number
+        other: number
+      }
+      boxes: { box: string; quantity: number }[]
+      shippingProviders: { provider: string; orders: number }[]
+      ads: {
+        liveAdsCost: number
+        videoAdsCost: number
+        percentages: {
+          liveAdsToLiveIncome: number
+          videoAdsToVideoIncome: number
+        }
+      }
+    }
+    changes?: {
+      totalIncomePct: number
+      liveIncomePct: number
+      videoIncomePct: number
+      sources: {
+        adsPct: number
+        affiliatePct: number
+        affiliateAdsPct: number
+        otherPct: number
+      }
+      ads: {
+        liveAdsCostPct: number
+        videoAdsCostPct: number
+        liveAdsToLiveIncomePctDiff: number
+        videoAdsToVideoIncomePctDiff: number
+      }
+    }
+  }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+      if (end < start)
+        throw new HttpException(
+          "Khoảng ngày không hợp lệ",
+          HttpStatus.BAD_REQUEST
+        )
+      const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+
+      const buildStats = async (s: Date, e: Date) => {
+        const incomes = await this.incomeModel
+          .find({ date: { $gte: s, $lte: e } })
+          .lean()
+        const boxMap: Record<string, number> = {}
+        const shipMap: Record<string, number> = {}
+        let totalIncome = 0
+        let liveIncome = 0
+        let videoIncome = 0
+        const sources = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
+        for (const income of incomes) {
+          const provider = income.shippingProvider || "(unknown)"
+          shipMap[provider] = (shipMap[provider] || 0) + 1
+          for (const p of income.products || []) {
+            const price = p.price || 0
+            totalIncome += price
+            if (p.source === "ads") sources.ads += price
+            else if (p.source === "affiliate") sources.affiliate += price
+            else if (p.source === "affiliate-ads") sources.affiliateAds += price
+            else sources.other += price
+            if (typeof p.content === "string") {
+              if (/Phát trực tiếp|livestream/i.test(p.content))
+                liveIncome += price
+              else if (/video/i.test(p.content)) videoIncome += price
+            }
+            if (p.box) boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
+          }
+        }
+        const boxes = Object.entries(boxMap)
+          .map(([box, quantity]) => ({ box, quantity }))
+          .sort((a, b) => a.box.localeCompare(b.box))
+        const shippingProviders = Object.entries(shipMap)
+          .map(([provider, orders]) => ({ provider, orders }))
+          .sort((a, b) => b.orders - a.orders)
+        const adsAgg = await this.dailyAdsModel
+          .aggregate([
+            { $match: { date: { $gte: s, $lte: e } } },
+            {
+              $group: {
+                _id: null,
+                liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
+                videoAdsCost: { $sum: { $ifNull: ["$videoAdsCost", 0] } }
+              }
+            }
+          ])
+          .exec()
+        const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
+        const videoAdsCost = adsAgg?.[0]?.videoAdsCost || 0
+        const percentages = {
+          liveAdsToLiveIncome:
+            liveIncome === 0
+              ? 0
+              : Math.round((liveAdsCost / liveIncome) * 10000) / 100,
+          videoAdsToVideoIncome:
+            videoIncome === 0
+              ? 0
+              : Math.round((videoAdsCost / videoIncome) * 10000) / 100
+        }
+        return {
+          totalIncome,
+          liveIncome,
+          videoIncome,
+          sources,
+          boxes,
+          shippingProviders,
+          ads: { liveAdsCost, videoAdsCost, percentages }
+        }
+      }
+
+      const current = await buildStats(start, end)
+      if (!comparePrevious) {
+        return { period: { startDate: start, endDate: end, days }, current }
+      }
+
+      const prevEnd = new Date(start.getTime() - 86400000)
+      const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86400000)
+      const previous = await buildStats(prevStart, prevEnd)
+      const pct = (cur: number, prev: number) =>
+        prev === 0
+          ? cur === 0
+            ? 0
+            : 100
+          : Math.round(((cur - prev) / prev) * 10000) / 100
+
+      const changes = {
+        totalIncomePct: pct(current.totalIncome, previous.totalIncome),
+        liveIncomePct: pct(current.liveIncome, previous.liveIncome),
+        videoIncomePct: pct(current.videoIncome, previous.videoIncome),
+        sources: {
+          adsPct: pct(current.sources.ads, previous.sources.ads),
+          affiliatePct: pct(
+            current.sources.affiliate,
+            previous.sources.affiliate
+          ),
+          affiliateAdsPct: pct(
+            current.sources.affiliateAds,
+            previous.sources.affiliateAds
+          ),
+          otherPct: pct(current.sources.other, previous.sources.other)
+        },
+        ads: {
+          liveAdsCostPct: pct(
+            current.ads.liveAdsCost,
+            previous.ads.liveAdsCost
+          ),
+          videoAdsCostPct: pct(
+            current.ads.videoAdsCost,
+            previous.ads.videoAdsCost
+          ),
+          liveAdsToLiveIncomePctDiff:
+            Math.round(
+              (current.ads.percentages.liveAdsToLiveIncome -
+                previous.ads.percentages.liveAdsToLiveIncome) *
+                100
+            ) / 100,
+          videoAdsToVideoIncomePctDiff:
+            Math.round(
+              (current.ads.percentages.videoAdsToVideoIncome -
+                previous.ads.percentages.videoAdsToVideoIncome) *
+                100
+            ) / 100
+        }
+      }
+
+      return {
+        period: { startDate: start, endDate: end, days },
+        current,
+        changes
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tính thống kê chuỗi ngày",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   private splitByChannel(products: Income["products"]) {
     const isLive = (p: any) =>
       typeof p.content === "string" &&
