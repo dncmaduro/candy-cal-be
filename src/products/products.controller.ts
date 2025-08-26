@@ -111,7 +111,7 @@ export class ProductsController {
     return this.productsService.getProduct(id)
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "order-emp", "system-emp", "accounting-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
