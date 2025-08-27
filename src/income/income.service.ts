@@ -13,6 +13,7 @@ import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
+import { format as formatDateFns } from "date-fns"
 
 @Injectable()
 export class IncomeService {
@@ -492,7 +493,8 @@ export class IncomeService {
       incomes.forEach((income) => {
         income.products.forEach((product, idx) => {
           rows.push({
-            "Ngày xuất đơn": idx === 0 ? income.date : "",
+            "Ngày xuất đơn":
+              idx === 0 ? this.formatDate(income.date as Date) : "",
             "Mã đơn hàng": idx === 0 ? income.orderId : "",
             "Khách hàng": idx === 0 ? income.customer : "",
             "Tỉnh thành": idx === 0 ? income.province : "",
@@ -501,18 +503,20 @@ export class IncomeService {
             "Tên SP": product.name,
             Nguồn: sourcesMap[product.source],
             "Số lượng": product.quantity,
-            "Báo giá": product.quotation,
-            "Giá bán": product.price,
+            "Báo giá": this.formatMoney(product.quotation),
+            "Giá bán": this.formatMoney(product.price),
             "Phần trăm Affiliate": product.affiliateAdsPercentage ?? "",
             "Phần trăm Affiliate tiêu chuẩn":
               product.standardAffPercentage ?? "",
             "Loại nội dung": product.content ?? "",
             "Quy cách đóng hộp": packingTypesMap[product.box ?? ""],
             "Nhà sáng tạo": product.creator ?? "",
-            "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính":
-              product.affiliateAdsAmount ?? "",
-            "Thanh toán hoa hồng tiêu chuẩn ước tính":
-              product.standardAffAmount ?? ""
+            "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính": this.formatMoney(
+              product.affiliateAdsAmount
+            ),
+            "Thanh toán hoa hồng tiêu chuẩn ước tính": this.formatMoney(
+              product.standardAffAmount
+            )
           })
         })
         if (income.products.length > 1) {
@@ -1131,5 +1135,21 @@ export class IncomeService {
       k.toLowerCase().includes("shipping provider")
     )
     return key ? String(row[key]) : undefined
+  }
+
+  private formatDate(d: Date): string {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return ""
+    try {
+      return formatDateFns(d, "dd/MM/yyyy")
+    } catch {
+      return ""
+    }
+  }
+
+  private formatMoney(v: any): string {
+    if (v === undefined || v === null || v === "") return ""
+    const num = Number(v)
+    if (isNaN(num)) return ""
+    return new Intl.NumberFormat("vi-VN").format(num)
   }
 }
