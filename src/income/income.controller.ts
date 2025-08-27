@@ -4,12 +4,14 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   Patch,
   Post,
   Query,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
   Req
@@ -19,7 +21,7 @@ import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
 import { IncomeService } from "./income.service"
 import { InsertIncomeRequest } from "./dto/income.dto"
-import { FileInterceptor } from "@nestjs/platform-express"
+import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express"
 import { Income } from "../database/mongoose/schemas/Income"
 import { Response } from "express"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
@@ -318,5 +320,42 @@ export class IncomeController {
       new Date(endDate),
       comparePrevious !== "false"
     )
+  }
+
+  @Roles("admin", "accounting-emp")
+  @Post("insert-and-update-source")
+  @UseInterceptors(FilesInterceptor("files"))
+  @HttpCode(HttpStatus.CREATED)
+  async insertAndUpdateAffiliateType(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body() body: { date: string },
+    @Req() req
+  ): Promise<{ success: true }> {
+    if (!files || files.length !== 2) {
+      throw new HttpException(
+        "Cần upload 2 file: file tổng doanh thu và file affiliate",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const [totalIncomeFile, affiliateFile] = files
+    await this.incomeService.insertAndUpdateAffiliateType({
+      totalIncomeFile,
+      affiliateFile,
+      date: new Date(body.date)
+    })
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "income",
+        action: "insert_and_update_affiliate_combined",
+        entity: "income",
+        result: "success",
+        meta: {
+          totalIncomeFileSize: totalIncomeFile?.size,
+          affiliateFileSize: affiliateFile?.size
+        }
+      },
+      req.user.userId
+    )
+    return { success: true }
   }
 }
