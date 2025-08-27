@@ -472,7 +472,7 @@ export class IncomeService {
       }
 
       // Build filter
-      const filter: any = {
+      const filter: Record<string, any> = {
         date: { $gte: start, $lte: end }
       }
       if (orderId) filter.orderId = String(orderId).trim()
@@ -1092,6 +1092,143 @@ export class IncomeService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi tính thống kê chuỗi ngày",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async insertAndUpdateAffiliateType(dto: {
+    totalIncomeFile: Express.Multer.File
+    affiliateFile: Express.Multer.File
+    date: Date
+  }): Promise<void> {
+    try {
+      // 1. Xử lý file tổng doanh thu: insert với source trống
+      const totalWorkbook = XLSX.read(dto.totalIncomeFile.buffer, {
+        type: "buffer"
+      })
+      const totalSheetName = totalWorkbook.SheetNames[0]
+      const totalSheet = totalWorkbook.Sheets[totalSheetName]
+      const totalReadData = XLSX.utils.sheet_to_json(
+        totalSheet
+      ) as XlsxIncomeData[]
+      const totalData = totalReadData
+        .slice(1)
+        .filter((line) => line["Cancelation/Return Type"] !== "Cancel")
+
+      const start = new Date(dto.date)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(dto.date)
+      end.setHours(23, 59, 59, 999)
+
+      // Xóa toàn bộ incomes trong ngày (vì là file tổng)
+      await this.incomeModel.deleteMany({
+        date: { $gte: start, $lte: end }
+      })
+
+      // Group data
+      const newIncomesMap = totalData.reduce(
+        (acc, line) => {
+          const orderId = line["Order ID"]
+          if (!acc[orderId]) acc[orderId] = []
+          acc[orderId].push(line)
+          return acc
+        },
+        {} as Record<string, XlsxIncomeData[]>
+      )
+
+      const inserts: any[] = []
+      for (const orderId in newIncomesMap) {
+        const lines = newIncomesMap[orderId]
+        const shippingProvider = this.getShippingProviderName(lines[0] as any)
+        const products = lines.map((line) => ({
+          code: line["Seller SKU"],
+          name: line["Product Name"],
+          source: "other",
+          quantity: line["Quantity"],
+          quotation: line["SKU Unit Original Price"],
+          price: line["SKU Subtotal Before Discount"],
+          sourceChecked: false
+        }))
+        inserts.push({
+          orderId,
+          customer: lines[0]["Buyer Username"],
+          province: lines[0]["Province"],
+          shippingProvider,
+          date: dto.date,
+          products
+        })
+      }
+      if (inserts.length)
+        await this.incomeModel.insertMany(inserts, { ordered: false })
+
+      // Cập nhật quy cách đóng hộp
+      await this.updateIncomesBox(new Date(dto.date))
+
+      // 2. Xử lý file affiliate: update source
+      const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
+        type: "buffer"
+      })
+      const affiliateSheetName = affiliateWorkbook.SheetNames[0]
+      const affiliateSheet = affiliateWorkbook.Sheets[affiliateSheetName]
+      const affiliateData = XLSX.utils.sheet_to_json(
+        affiliateSheet
+      ) as XlsxAffiliateData[]
+      const ownUsers = ["mycandyvn2023"]
+
+      affiliateData.forEach(async (line) => {
+        const existedOrder = await this.incomeModel
+          .findOne({
+            orderId: line["ID đơn hàng"]
+          })
+          .exec()
+        if (existedOrder) {
+          const foundProduct = existedOrder.products.find((p) => {
+            return (
+              p.code === line["Sku người bán"] &&
+              p.quantity === Number(line["Số lượng"]) &&
+              p.sourceChecked === false
+            )
+          })
+
+          if (foundProduct) {
+            foundProduct.sourceChecked = true
+            foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
+            foundProduct.source = ownUsers.includes(
+              line["Tên người dùng nhà sáng tạo"]
+            )
+              ? "ads"
+              : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
+                  !line["Tỷ lệ hoa hồng tiêu chuẩn"]
+                ? "affiliate-ads"
+                : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
+                    !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+                  ? "affiliate"
+                  : "other"
+            if (existedOrder.orderId === "580137965604931583") {
+              console.log(foundProduct.source, foundProduct)
+            }
+            foundProduct.content = line["Loại nội dung"]
+            foundProduct.affiliateAdsPercentage = Number(
+              line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+            )
+            foundProduct.affiliateAdsAmount = Number(
+              line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
+            )
+            foundProduct.standardAffPercentage = Number(
+              line["Tỷ lệ hoa hồng tiêu chuẩn"]
+            )
+            foundProduct.standardAffAmount = Number(
+              line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
+            )
+            await existedOrder.save()
+          }
+        }
+      })
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi xử lý file tổng doanh thu và affiliate",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
