@@ -157,9 +157,9 @@ export class IncomeController {
       new Date(startDate),
       new Date(endDate),
       res,
-      productSource,
+      orderId,
       productCode,
-      orderId
+      productSource
     )
     // best-effort log (no await)
     void this.systemLogsService.createSystemLog(
