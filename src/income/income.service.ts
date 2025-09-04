@@ -14,6 +14,7 @@ import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { format as formatDateFns } from "date-fns"
+import { OWN_USERS } from "../constants/own-users"
 
 @Injectable()
 export class IncomeService {
@@ -27,6 +28,7 @@ export class IncomeService {
     private readonly dailyAdsModel: Model<DailyAds>
   ) {}
 
+  /** @deprecated */
   async insertIncome(dto: InsertIncomeFileDto): Promise<void> {
     try {
       const workbook = XLSX.read(dto.file.buffer, { type: "buffer" })
@@ -200,7 +202,6 @@ export class IncomeService {
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
       const data = XLSX.utils.sheet_to_json(sheet) as XlsxAffiliateData[]
-      const ownUsers = ["mycandyvn2023"]
 
       data.forEach(async (line) => {
         const existedOrder = await this.incomeModel
@@ -220,7 +221,7 @@ export class IncomeService {
           if (foundProduct) {
             foundProduct.sourceChecked = true
             foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
-            foundProduct.source = ownUsers.includes(
+            foundProduct.source = OWN_USERS.includes(
               line["Tên người dùng nhà sáng tạo"]
             )
               ? "ads"
@@ -257,6 +258,7 @@ export class IncomeService {
     }
   }
 
+  /** @deprecated */
   async getIncomesByDateRange(
     startDate: Date,
     endDate: Date,
@@ -944,7 +946,6 @@ export class IncomeService {
           HttpStatus.BAD_REQUEST
         )
       const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
-      const ownUsers = ["mycandyvn2023"]
 
       const buildStats = async (s: Date, e: Date) => {
         const incomes = await this.incomeModel
@@ -972,7 +973,7 @@ export class IncomeService {
                 liveIncome += price
               } else if (/video/i.test(p.content)) {
                 const creator = p.creator
-                if (creator && ownUsers.includes(String(creator)))
+                if (creator && OWN_USERS.includes(String(creator)))
                   ownVideoIncome += price
                 else otherVideoIncome += price
               }
@@ -1174,7 +1175,6 @@ export class IncomeService {
       const affiliateData = XLSX.utils.sheet_to_json(
         affiliateSheet
       ) as XlsxAffiliateData[]
-      const ownUsers = ["mycandyvn2023"]
 
       affiliateData.forEach(async (line) => {
         const existedOrder = await this.incomeModel
@@ -1194,7 +1194,7 @@ export class IncomeService {
           if (foundProduct) {
             foundProduct.sourceChecked = true
             foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
-            foundProduct.source = ownUsers.includes(
+            foundProduct.source = OWN_USERS.includes(
               line["Tên người dùng nhà sáng tạo"]
             )
               ? "ads"

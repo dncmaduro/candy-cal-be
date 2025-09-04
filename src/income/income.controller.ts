@@ -34,6 +34,7 @@ export class IncomeController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
+  /** @deprecated */
   @Roles("admin", "accounting-emp")
   @Post("")
   @UseInterceptors(FileInterceptor("file"))
@@ -77,6 +78,7 @@ export class IncomeController {
     )
   }
 
+  /** @deprecated */
   @Roles("admin", "accounting-emp")
   @Post("update-affiliate")
   @UseInterceptors(FileInterceptor("file"))
@@ -322,7 +324,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "accounting-emp", "order-emp")
   @Post("insert-and-update-source")
   @UseInterceptors(FilesInterceptor("files"))
   @HttpCode(HttpStatus.CREATED)

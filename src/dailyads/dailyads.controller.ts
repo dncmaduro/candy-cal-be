@@ -14,7 +14,6 @@ import { Roles } from "../roles/roles.decorator"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { DailyAdsDto } from "./dto/dailyads.dto"
-import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("dailyads")
@@ -25,7 +24,7 @@ export class DailyAdsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp")
+  @Roles("admin", "accounting-emp", "order-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async upsertDailyAds(@Body() dto: DailyAdsDto, @Req() req): Promise<void> {
