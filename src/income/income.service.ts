@@ -898,6 +898,7 @@ export class IncomeService {
       videoIncome: number
       ownVideoIncome: number
       otherVideoIncome: number
+      otherIncome: number
       sources: {
         ads: number
         affiliate: number
@@ -982,6 +983,7 @@ export class IncomeService {
           }
         }
         const videoIncome = ownVideoIncome + otherVideoIncome
+        const otherIncome = totalIncome - videoIncome - liveIncome
         const boxes = Object.entries(boxMap)
           .map(([box, quantity]) => ({ box, quantity }))
           .sort((a, b) => a.box.localeCompare(b.box))
@@ -1018,6 +1020,7 @@ export class IncomeService {
           videoIncome,
           ownVideoIncome,
           otherVideoIncome,
+          otherIncome,
           sources,
           boxes,
           shippingProviders,
