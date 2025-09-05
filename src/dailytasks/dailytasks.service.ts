@@ -67,7 +67,9 @@ export class DailyTasksService {
     const endpointMap = new Map(endpoints.map((e) => [e.key, e]))
 
     for (const u of users) {
-      const defsForRole = activeDefs.filter((d) => d.roles.includes(u.role))
+      const defsForRole = activeDefs.filter((d) =>
+        d.roles.some((r) => u.roles && u.roles.includes(r))
+      )
       if (defsForRole.length === 0) continue
 
       let daily = await this.dailyUserTaskModel.findOne({ userId: u._id, date })
@@ -150,21 +152,27 @@ export class DailyTasksService {
     userId: string
   ): Promise<{ date: string; tasks: any[]; summary: any }> {
     const date = this.formatDate(new Date())
+    const objectId = new Types.ObjectId(userId)
+
     let daily = await this.dailyUserTaskModel
-      .findOne({ userId: new Types.ObjectId(userId), date })
+      .findOne({ userId: objectId, date })
       .lean()
+
     if (!daily) {
       await this.generateForDate(undefined)
       daily = await this.dailyUserTaskModel
-        .findOne({ userId: new Types.ObjectId(userId), date })
+        .findOne({ userId: objectId, date })
         .lean()
     }
-    if (!daily)
+
+    if (!daily) {
       return {
         date,
         tasks: [],
         summary: { total: 0, done: 0, auto: 0, pending: 0, expired: 0 }
       }
+    }
+
     return { date, tasks: daily.tasks, summary: daily.summary }
   }
 
