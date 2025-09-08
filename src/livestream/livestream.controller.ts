@@ -511,4 +511,17 @@ export class LivestreamController {
 
     return created
   }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("stats")
+  @HttpCode(HttpStatus.OK)
+  async getLivestreamStats(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string
+  ) {
+    return this.livestreamService.getLivestreamStats(
+      new Date(startDate),
+      new Date(endDate)
+    )
+  }
 }

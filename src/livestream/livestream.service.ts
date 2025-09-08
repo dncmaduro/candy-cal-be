@@ -871,6 +871,69 @@ export class LivestreamService {
     }
   }
 
+  // Get statistics for livestreams in a date range
+  async getLivestreamStats(
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    totalIncome: number
+    totalExpenses: number
+    totalOrders: number
+    incomeByHost: { hostId: string; income: number }[]
+  }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
+      }
+
+      const livestreams = await this.livestreamModel
+        .find({ date: { $gte: start, $lte: end } })
+        .exec()
+
+      let totalIncome = 0
+      let totalExpenses = 0
+      let totalOrders = 0
+      const byHost = new Map<string, number>()
+
+      for (const ls of livestreams) {
+        totalIncome += (ls.totalIncome ?? 0) as number
+        totalExpenses += (ls.ads ?? 0) as number
+        totalOrders += (ls.totalOrders ?? 0) as number
+
+        const snapshots = (ls.snapshots ?? []) as LivestreamSnapshotEmbedded[]
+        for (const s of snapshots) {
+          if (!s) continue
+          const income = s.income ?? 0
+          if (s.host) {
+            const hostId = (s.host as Types.ObjectId).toString()
+            byHost.set(hostId, (byHost.get(hostId) ?? 0) + income)
+          }
+        }
+      }
+
+      const incomeByHost = Array.from(byHost.entries()).map(
+        ([hostId, income]) => ({
+          hostId,
+          income
+        })
+      )
+
+      return { totalIncome, totalExpenses, totalOrders, incomeByHost }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   // Delete a livestream (hard delete)
   async deleteLivestream(id: string): Promise<void> {
     try {
