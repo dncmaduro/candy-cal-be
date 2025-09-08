@@ -17,6 +17,9 @@ import { SessionLogSchema } from "./mongoose/schemas/SessionLog"
 import { DailyLogSchema } from "./mongoose/schemas/DailyLog"
 import { SystemLogSchema } from "./mongoose/schemas/SystemLog"
 import { DailyAdsSchema } from "./mongoose/schemas/DailyAds"
+import { LivestreamPeriodSchema } from "./mongoose/schemas/LivestreamPeriod"
+import { LivestreamEmployeeSchema } from "./mongoose/schemas/LivestreamEmployee"
+import { LivestreamSchema } from "./mongoose/schemas/Livestream"
 
 @Module({
   imports: [
@@ -37,7 +40,10 @@ import { DailyAdsSchema } from "./mongoose/schemas/DailyAds"
       { name: "sessionlogs", schema: SessionLogSchema },
       { name: "dailylogs", schema: DailyLogSchema },
       { name: "systemlogs", schema: SystemLogSchema },
-      { name: "dailyads", schema: DailyAdsSchema }
+      { name: "dailyads", schema: DailyAdsSchema },
+      { name: "livestreamperiods", schema: LivestreamPeriodSchema },
+      { name: "livestreamemployees", schema: LivestreamEmployeeSchema },
+      { name: "livestreams", schema: LivestreamSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

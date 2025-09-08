@@ -65,7 +65,7 @@ export class UsersService {
       const payload = {
         username: existingUser.username,
         sub: existingUser._id,
-        role: existingUser.role
+        roles: existingUser.roles
       }
       const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
@@ -116,7 +116,7 @@ export class UsersService {
       const payload = {
         username: decoded.username,
         sub: decoded.sub,
-        role: decoded.role
+        roles: decoded.roles
       }
       const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
@@ -143,7 +143,7 @@ export class UsersService {
   async getMe(username: string): Promise<{
     username: string
     name: string
-    role: string
+    roles: string[]
     avatarUrl?: string
     _id: string
   }> {
@@ -161,7 +161,7 @@ export class UsersService {
       return {
         username: existingUser.username,
         name: existingUser.name,
-        role: existingUser.role,
+        roles: existingUser.roles,
         avatarUrl: existingUser.avatarUrl,
         _id: existingUser._id.toString()
       }

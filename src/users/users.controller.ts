@@ -44,12 +44,10 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Get("me")
   @HttpCode(HttpStatus.OK)
-  async getMe(
-    @Req() req
-  ): Promise<{
+  async getMe(@Req() req): Promise<{
     username: string
     name: string
-    role: string
+    roles: string[]
     avatarUrl?: string
     _id: string
   }> {
