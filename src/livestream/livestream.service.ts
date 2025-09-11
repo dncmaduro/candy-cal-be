@@ -7,6 +7,8 @@ import {
   Livestream,
   LivestreamSnapshotEmbedded
 } from "../database/mongoose/schemas/Livestream"
+import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
+import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 
 type LivestreamDoc = HydratedDocument<Livestream>
 
@@ -17,8 +19,12 @@ export class LivestreamService {
     private readonly livestreamEmployeeModel: Model<LivestreamEmployee>,
     @InjectModel("livestreamperiods")
     private readonly livestreamPeriodModel: Model<LivestreamPeriod>,
+    @InjectModel("livestreammonthgoals")
+    private readonly livestreamMonthGoalModel: Model<LivestreamMonthGoal>,
     @InjectModel("livestreams")
-    private readonly livestreamModel: Model<Livestream>
+    private readonly livestreamModel: Model<Livestream>,
+    @InjectModel("livestreamchannels")
+    private readonly livestreamChannelModel: Model<LivestreamChannel>
   ) {}
 
   // helper: convert time to minutes since midnight
@@ -934,10 +940,264 @@ export class LivestreamService {
     }
   }
 
+  // Create a monthly goal
+  async createLivestreamMonthGoal(payload: {
+    month: number
+    year: number
+    channel: string
+    goal: number
+  }): Promise<LivestreamMonthGoal> {
+    try {
+      const exists = await this.livestreamMonthGoalModel
+        .findOne({
+          month: payload.month,
+          year: payload.year,
+          channel: payload.channel
+        })
+        .exec()
+      if (exists) {
+        throw new HttpException(
+          "Monthly goal already exists for this channel",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      const created = new this.livestreamMonthGoalModel({
+        month: payload.month,
+        year: payload.year,
+        channel: payload.channel,
+        goal: payload.goal
+      })
+      return await created.save()
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Get monthly goals with pagination and optional channel filter
+  async getLivestreamMonthGoals(
+    page = 1,
+    limit = 10,
+    channel?: string
+  ): Promise<{ data: LivestreamMonthGoal[]; total: number }> {
+    try {
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+      const filter: any = {}
+      if (typeof channel === "string" && channel.trim() !== "")
+        filter.channel = channel
+
+      const [data, total] = await Promise.all([
+        this.livestreamMonthGoalModel
+          .find(filter)
+          .skip((safePage - 1) * safeLimit)
+          .limit(safeLimit)
+          .exec(),
+        this.livestreamMonthGoalModel.countDocuments(filter).exec()
+      ])
+      return { data, total }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Update monthly goal
+  async updateLivestreamMonthGoal(
+    id: string,
+    payload: { goal: number }
+  ): Promise<LivestreamMonthGoal> {
+    try {
+      if (typeof payload.goal === "undefined") {
+        throw new HttpException(
+          "Goal is required for update",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      const updateObj: any = { goal: payload.goal }
+
+      const updated = await this.livestreamMonthGoalModel
+        .findByIdAndUpdate(id, { $set: updateObj }, { new: true })
+        .exec()
+      if (!updated)
+        throw new HttpException("Monthly goal not found", HttpStatus.NOT_FOUND)
+      return updated
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Delete monthly goal
+  async deleteLivestreamMonthGoal(id: string): Promise<void> {
+    try {
+      await this.livestreamMonthGoalModel.findByIdAndDelete(id).exec()
+      return
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   // Delete a livestream (hard delete)
   async deleteLivestream(id: string): Promise<void> {
     try {
       await this.livestreamModel.findByIdAndDelete(id).exec()
+      return
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Get all monthly goals (KPIs) for a given month/year
+  async getLivestreamMonthKpis(
+    month: number,
+    year: number
+  ): Promise<LivestreamMonthGoal[]> {
+    try {
+      if (
+        typeof month !== "number" ||
+        typeof year !== "number" ||
+        isNaN(month) ||
+        isNaN(year)
+      ) {
+        throw new HttpException("Invalid month or year", HttpStatus.BAD_REQUEST)
+      }
+      const res = await this.livestreamMonthGoalModel
+        .find({ month, year })
+        .exec()
+      return res
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Channel APIs: create, search, get, update, delete
+  async createLivestreamChannel(payload: {
+    name: string
+    username: string
+    link: string
+  }): Promise<LivestreamChannel> {
+    try {
+      const exists = await this.livestreamChannelModel
+        .findOne({ username: payload.username })
+        .exec()
+      if (exists)
+        throw new HttpException(
+          "Channel already exists",
+          HttpStatus.BAD_REQUEST
+        )
+      const created = new this.livestreamChannelModel(payload)
+      return await created.save()
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async searchLivestreamChannels(
+    searchText?: string,
+    page = 1,
+    limit = 10
+  ): Promise<{ data: LivestreamChannel[]; total: number }> {
+    try {
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+      const filter: any = {}
+      if (typeof searchText === "string" && searchText.trim() !== "") {
+        const regex = new RegExp(searchText.trim(), "i")
+        filter.$or = [{ name: regex }, { username: regex }]
+      }
+      const [data, total] = await Promise.all([
+        this.livestreamChannelModel
+          .find(filter)
+          .skip((safePage - 1) * safeLimit)
+          .limit(safeLimit)
+          .exec(),
+        this.livestreamChannelModel.countDocuments(filter).exec()
+      ])
+      return { data, total }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getLivestreamChannelById(id: string): Promise<LivestreamChannel> {
+    try {
+      const doc = await this.livestreamChannelModel.findById(id).exec()
+      if (!doc)
+        throw new HttpException("Channel not found", HttpStatus.NOT_FOUND)
+      return doc
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async updateLivestreamChannel(
+    id: string,
+    payload: { name?: string; username?: string; link?: string }
+  ): Promise<LivestreamChannel> {
+    try {
+      const updateObj: any = {}
+      if (typeof payload.name !== "undefined") updateObj.name = payload.name
+      if (typeof payload.username !== "undefined")
+        updateObj.username = payload.username
+      if (typeof payload.link !== "undefined") updateObj.link = payload.link
+
+      const updated = await this.livestreamChannelModel
+        .findByIdAndUpdate(id, { $set: updateObj }, { new: true })
+        .exec()
+      if (!updated)
+        throw new HttpException("Channel not found", HttpStatus.NOT_FOUND)
+      return updated
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async deleteLivestreamChannel(id: string): Promise<void> {
+    try {
+      await this.livestreamChannelModel.findByIdAndDelete(id).exec()
       return
     } catch (error) {
       console.error(error)
