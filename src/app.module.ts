@@ -27,6 +27,7 @@ import { RequestAuditSchema } from "./database/mongoose/schemas/RequestAudit"
 import { RequestAuditInterceptor } from "./dailytasks/interceptors/request-audit.interceptor"
 import { DailyAdsModule } from "./dailyads/dailyads.module"
 import { LivestreamModule } from "./livestream/livestream.module"
+import { ShopeeProductsModule } from "./shopeeproducts/shopeeproducts.module"
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { LivestreamModule } from "./livestream/livestream.module"
     DailyTasksModule,
     DailyAdsModule,
     LivestreamModule,
+    ShopeeProductsModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
