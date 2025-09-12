@@ -20,6 +20,7 @@ import { DailyAdsSchema } from "./mongoose/schemas/DailyAds"
 import { LivestreamPeriodSchema } from "./mongoose/schemas/LivestreamPeriod"
 import { LivestreamEmployeeSchema } from "./mongoose/schemas/LivestreamEmployee"
 import { LivestreamSchema } from "./mongoose/schemas/Livestream"
+import { ShopeeProductSchema } from "./mongoose/schemas/ShopeeProduct"
 
 @Module({
   imports: [
@@ -43,7 +44,8 @@ import { LivestreamSchema } from "./mongoose/schemas/Livestream"
       { name: "dailyads", schema: DailyAdsSchema },
       { name: "livestreamperiods", schema: LivestreamPeriodSchema },
       { name: "livestreamemployees", schema: LivestreamEmployeeSchema },
-      { name: "livestreams", schema: LivestreamSchema }
+      { name: "livestreams", schema: LivestreamSchema },
+      { name: "shopeeproducts", schema: ShopeeProductSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules
