@@ -21,7 +21,9 @@ import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { Livestream } from "../database/mongoose/schemas/Livestream"
 import { LivestreamEmployee } from "../database/mongoose/schemas/LivestreamEmployee"
 import { LivestreamPeriod } from "../database/mongoose/schemas/LivestreamPeriod"
+import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
 import { Roles } from "../roles/roles.decorator"
+import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 
 @Controller("livestreams")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -522,6 +524,185 @@ export class LivestreamController {
     return this.livestreamService.getLivestreamStats(
       new Date(startDate),
       new Date(endDate)
+    )
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Post("goals")
+  @HttpCode(HttpStatus.CREATED)
+  async createMonthGoal(
+    @Body()
+    body: { month: number; year: number; channel: string; goal: number },
+    @Req() req
+  ): Promise<LivestreamMonthGoal> {
+    const created = await this.livestreamService.createLivestreamMonthGoal(body)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_month_goal",
+        action: "created",
+        entity: "livestream_month_goal",
+        entityId: created._id?.toString?.() ?? "unknown",
+        result: "success",
+        meta: {
+          month: created.month,
+          year: created.year,
+          channel: created.channel
+        }
+      },
+      req.user.userId
+    )
+    return created
+  }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("goals")
+  @HttpCode(HttpStatus.OK)
+  async getMonthGoals(
+    @Query("page") page = 1,
+    @Query("limit") limit = 10,
+    @Query("channel") channel?: string
+  ): Promise<{ data: LivestreamMonthGoal[]; total: number }> {
+    return this.livestreamService.getLivestreamMonthGoals(page, limit, channel)
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Put("goals/:id")
+  @HttpCode(HttpStatus.OK)
+  async updateMonthGoal(
+    @Param("id") id: string,
+    @Body()
+    body: { goal: number },
+    @Req() req
+  ): Promise<LivestreamMonthGoal> {
+    const updated = await this.livestreamService.updateLivestreamMonthGoal(
+      id,
+      body
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_month_goal",
+        action: "updated",
+        entity: "livestream_month_goal",
+        entityId: updated._id?.toString?.() ?? id,
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Delete("goals/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMonthGoal(@Param("id") id: string, @Req() req): Promise<void> {
+    await this.livestreamService.deleteLivestreamMonthGoal(id)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_month_goal",
+        action: "deleted",
+        entity: "livestream_month_goal",
+        entityId: id,
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("kpis")
+  @HttpCode(HttpStatus.OK)
+  async getMonthKpis(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ): Promise<LivestreamMonthGoal[]> {
+    const m = Number(month)
+    const y = Number(year)
+    return this.livestreamService.getLivestreamMonthKpis(m, y)
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Post("channels")
+  @HttpCode(HttpStatus.CREATED)
+  async createChannel(
+    @Body() body: { name: string; username: string; link: string },
+    @Req() req
+  ): Promise<LivestreamChannel> {
+    const created = await this.livestreamService.createLivestreamChannel(body)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_channel",
+        action: "created",
+        entity: "livestream_channel",
+        entityId: created._id?.toString?.() ?? "unknown",
+        result: "success",
+        meta: { username: created.username }
+      },
+      req.user.userId
+    )
+    return created
+  }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("channels")
+  @HttpCode(HttpStatus.OK)
+  async searchChannels(
+    @Query("searchText") searchText?: string,
+    @Query("page") page = 1,
+    @Query("limit") limit = 10
+  ): Promise<{ data: LivestreamChannel[]; total: number }> {
+    return this.livestreamService.searchLivestreamChannels(
+      searchText,
+      Number(page),
+      Number(limit)
+    )
+  }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("channels/:id")
+  @HttpCode(HttpStatus.OK)
+  async getChannel(@Param("id") id: string): Promise<LivestreamChannel> {
+    return this.livestreamService.getLivestreamChannelById(id)
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Put("channels/:id")
+  @HttpCode(HttpStatus.OK)
+  async updateChannel(
+    @Param("id") id: string,
+    @Body() body: { name?: string; username?: string; link?: string },
+    @Req() req
+  ): Promise<LivestreamChannel> {
+    const updated = await this.livestreamService.updateLivestreamChannel(
+      id,
+      body
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_channel",
+        action: "updated",
+        entity: "livestream_channel",
+        entityId: updated._id?.toString?.() ?? id,
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Delete("channels/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteChannel(@Param("id") id: string, @Req() req): Promise<void> {
+    await this.livestreamService.deleteLivestreamChannel(id)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_channel",
+        action: "deleted",
+        entity: "livestream_channel",
+        entityId: id,
+        result: "success"
+      },
+      req.user.userId
     )
   }
 }
