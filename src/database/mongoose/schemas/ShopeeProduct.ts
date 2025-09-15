@@ -16,7 +16,7 @@ const ShopeeItemSchema = new Schema<ShopeeItem>({
 })
 
 export const ShopeeProductSchema = new Schema<ShopeeProduct>({
-  name: { type: String, required: true },
+  name: { type: String, required: true, unique: true },
   items: { type: [ShopeeItemSchema], required: true }
 })
 
