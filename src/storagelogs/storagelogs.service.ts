@@ -78,7 +78,7 @@ export class StorageLogsService {
       const [data, total] = await Promise.all([
         this.storageLogsModel
           .find(query)
-          .sort({ date: -1 })
+          .sort({ date: -1, _id: -1 })
           .skip(skip)
           .limit(limit)
           .exec(),
