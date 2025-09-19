@@ -18,6 +18,9 @@ export class XlsxIncomeData {
   "Quantity": number
   "SKU Unit Original Price": number
   "SKU Subtotal Before Discount": number
+  "SKU Platform Discount": number
+  "SKU Seller Discount": number
+  "SKU Subtotal After Discount": number
   "Cancelation/Return Type": string
   "Shipping Provider Name"?: string
 }
