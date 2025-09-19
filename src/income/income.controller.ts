@@ -233,6 +233,8 @@ export class IncomeController {
       other: number
     }
     liveIncome: number
+    videoIncome: number
+    shippingProviders: { provider: string; orders: number }[]
     dailyAds?: { liveAdsCost: number; videoAdsCost: number }
     percentages?: {
       liveAdsToLiveIncome: number
@@ -316,7 +318,66 @@ export class IncomeController {
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
     @Query("comparePrevious") comparePrevious?: string
-  ) {
+  ): Promise<{
+    period: { startDate: Date; endDate: Date; days: number }
+    current: {
+      totalIncome: number
+      liveIncome: number
+      videoIncome: number
+      ownVideoIncome: number
+      otherVideoIncome: number
+      otherIncome: number
+      sources: {
+        ads: number
+        affiliate: number
+        affiliateAds: number
+        other: number
+      }
+      boxes: { box: string; quantity: number }[]
+      shippingProviders: { provider: string; orders: number }[]
+      ads: {
+        liveAdsCost: number
+        videoAdsCost: number
+        percentages: {
+          liveAdsToLiveIncome: number
+          videoAdsToVideoIncome: number
+        }
+      }
+      discounts: {
+        totalPlatformDiscount: number
+        totalSellerDiscount: number
+        totalDiscount: number
+        avgDiscountPerOrder: number
+        discountPercentage: number
+      }
+    }
+    changes?: {
+      totalIncomePct: number
+      liveIncomePct: number
+      videoIncomePct: number
+      ownVideoIncomePct: number
+      otherVideoIncomePct: number
+      sources: {
+        adsPct: number
+        affiliatePct: number
+        affiliateAdsPct: number
+        otherPct: number
+      }
+      ads: {
+        liveAdsCostPct: number
+        videoAdsCostPct: number
+        liveAdsToLiveIncomePctDiff: number
+        videoAdsToVideoIncomePctDiff: number
+      }
+      discounts: {
+        totalPlatformDiscountPct: number
+        totalSellerDiscountPct: number
+        totalDiscountPct: number
+        avgDiscountPerOrderPct: number
+        discountPercentageDiff: number
+      }
+    }
+  }> {
     return this.incomeService.getRangeStats(
       new Date(startDate),
       new Date(endDate),
@@ -359,5 +420,35 @@ export class IncomeController {
       req.user.userId
     )
     return { success: true }
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("detailed-product-stats")
+  @HttpCode(HttpStatus.OK)
+  async getDetailedProductStats(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @Query("page") page = 1,
+    @Query("limit") limit = 20
+  ): Promise<{
+    products: Array<{
+      code: string
+      name: string
+      totalQuantity: number
+      totalOriginalPrice: number
+      totalPlatformDiscount: number
+      totalSellerDiscount: number
+      totalPriceAfterDiscount: number
+      avgDiscountPercentage: number
+      orderCount: number
+    }>
+    total: number
+  }> {
+    return this.incomeService.getDetailedProductStats(
+      new Date(startDate),
+      new Date(endDate),
+      Number(page),
+      Number(limit)
+    )
   }
 }

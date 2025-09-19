@@ -10,6 +10,11 @@ import { Cron } from "@nestjs/schedule"
 @Injectable()
 export class ApiEndpointAutoDiscoverService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ApiEndpointAutoDiscoverService.name)
+  private readonly DISCOVERY_DELAY_MS = parseInt(
+    process.env.DISCOVERY_DELAY_MS || "2000"
+  )
+  private readonly DISCOVERY_ENABLED = process.env.DISCOVERY_ENABLED !== "false"
+
   constructor(
     private readonly modulesContainer: ModulesContainer,
     @InjectModel("ApiEndpoint")
@@ -17,15 +22,39 @@ export class ApiEndpointAutoDiscoverService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
-    await this.runDiscovery("bootstrap")
+    if (!this.DISCOVERY_ENABLED) {
+      this.logger.log(
+        "API endpoint discovery disabled via DISCOVERY_ENABLED=false"
+      )
+      return
+    }
+
+    // Chạy discovery trong background để không block app startup
+    setTimeout(async () => {
+      try {
+        await this.runDiscovery("bootstrap")
+      } catch (error) {
+        this.logger.error(`Background discovery failed: ${error.message}`)
+      }
+    }, this.DISCOVERY_DELAY_MS)
+  }
+
+  /**
+   * Run discovery immediately (for manual trigger)
+   */
+  async runDiscoveryNow(): Promise<void> {
+    await this.runDiscovery("manual")
   }
 
   @Cron("0 2 * * *") // chạy mỗi ngày lúc 02:00
   async scheduledDiscovery() {
+    if (!this.DISCOVERY_ENABLED) {
+      return
+    }
     await this.runDiscovery("cron")
   }
 
-  private async runDiscovery(source: "bootstrap" | "cron") {
+  private async runDiscovery(source: "bootstrap" | "cron" | "manual") {
     const discovered: Array<{ key: string; method: string; path: string }> = []
 
     for (const moduleRef of this.modulesContainer.values()) {
