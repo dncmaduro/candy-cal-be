@@ -3,6 +3,7 @@ import { Schema, Document, model } from "mongoose"
 export interface StorageItem extends Document {
   code: string
   name: string
+  quantityPerBox: number
   receivedQuantity: {
     quantity: number
     real: number
@@ -22,6 +23,7 @@ export const StorageItemSchema = new Schema<StorageItem>({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   note: { type: String, required: false },
+  quantityPerBox: { type: Number, required: true },
   receivedQuantity: {
     quantity: { type: Number, required: true, default: 0 },
     real: { type: Number, required: true, default: 0 }
