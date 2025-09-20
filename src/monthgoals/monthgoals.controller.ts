@@ -38,9 +38,13 @@ export class MonthGoalController {
       year: number
       liveStreamGoal: number
       shopGoal: number
+      liveAdsPercentageGoal: number
+      shopAdsPercentageGoal: number
       totalIncome: { live: number; shop: number }
       totalQuantity: { live: number; shop: number }
       KPIPercentage: { live: number; shop: number }
+      adsPercentage: { live: number; shop: number }
+      adsGoalComparison: { live: number; shop: number }
     }[]
     total: number
   }> {
