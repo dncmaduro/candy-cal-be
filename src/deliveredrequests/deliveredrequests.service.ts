@@ -98,15 +98,17 @@ export class DeliveredRequestsService {
       req.updatedAt = new Date()
       await req.save()
 
-      for (const item of req.items) {
-        await this.storageLogsService.createRequest({
-          item: { _id: item._id.toString(), quantity: item.quantity },
-          status: "delivered",
-          date: req.date,
-          note: req.note,
-          deliveredRequestId: requestId
-        })
-      }
+      // Create single storage log with all items instead of multiple logs
+      await this.storageLogsService.createRequest({
+        items: req.items.map((item) => ({
+          _id: item._id.toString(),
+          quantity: item.quantity
+        })),
+        status: "delivered",
+        date: req.date,
+        note: req.note,
+        deliveredRequestId: requestId
+      })
 
       return req
     } catch (error) {
