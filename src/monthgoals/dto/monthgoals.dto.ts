@@ -3,6 +3,8 @@ export class CreateMonthGoalDto {
   year: number
   liveStreamGoal: number
   shopGoal: number
+  liveAdsPercentageGoal: number
+  shopAdsPercentageGoal: number
 }
 
 export class UpdateMonthGoalDto {
@@ -10,4 +12,6 @@ export class UpdateMonthGoalDto {
   year: number
   liveStreamGoal: number
   shopGoal: number
+  liveAdsPercentageGoal: number
+  shopAdsPercentageGoal: number
 }

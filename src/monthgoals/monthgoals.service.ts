@@ -29,7 +29,9 @@ export class MonthGoalService {
         month: dto.month,
         year: dto.year,
         liveStreamGoal: dto.liveStreamGoal,
-        shopGoal: dto.shopGoal
+        shopGoal: dto.shopGoal,
+        liveAdsPercentageGoal: dto.liveAdsPercentageGoal,
+        shopAdsPercentageGoal: dto.shopAdsPercentageGoal
       })
       return await goal.save()
     } catch (error) {
@@ -52,9 +54,13 @@ export class MonthGoalService {
       year: number
       liveStreamGoal: number
       shopGoal: number
+      liveAdsPercentageGoal: number
+      shopAdsPercentageGoal: number
       totalIncome: { live: number; shop: number }
       totalQuantity: { live: number; shop: number }
       KPIPercentage: { live: number; shop: number }
+      adsPercentage: { live: number; shop: number }
+      adsGoalComparison: { live: number; shop: number }
     }[]
     total: number
   }> {
@@ -75,19 +81,46 @@ export class MonthGoalService {
 
     const results = await Promise.all(
       monthGoals.map(async (goal) => {
-        const [incomeSplit, quantitySplit, kpiSplit] = await Promise.all([
-          this.incomeService.totalIncomeByMonthSplit(goal.month, goal.year),
-          this.incomeService.totalQuantityByMonthSplit(goal.month, goal.year),
-          this.incomeService.KPIPercentageByMonthSplit(goal.month, goal.year)
-        ])
+        const [incomeSplit, quantitySplit, kpiSplit, adsSplit] =
+          await Promise.all([
+            this.incomeService.totalIncomeByMonthSplit(goal.month, goal.year),
+            this.incomeService.totalQuantityByMonthSplit(goal.month, goal.year),
+            this.incomeService.KPIPercentageByMonthSplit(goal.month, goal.year),
+            this.incomeService.adsCostSplitByMonth(goal.month, goal.year)
+          ])
+
+        const adsPercentage = {
+          live: adsSplit.percentages.liveAdsToLiveIncome,
+          shop: adsSplit.percentages.videoAdsToVideoIncome
+        }
+
+        const adsGoalComparison = {
+          live:
+            goal.liveAdsPercentageGoal === 0
+              ? 0
+              : Math.round(
+                  (adsPercentage.live / goal.liveAdsPercentageGoal) * 10000
+                ) / 100,
+          shop:
+            goal.shopAdsPercentageGoal === 0
+              ? 0
+              : Math.round(
+                  (adsPercentage.shop / goal.shopAdsPercentageGoal) * 10000
+                ) / 100
+        }
+
         return {
           month: goal.month,
           year: goal.year,
           liveStreamGoal: goal.liveStreamGoal,
           shopGoal: goal.shopGoal,
+          liveAdsPercentageGoal: goal.liveAdsPercentageGoal,
+          shopAdsPercentageGoal: goal.shopAdsPercentageGoal,
           totalIncome: incomeSplit,
           totalQuantity: quantitySplit,
-          KPIPercentage: kpiSplit
+          KPIPercentage: kpiSplit,
+          adsPercentage,
+          adsGoalComparison
         }
       })
     )
@@ -102,7 +135,14 @@ export class MonthGoalService {
   ): Promise<MonthGoal> {
     const updated = await this.monthGoalModel.findOneAndUpdate(
       { month, year },
-      { $set: { liveStreamGoal: dto.liveStreamGoal, shopGoal: dto.shopGoal } },
+      {
+        $set: {
+          liveStreamGoal: dto.liveStreamGoal,
+          shopGoal: dto.shopGoal,
+          liveAdsPercentageGoal: dto.liveAdsPercentageGoal,
+          shopAdsPercentageGoal: dto.shopAdsPercentageGoal
+        }
+      },
       { new: true }
     )
     if (!updated)
