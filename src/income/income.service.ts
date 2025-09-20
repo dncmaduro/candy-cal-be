@@ -1248,15 +1248,18 @@ export class IncomeService {
         }))
         inserts.push({
           orderId,
-          customer: lines[0]["Buyer Username"],
-          province: lines[0]["Province"],
+          customer: lines[0]["Buyer Username"] || "user",
+          province: lines[0]["Province"] || "",
           shippingProvider,
           date: dto.date,
           products
         })
       }
-      if (inserts.length)
-        await this.incomeModel.insertMany(inserts, { ordered: false })
+      if (inserts.length) {
+        await this.incomeModel.insertMany(inserts, {
+          ordered: false
+        })
+      }
 
       // Cập nhật quy cách đóng hộp
       await this.updateIncomesBox(new Date(dto.date))
@@ -1300,9 +1303,6 @@ export class IncomeService {
                     !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
                   ? "affiliate"
                   : "other"
-            if (existedOrder.orderId === "580137965604931583") {
-              console.log(foundProduct.source, foundProduct)
-            }
             foundProduct.content = line["Loại nội dung"]
             foundProduct.affiliateAdsPercentage = Number(
               line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
