@@ -33,7 +33,7 @@ export class StorageLogsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createStorageLog(
-    @Body() storageLog: StorageLogDto,
+    @Body() storageLog: StorageLogDto, // Expects { items: [...], status, date, note?, tag?, deliveredRequestId? }
     @Req() req
   ): Promise<StorageLog> {
     const created = await this.storageLogsService.createRequest(storageLog)
@@ -61,7 +61,7 @@ export class StorageLogsController {
     @Query("endDate") endDate?: string,
     @Query("status") status?: string,
     @Query("tag") tag?: string,
-    @Query("itemId") itemId?: string
+    @Query("itemId") itemId?: string // Works with both old and new format
   ): Promise<{ data: StorageLog[]; total: number }> {
     return this.storageLogsService.getStorageLogs(
       page,
@@ -77,7 +77,7 @@ export class StorageLogsController {
   @Roles("admin", "accounting-emp", "system-emp")
   @Get("month")
   @HttpCode(HttpStatus.OK)
-  async getStorageLogsByMonth(
+  async getDeliveredLogsByMonth(
     @Query("month") month: string,
     @Query("year") year: string,
     @Query("tag") tag?: string
@@ -101,7 +101,7 @@ export class StorageLogsController {
   @HttpCode(HttpStatus.OK)
   async updateStorageLog(
     @Param("id") id: string,
-    @Body() storageLog: StorageLogDto,
+    @Body() storageLog: StorageLogDto, // Will convert old format to new format automatically
     @Req() req
   ): Promise<StorageLog | null> {
     const updated = await this.storageLogsService.updateStorageLog(
