@@ -25,13 +25,15 @@ import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express"
 import { Income } from "../database/mongoose/schemas/Income"
 import { Response } from "express"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
+import { NotificationsService } from "../notifications/notifications.service"
 
 @Controller("incomes")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class IncomeController {
   constructor(
     private readonly incomeService: IncomeService,
-    private readonly systemLogsService: SystemLogsService
+    private readonly systemLogsService: SystemLogsService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   /** @deprecated */
@@ -388,12 +390,12 @@ export class IncomeController {
   @Roles("admin", "accounting-emp", "order-emp")
   @Post("insert-and-update-source")
   @UseInterceptors(FilesInterceptor("files"))
-  @HttpCode(HttpStatus.CREATED)
+  @HttpCode(HttpStatus.ACCEPTED) // Đổi thành 202 ACCEPTED
   async insertAndUpdateAffiliateType(
     @UploadedFiles() files: Express.Multer.File[],
     @Body() body: { date: string },
     @Req() req
-  ): Promise<{ success: true }> {
+  ): Promise<{ success: true; message: string }> {
     if (!files || files.length !== 2) {
       throw new HttpException(
         "Cần upload 2 file: file tổng doanh thu và file affiliate",
@@ -401,25 +403,81 @@ export class IncomeController {
       )
     }
     const [totalIncomeFile, affiliateFile] = files
-    await this.incomeService.insertAndUpdateAffiliateType({
-      totalIncomeFile,
-      affiliateFile,
-      date: new Date(body.date)
-    })
-    void this.systemLogsService.createSystemLog(
-      {
-        type: "income",
-        action: "insert_and_update_affiliate_combined",
-        entity: "income",
-        result: "success",
-        meta: {
-          totalIncomeFileSize: totalIncomeFile?.size,
-          affiliateFileSize: affiliateFile?.size
+    
+    // Chạy async trong background để tránh timeout
+    setImmediate(async () => {
+      try {
+        await this.incomeService.insertAndUpdateAffiliateType({
+          totalIncomeFile,
+          affiliateFile,
+          date: new Date(body.date)
+        })
+        
+        void this.systemLogsService.createSystemLog(
+          {
+            type: "income",
+            action: "insert_and_update_affiliate_combined",
+            entity: "income",
+            result: "success",
+            meta: {
+              totalIncomeFileSize: totalIncomeFile?.size,
+              affiliateFileSize: affiliateFile?.size
+            }
+          },
+          req.user.userId
+        )
+        // Send notification to requester
+        try {
+          await this.notificationsService.createNotificationForSingleUser(
+            {
+              title: "Xử lý file doanh thu hoàn thành",
+              content: `File đang xử lý cho ngày ${new Date(body.date).toLocaleDateString()} đã hoàn thành.`,
+              createdAt: new Date(),
+              type: "income_import"
+            },
+            req.user.userId
+          )
+        } catch (notifErr) {
+          console.error("Failed to send notification:", notifErr)
         }
-      },
-      req.user.userId
-    )
-    return { success: true }
+      } catch (error) {
+        console.error("Background processing error:", error)
+        void this.systemLogsService.createSystemLog(
+          {
+            type: "income",
+            action: "insert_and_update_affiliate_combined",
+            entity: "income",
+            result: "failed",
+            meta: {
+              error: error.message,
+              totalIncomeFileSize: totalIncomeFile?.size,
+              affiliateFileSize: affiliateFile?.size
+            }
+          },
+          req.user.userId
+        )
+        // Notify requester about failure
+        try {
+          await this.notificationsService.createNotificationForSingleUser(
+            {
+              title: "Xử lý file doanh thu thất bại",
+              content: `Quá trình xử lý file cho ngày ${new Date(body.date).toLocaleDateString()} đã thất bại. Vui lòng liên hệ admin.`,
+              createdAt: new Date(),
+              type: "income_import"
+            },
+            req.user.userId
+          )
+        } catch (notifErr) {
+          console.error("Failed to send failure notification:", notifErr)
+        }
+      }
+    })
+
+    // Trả response ngay lập tức
+    return { 
+      success: true, 
+      message: "Đang xử lý file trong background. Vui lòng chờ vài phút để hoàn thành." 
+    }
   }
 
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")

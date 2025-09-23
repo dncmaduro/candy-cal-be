@@ -7,6 +7,7 @@ import { PackingRulesModule } from "../packingrules/packingrules.module"
 import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 import { DailyAdsSchema } from "../database/mongoose/schemas/DailyAds"
+import { NotificationsModule } from "../notifications/notifications.module"
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { DailyAdsSchema } from "../database/mongoose/schemas/DailyAds"
       { name: "dailyads", schema: DailyAdsSchema }
     ]),
     PackingRulesModule,
-    SystemLogsModule
+    SystemLogsModule,
+    NotificationsModule
   ],
   controllers: [IncomeController],
   providers: [IncomeService],
