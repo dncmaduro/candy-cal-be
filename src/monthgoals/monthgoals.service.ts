@@ -56,9 +56,15 @@ export class MonthGoalService {
       shopGoal: number
       liveAdsPercentageGoal: number
       shopAdsPercentageGoal: number
-      totalIncome: { live: number; shop: number }
+      totalIncome: {
+        beforeDiscount: { live: number; shop: number }
+        afterDiscount: { live: number; shop: number }
+      }
       totalQuantity: { live: number; shop: number }
-      KPIPercentage: { live: number; shop: number }
+      KPIPercentage: {
+        beforeDiscount: { live: number; shop: number }
+        afterDiscount: { live: number; shop: number }
+      }
       adsPercentage: { live: number; shop: number }
       adsGoalComparison: { live: number; shop: number }
     }[]
@@ -81,13 +87,40 @@ export class MonthGoalService {
 
     const results = await Promise.all(
       monthGoals.map(async (goal) => {
-        const [incomeSplit, quantitySplit, kpiSplit, adsSplit] =
-          await Promise.all([
-            this.incomeService.totalIncomeByMonthSplit(goal.month, goal.year),
-            this.incomeService.totalQuantityByMonthSplit(goal.month, goal.year),
-            this.incomeService.KPIPercentageByMonthSplit(goal.month, goal.year),
-            this.incomeService.adsCostSplitByMonth(goal.month, goal.year)
-          ])
+        const [incomeSplit, quantitySplit, adsSplit] = await Promise.all([
+          this.incomeService.totalIncomeByMonthSplit(goal.month, goal.year),
+          this.incomeService.totalQuantityByMonthSplit(goal.month, goal.year),
+          this.incomeService.adsCostSplitByMonth(goal.month, goal.year)
+        ])
+
+        // Build KPIPercentage for before and after discount using goals
+        const buildKPI = (liveValue: number, shopValue: number) => ({
+          live:
+            goal.liveStreamGoal === 0
+              ? 0
+              : Math.min(
+                  Math.round((liveValue / goal.liveStreamGoal) * 10000) / 100,
+                  999
+                ),
+          shop:
+            goal.shopGoal === 0
+              ? 0
+              : Math.min(
+                  Math.round((shopValue / goal.shopGoal) * 10000) / 100,
+                  999
+                )
+        })
+
+        const kpiSplit = {
+          beforeDiscount: buildKPI(
+            incomeSplit.beforeDiscount.live,
+            incomeSplit.beforeDiscount.shop
+          ),
+          afterDiscount: buildKPI(
+            incomeSplit.afterDiscount.live,
+            incomeSplit.afterDiscount.shop
+          )
+        }
 
         const adsPercentage = {
           live: adsSplit.percentages.liveAdsToLiveIncome,

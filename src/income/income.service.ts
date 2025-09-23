@@ -212,7 +212,7 @@ export class IncomeService {
       const sheet = workbook.Sheets[sheetName]
       const data = XLSX.utils.sheet_to_json(sheet) as XlsxAffiliateData[]
 
-      for (const line of data) {
+      data.forEach(async (line) => {
         const existedOrder = await this.incomeModel
           .findOne({
             orderId: line["ID đơn hàng"]
@@ -257,7 +257,7 @@ export class IncomeService {
             await existedOrder.save()
           }
         }
-      }
+      })
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -361,7 +361,10 @@ export class IncomeService {
   async totalIncomeByMonthSplit(
     month: number,
     year: number
-  ): Promise<{ live: number; shop: number }> {
+  ): Promise<{
+    beforeDiscount: { live: number; shop: number }
+    afterDiscount: { live: number; shop: number }
+  }> {
     try {
       const start = new Date(year, month, 1)
       const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
@@ -369,16 +372,25 @@ export class IncomeService {
         .find({ date: { $gte: start, $lte: end } })
         .lean()
 
-      let live = 0
-      let shop = 0
+      let liveBeforeDiscount = 0
+      let shopBeforeDiscount = 0
+      let liveAfterDiscount = 0
+      let shopAfterDiscount = 0
+
       for (const income of incomes) {
         const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
           income.products || []
         )
-        live += this.sumProductsAmount(liveProducts)
-        shop += this.sumProductsAmount(shopProducts)
+        liveBeforeDiscount += this.sumProductsAmountBeforeDiscount(liveProducts)
+        shopBeforeDiscount += this.sumProductsAmountBeforeDiscount(shopProducts)
+        liveAfterDiscount += this.sumProductsAmount(liveProducts)
+        shopAfterDiscount += this.sumProductsAmount(shopProducts)
       }
-      return { live, shop }
+
+      return {
+        beforeDiscount: { live: liveBeforeDiscount, shop: shopBeforeDiscount },
+        afterDiscount: { live: liveAfterDiscount, shop: shopAfterDiscount }
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -431,7 +443,9 @@ export class IncomeService {
         )
       }
 
-      const { live, shop } = await this.totalIncomeByMonthSplit(month, year)
+      const totalIncome = await this.totalIncomeByMonthSplit(month, year)
+      const live = totalIncome.afterDiscount.live
+      const shop = totalIncome.afterDiscount.shop
       const livePct =
         goal.liveStreamGoal === 0
           ? 0
@@ -576,15 +590,28 @@ export class IncomeService {
 
   async getDailyStats(date: Date): Promise<{
     boxes: { box: string; quantity: number }[]
-    totalIncome: number
-    sources: {
-      ads: number
-      affiliate: number
-      affiliateAds: number
-      other: number
+    beforeDiscount: {
+      totalIncome: number
+      sources: {
+        ads: number
+        affiliate: number
+        affiliateAds: number
+        other: number
+      }
+      liveIncome: number
+      videoIncome: number
     }
-    liveIncome: number
-    videoIncome: number
+    afterDiscount: {
+      totalIncome: number
+      sources: {
+        ads: number
+        affiliate: number
+        affiliateAds: number
+        other: number
+      }
+      liveIncome: number
+      videoIncome: number
+    }
     shippingProviders: { provider: string; orders: number }[]
     dailyAds?: { liveAdsCost: number; videoAdsCost: number }
     percentages?: {
@@ -604,29 +631,64 @@ export class IncomeService {
 
       const boxMap: Record<string, number> = {}
       const shipMap: Record<string, number> = {}
-      let totalIncome = 0
-      let liveIncome = 0
-      let videoIncome = 0
-      const sourceTotals = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
+
+      // Before discount stats
+      let totalIncomeBeforeDiscount = 0
+      let liveIncomeBeforeDiscount = 0
+      let videoIncomeBeforeDiscount = 0
+      const sourceTotalsBeforeDiscount = {
+        ads: 0,
+        affiliate: 0,
+        affiliateAds: 0,
+        other: 0
+      }
+
+      // After discount stats
+      let totalIncomeAfterDiscount = 0
+      let liveIncomeAfterDiscount = 0
+      let videoIncomeAfterDiscount = 0
+      const sourceTotalsAfterDiscount = {
+        ads: 0,
+        affiliate: 0,
+        affiliateAds: 0,
+        other: 0
+      }
 
       for (const income of incomes) {
         const provider = income.shippingProvider || "(unknown)"
         shipMap[provider] = (shipMap[provider] || 0) + 1
 
         for (const p of income.products || []) {
-          const price = this.getActualPrice(p)
-          totalIncome += price
-          if (p.source === "ads") sourceTotals.ads += price
-          else if (p.source === "affiliate") sourceTotals.affiliate += price
+          const priceBeforeDiscount = p.price || 0
+          const priceAfterDiscount = this.getActualPrice(p)
+
+          // Calculate before discount
+          totalIncomeBeforeDiscount += priceBeforeDiscount
+          if (p.source === "ads")
+            sourceTotalsBeforeDiscount.ads += priceBeforeDiscount
+          else if (p.source === "affiliate")
+            sourceTotalsBeforeDiscount.affiliate += priceBeforeDiscount
           else if (p.source === "affiliate-ads")
-            sourceTotals.affiliateAds += price
-          else sourceTotals.other += price
+            sourceTotalsBeforeDiscount.affiliateAds += priceBeforeDiscount
+          else sourceTotalsBeforeDiscount.other += priceBeforeDiscount
+
+          // Calculate after discount
+          totalIncomeAfterDiscount += priceAfterDiscount
+          if (p.source === "ads")
+            sourceTotalsAfterDiscount.ads += priceAfterDiscount
+          else if (p.source === "affiliate")
+            sourceTotalsAfterDiscount.affiliate += priceAfterDiscount
+          else if (p.source === "affiliate-ads")
+            sourceTotalsAfterDiscount.affiliateAds += priceAfterDiscount
+          else sourceTotalsAfterDiscount.other += priceAfterDiscount
 
           if (typeof p.content === "string") {
             if (/Phát trực tiếp|livestream/i.test(p.content)) {
-              liveIncome += price
+              liveIncomeBeforeDiscount += priceBeforeDiscount
+              liveIncomeAfterDiscount += priceAfterDiscount
             } else if (/video/i.test(p.content)) {
-              videoIncome += price
+              videoIncomeBeforeDiscount += priceBeforeDiscount
+              videoIncomeAfterDiscount += priceAfterDiscount
             }
           }
 
@@ -656,21 +718,30 @@ export class IncomeService {
 
       const percentages = {
         liveAdsToLiveIncome:
-          liveIncome === 0
+          liveIncomeAfterDiscount === 0
             ? 0
-            : Math.round((liveAdsCost / liveIncome) * 10000) / 100,
+            : Math.round((liveAdsCost / liveIncomeAfterDiscount) * 10000) / 100,
         videoAdsToVideoIncome:
-          videoIncome === 0
+          videoIncomeAfterDiscount === 0
             ? 0
-            : Math.round((videoAdsCost / videoIncome) * 10000) / 100
+            : Math.round((videoAdsCost / videoIncomeAfterDiscount) * 10000) /
+              100
       }
 
       return {
         boxes,
-        totalIncome,
-        sources: sourceTotals,
-        liveIncome,
-        videoIncome,
+        beforeDiscount: {
+          totalIncome: totalIncomeBeforeDiscount,
+          sources: sourceTotalsBeforeDiscount,
+          liveIncome: liveIncomeBeforeDiscount,
+          videoIncome: videoIncomeBeforeDiscount
+        },
+        afterDiscount: {
+          totalIncome: totalIncomeAfterDiscount,
+          sources: sourceTotalsAfterDiscount,
+          liveIncome: liveIncomeAfterDiscount,
+          videoIncome: videoIncomeAfterDiscount
+        },
         shippingProviders,
         dailyAds: { liveAdsCost, videoAdsCost },
         percentages
@@ -688,8 +759,30 @@ export class IncomeService {
     startDate: Date,
     endDate: Date
   ): Promise<{
-    affiliate: { creator: string; totalIncome: number; percentage: number }[]
-    affiliateAds: { creator: string; totalIncome: number; percentage: number }[]
+    affiliate: {
+      beforeDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
+      afterDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
+    }
+    affiliateAds: {
+      beforeDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
+      afterDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
+    }
   }> {
     try {
       const start = new Date(startDate)
@@ -699,7 +792,8 @@ export class IncomeService {
 
       const rows: Array<{
         _id: { source: string; creator: string }
-        totalIncome: number
+        totalIncomeBeforeDiscount: number
+        totalIncomeAfterDiscount: number
       }> = await this.incomeModel.aggregate([
         { $match: { date: { $gte: start, $lte: end } } },
         { $unwind: "$products" },
@@ -712,7 +806,10 @@ export class IncomeService {
               source: "$products.source",
               creator: { $ifNull: ["$products.creator", "(unknown)"] }
             },
-            totalIncome: {
+            totalIncomeBeforeDiscount: {
+              $sum: { $ifNull: ["$products.price", 0] }
+            },
+            totalIncomeAfterDiscount: {
               $sum: {
                 $ifNull: [
                   {
@@ -726,24 +823,51 @@ export class IncomeService {
         }
       ])
 
-      const bySource: Record<
+      const bySourceBeforeDiscount: Record<
         string,
         { creator: string; totalIncome: number }[]
       > = {
         affiliate: [],
         "affiliate-ads": []
       }
+
+      const bySourceAfterDiscount: Record<
+        string,
+        { creator: string; totalIncome: number }[]
+      > = {
+        affiliate: [],
+        "affiliate-ads": []
+      }
+
       for (const r of rows) {
-        bySource[r._id.source].push({
+        bySourceBeforeDiscount[r._id.source].push({
           creator: r._id.creator,
-          totalIncome: r.totalIncome
+          totalIncome: r.totalIncomeBeforeDiscount
+        })
+        bySourceAfterDiscount[r._id.source].push({
+          creator: r._id.creator,
+          totalIncome: r.totalIncomeAfterDiscount
         })
       }
 
       // Tính tổng của từng source (toàn bộ creators của source đó)
-      const sourceTotals: Record<string, number> = {
-        affiliate: bySource["affiliate"].reduce((s, v) => s + v.totalIncome, 0),
-        "affiliate-ads": bySource["affiliate-ads"].reduce(
+      const sourceTotalsBeforeDiscount: Record<string, number> = {
+        affiliate: bySourceBeforeDiscount["affiliate"].reduce(
+          (s, v) => s + v.totalIncome,
+          0
+        ),
+        "affiliate-ads": bySourceBeforeDiscount["affiliate-ads"].reduce(
+          (s, v) => s + v.totalIncome,
+          0
+        )
+      }
+
+      const sourceTotalsAfterDiscount: Record<string, number> = {
+        affiliate: bySourceAfterDiscount["affiliate"].reduce(
+          (s, v) => s + v.totalIncome,
+          0
+        ),
+        "affiliate-ads": bySourceAfterDiscount["affiliate-ads"].reduce(
           (s, v) => s + v.totalIncome,
           0
         )
@@ -768,11 +892,26 @@ export class IncomeService {
       }
 
       return {
-        affiliate: buildTop(bySource["affiliate"], sourceTotals["affiliate"]),
-        affiliateAds: buildTop(
-          bySource["affiliate-ads"],
-          sourceTotals["affiliate-ads"]
-        )
+        affiliate: {
+          beforeDiscount: buildTop(
+            bySourceBeforeDiscount["affiliate"],
+            sourceTotalsBeforeDiscount["affiliate"]
+          ),
+          afterDiscount: buildTop(
+            bySourceAfterDiscount["affiliate"],
+            sourceTotalsAfterDiscount["affiliate"]
+          )
+        },
+        affiliateAds: {
+          beforeDiscount: buildTop(
+            bySourceBeforeDiscount["affiliate-ads"],
+            sourceTotalsBeforeDiscount["affiliate-ads"]
+          ),
+          afterDiscount: buildTop(
+            bySourceAfterDiscount["affiliate-ads"],
+            sourceTotalsAfterDiscount["affiliate-ads"]
+          )
+        }
       }
     } catch (error) {
       console.error(error)
@@ -819,7 +958,10 @@ export class IncomeService {
   async totalLiveAndVideoIncomeByMonth(
     month: number,
     year: number
-  ): Promise<{ live: number; video: number }> {
+  ): Promise<{
+    beforeDiscount: { live: number; video: number }
+    afterDiscount: { live: number; video: number }
+  }> {
     try {
       const start = new Date(year, month, 1)
       const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
@@ -827,18 +969,35 @@ export class IncomeService {
         .find({ date: { $gte: start, $lte: end } })
         .lean()
 
-      let live = 0
-      let video = 0
+      let liveBeforeDiscount = 0
+      let videoBeforeDiscount = 0
+      let liveAfterDiscount = 0
+      let videoAfterDiscount = 0
+
       for (const income of incomes) {
         for (const p of income.products || []) {
-          const price = this.getActualPrice(p)
+          const priceBeforeDiscount = p.price || 0
+          const priceAfterDiscount = this.getActualPrice(p)
+
           if (typeof p.content === "string") {
-            if (/Phát trực tiếp|livestream/i.test(p.content)) live += price
-            else if (/video/i.test(p.content)) video += price
+            if (/Phát trực tiếp|livestream/i.test(p.content)) {
+              liveBeforeDiscount += priceBeforeDiscount
+              liveAfterDiscount += priceAfterDiscount
+            } else if (/video/i.test(p.content)) {
+              videoBeforeDiscount += priceBeforeDiscount
+              videoAfterDiscount += priceAfterDiscount
+            }
           }
         }
       }
-      return { live, video }
+
+      return {
+        beforeDiscount: {
+          live: liveBeforeDiscount,
+          video: videoBeforeDiscount
+        },
+        afterDiscount: { live: liveAfterDiscount, video: videoAfterDiscount }
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -882,10 +1041,12 @@ export class IncomeService {
       const videoAdsCost = rows?.[0]?.videoAdsCost || 0
 
       // Get total live/video incomes in month
-      const { live, video } = await this.totalLiveAndVideoIncomeByMonth(
+      const totalLiveVideo = await this.totalLiveAndVideoIncomeByMonth(
         month,
         year
       )
+      const live = totalLiveVideo.afterDiscount.live
+      const video = totalLiveVideo.afterDiscount.video
 
       const percentages = {
         liveAdsToLiveIncome:
@@ -916,17 +1077,33 @@ export class IncomeService {
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
-      totalIncome: number
-      liveIncome: number
-      videoIncome: number
-      ownVideoIncome: number
-      otherVideoIncome: number
-      otherIncome: number
-      sources: {
-        ads: number
-        affiliate: number
-        affiliateAds: number
-        other: number
+      beforeDiscount: {
+        totalIncome: number
+        liveIncome: number
+        videoIncome: number
+        ownVideoIncome: number
+        otherVideoIncome: number
+        otherIncome: number
+        sources: {
+          ads: number
+          affiliate: number
+          affiliateAds: number
+          other: number
+        }
+      }
+      afterDiscount: {
+        totalIncome: number
+        liveIncome: number
+        videoIncome: number
+        ownVideoIncome: number
+        otherVideoIncome: number
+        otherIncome: number
+        sources: {
+          ads: number
+          affiliate: number
+          affiliateAds: number
+          other: number
+        }
       }
       boxes: { box: string; quantity: number }[]
       shippingProviders: { provider: string; orders: number }[]
@@ -947,16 +1124,31 @@ export class IncomeService {
       }
     }
     changes?: {
-      totalIncomePct: number
-      liveIncomePct: number
-      videoIncomePct: number
-      ownVideoIncomePct: number
-      otherVideoIncomePct: number
-      sources: {
-        adsPct: number
-        affiliatePct: number
-        affiliateAdsPct: number
-        otherPct: number
+      beforeDiscount: {
+        totalIncomePct: number
+        liveIncomePct: number
+        videoIncomePct: number
+        ownVideoIncomePct: number
+        otherVideoIncomePct: number
+        sources: {
+          adsPct: number
+          affiliatePct: number
+          affiliateAdsPct: number
+          otherPct: number
+        }
+      }
+      afterDiscount: {
+        totalIncomePct: number
+        liveIncomePct: number
+        videoIncomePct: number
+        ownVideoIncomePct: number
+        otherVideoIncomePct: number
+        sources: {
+          adsPct: number
+          affiliatePct: number
+          affiliateAdsPct: number
+          otherPct: number
+        }
       }
       ads: {
         liveAdsCostPct: number
@@ -991,11 +1183,32 @@ export class IncomeService {
           .lean()
         const boxMap: Record<string, number> = {}
         const shipMap: Record<string, number> = {}
-        let totalIncome = 0
-        let liveIncome = 0
-        let ownVideoIncome = 0
-        let otherVideoIncome = 0
-        const sources = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
+
+        // Before discount stats
+        let totalIncomeBeforeDiscount = 0
+        let liveIncomeBeforeDiscount = 0
+        let ownVideoIncomeBeforeDiscount = 0
+        let otherVideoIncomeBeforeDiscount = 0
+        const sourcesBeforeDiscount = {
+          ads: 0,
+          affiliate: 0,
+          affiliateAds: 0,
+          other: 0
+        }
+
+        // After discount stats
+        let totalIncomeAfterDiscount = 0
+        let liveIncomeAfterDiscount = 0
+        let ownVideoIncomeAfterDiscount = 0
+        let otherVideoIncomeAfterDiscount = 0
+        const sourcesAfterDiscount = {
+          ads: 0,
+          affiliate: 0,
+          affiliateAds: 0,
+          other: 0
+        }
+
+        // Discount stats
         let totalPlatformDiscount = 0
         let totalSellerDiscount = 0
         let totalOriginalPrice = 0
@@ -1007,32 +1220,75 @@ export class IncomeService {
         for (const income of incomes) {
           const provider = income.shippingProvider || "(unknown)"
           shipMap[provider] = (shipMap[provider] || 0) + 1
-          for (const p of income.products || []) {
-            const price = this.getActualPrice(p)
-            totalIncome += price
-            totalPlatformDiscount += p.platformDiscount || 0
-            totalSellerDiscount += p.sellerDiscount || 0
-            totalOriginalPrice += p.price || 0
 
-            if (p.source === "ads") sources.ads += price
-            else if (p.source === "affiliate") sources.affiliate += price
-            else if (p.source === "affiliate-ads") sources.affiliateAds += price
-            else sources.other += price
+          for (const p of income.products || []) {
+            const priceBeforeDiscount = p.price || 0
+            const platformDiscount = p.platformDiscount || 0
+            const sellerDiscount = p.sellerDiscount || 0
+            // CHỈ TRỪ DISCOUNT CỦA SELLER, KHÔNG TRỪ DISCOUNT CỦA PLATFORM
+            const priceAfterSellerDiscount =
+              priceBeforeDiscount - sellerDiscount
+
+            // Calculate before discount
+            totalIncomeBeforeDiscount += priceBeforeDiscount
+            totalPlatformDiscount += platformDiscount
+            totalSellerDiscount += sellerDiscount
+            totalOriginalPrice += priceBeforeDiscount
+
+            if (p.source === "ads")
+              sourcesBeforeDiscount.ads += priceBeforeDiscount
+            else if (p.source === "affiliate")
+              sourcesBeforeDiscount.affiliate += priceBeforeDiscount
+            else if (p.source === "affiliate-ads")
+              sourcesBeforeDiscount.affiliateAds += priceBeforeDiscount
+            else sourcesBeforeDiscount.other += priceBeforeDiscount
+
+            // Calculate after discount (CHỈ TRỪ SELLER DISCOUNT)
+            totalIncomeAfterDiscount += priceAfterSellerDiscount
+
+            if (p.source === "ads")
+              sourcesAfterDiscount.ads += priceAfterSellerDiscount
+            else if (p.source === "affiliate")
+              sourcesAfterDiscount.affiliate += priceAfterSellerDiscount
+            else if (p.source === "affiliate-ads")
+              sourcesAfterDiscount.affiliateAds += priceAfterSellerDiscount
+            else sourcesAfterDiscount.other += priceAfterSellerDiscount
+
+            // Calculate live/video by content (both before and after discount)
             if (typeof p.content === "string") {
               if (/Phát trực tiếp|livestream/i.test(p.content)) {
-                liveIncome += price
+                liveIncomeBeforeDiscount += priceBeforeDiscount
+                liveIncomeAfterDiscount += priceAfterSellerDiscount
               } else if (/video/i.test(p.content)) {
                 const creator = p.creator
-                if (creator && OWN_USERS.includes(String(creator)))
-                  ownVideoIncome += price
-                else otherVideoIncome += price
+                if (creator && OWN_USERS.includes(String(creator))) {
+                  ownVideoIncomeBeforeDiscount += priceBeforeDiscount
+                  ownVideoIncomeAfterDiscount += priceAfterSellerDiscount
+                } else {
+                  otherVideoIncomeBeforeDiscount += priceBeforeDiscount
+                  otherVideoIncomeAfterDiscount += priceAfterSellerDiscount
+                }
               }
             }
+
             if (p.box) boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
           }
         }
-        const videoIncome = ownVideoIncome + otherVideoIncome
-        const otherIncome = totalIncome - videoIncome - liveIncome
+
+        const videoIncomeBeforeDiscount =
+          ownVideoIncomeBeforeDiscount + otherVideoIncomeBeforeDiscount
+        const otherIncomeBeforeDiscount =
+          totalIncomeBeforeDiscount -
+          videoIncomeBeforeDiscount -
+          liveIncomeBeforeDiscount
+
+        const videoIncomeAfterDiscount =
+          ownVideoIncomeAfterDiscount + otherVideoIncomeAfterDiscount
+        const otherIncomeAfterDiscount =
+          totalIncomeAfterDiscount -
+          videoIncomeAfterDiscount -
+          liveIncomeAfterDiscount
+
         const boxes = Object.entries(boxMap)
           .map(([box, quantity]) => ({ box, quantity }))
           .sort((a, b) => a.box.localeCompare(b.box))
@@ -1055,31 +1311,44 @@ export class IncomeService {
         const videoAdsCost = adsAgg?.[0]?.videoAdsCost || 0
         const percentages = {
           liveAdsToLiveIncome:
-            liveIncome === 0
+            liveIncomeAfterDiscount === 0
               ? 0
-              : Math.round((liveAdsCost / liveIncome) * 10000) / 100,
+              : Math.round((liveAdsCost / liveIncomeAfterDiscount) * 10000) /
+                100,
           videoAdsToVideoIncome:
-            videoIncome === 0
+            videoIncomeAfterDiscount === 0
               ? 0
-              : Math.round((videoAdsCost / videoIncome) * 10000) / 100
+              : Math.round((videoAdsCost / videoIncomeAfterDiscount) * 10000) /
+                100
         }
 
         const totalDiscount = totalPlatformDiscount + totalSellerDiscount
         const avgDiscountPerOrder =
-          orderCount > 0 ? totalDiscount / orderCount : 0
+          orderCount > 0 ? totalSellerDiscount / orderCount : 0
         const discountPercentage =
           totalOriginalPrice > 0
-            ? (totalDiscount / totalOriginalPrice) * 100
+            ? (totalSellerDiscount / totalOriginalPrice) * 100
             : 0
 
         return {
-          totalIncome,
-          liveIncome,
-          videoIncome,
-          ownVideoIncome,
-          otherVideoIncome,
-          otherIncome,
-          sources,
+          beforeDiscount: {
+            totalIncome: totalIncomeBeforeDiscount,
+            liveIncome: liveIncomeBeforeDiscount,
+            videoIncome: videoIncomeBeforeDiscount,
+            ownVideoIncome: ownVideoIncomeBeforeDiscount,
+            otherVideoIncome: otherVideoIncomeBeforeDiscount,
+            otherIncome: otherIncomeBeforeDiscount,
+            sources: sourcesBeforeDiscount
+          },
+          afterDiscount: {
+            totalIncome: totalIncomeAfterDiscount,
+            liveIncome: liveIncomeAfterDiscount,
+            videoIncome: videoIncomeAfterDiscount,
+            ownVideoIncome: ownVideoIncomeAfterDiscount,
+            otherVideoIncome: otherVideoIncomeAfterDiscount,
+            otherIncome: otherIncomeAfterDiscount,
+            sources: sourcesAfterDiscount
+          },
           boxes,
           shippingProviders,
           ads: { liveAdsCost, videoAdsCost, percentages },
@@ -1108,25 +1377,85 @@ export class IncomeService {
           : Math.round(((cur - prev) / prev) * 10000) / 100
 
       const changes = {
-        totalIncomePct: pct(current.totalIncome, previous.totalIncome),
-        liveIncomePct: pct(current.liveIncome, previous.liveIncome),
-        videoIncomePct: pct(current.videoIncome, previous.videoIncome),
-        ownVideoIncomePct: pct(current.ownVideoIncome, previous.ownVideoIncome),
-        otherVideoIncomePct: pct(
-          current.otherVideoIncome,
-          previous.otherVideoIncome
-        ),
-        sources: {
-          adsPct: pct(current.sources.ads, previous.sources.ads),
-          affiliatePct: pct(
-            current.sources.affiliate,
-            previous.sources.affiliate
+        beforeDiscount: {
+          totalIncomePct: pct(
+            current.beforeDiscount.totalIncome,
+            previous.beforeDiscount.totalIncome
           ),
-          affiliateAdsPct: pct(
-            current.sources.affiliateAds,
-            previous.sources.affiliateAds
+          liveIncomePct: pct(
+            current.beforeDiscount.liveIncome,
+            previous.beforeDiscount.liveIncome
           ),
-          otherPct: pct(current.sources.other, previous.sources.other)
+          videoIncomePct: pct(
+            current.beforeDiscount.videoIncome,
+            previous.beforeDiscount.videoIncome
+          ),
+          ownVideoIncomePct: pct(
+            current.beforeDiscount.ownVideoIncome,
+            previous.beforeDiscount.ownVideoIncome
+          ),
+          otherVideoIncomePct: pct(
+            current.beforeDiscount.otherVideoIncome,
+            previous.beforeDiscount.otherVideoIncome
+          ),
+          sources: {
+            adsPct: pct(
+              current.beforeDiscount.sources.ads,
+              previous.beforeDiscount.sources.ads
+            ),
+            affiliatePct: pct(
+              current.beforeDiscount.sources.affiliate,
+              previous.beforeDiscount.sources.affiliate
+            ),
+            affiliateAdsPct: pct(
+              current.beforeDiscount.sources.affiliateAds,
+              previous.beforeDiscount.sources.affiliateAds
+            ),
+            otherPct: pct(
+              current.beforeDiscount.sources.other,
+              previous.beforeDiscount.sources.other
+            )
+          }
+        },
+        afterDiscount: {
+          totalIncomePct: pct(
+            current.afterDiscount.totalIncome,
+            previous.afterDiscount.totalIncome
+          ),
+          liveIncomePct: pct(
+            current.afterDiscount.liveIncome,
+            previous.afterDiscount.liveIncome
+          ),
+          videoIncomePct: pct(
+            current.afterDiscount.videoIncome,
+            previous.afterDiscount.videoIncome
+          ),
+          ownVideoIncomePct: pct(
+            current.afterDiscount.ownVideoIncome,
+            previous.afterDiscount.ownVideoIncome
+          ),
+          otherVideoIncomePct: pct(
+            current.afterDiscount.otherVideoIncome,
+            previous.afterDiscount.otherVideoIncome
+          ),
+          sources: {
+            adsPct: pct(
+              current.afterDiscount.sources.ads,
+              previous.afterDiscount.sources.ads
+            ),
+            affiliatePct: pct(
+              current.afterDiscount.sources.affiliate,
+              previous.afterDiscount.sources.affiliate
+            ),
+            affiliateAdsPct: pct(
+              current.afterDiscount.sources.affiliateAds,
+              previous.afterDiscount.sources.affiliateAds
+            ),
+            otherPct: pct(
+              current.afterDiscount.sources.other,
+              previous.afterDiscount.sources.other
+            )
+          }
         },
         ads: {
           liveAdsCostPct: pct(
@@ -1264,7 +1593,7 @@ export class IncomeService {
       // Cập nhật quy cách đóng hộp
       await this.updateIncomesBox(new Date(dto.date))
 
-            // 2. Xử lý file affiliate: update source với batch processing
+      // 2. Xử lý file affiliate: update source
       const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
         type: "buffer"
       })
@@ -1274,91 +1603,52 @@ export class IncomeService {
         affiliateSheet
       ) as XlsxAffiliateData[]
 
-      // Group affiliate data by orderId để giảm số lần query
-      const affiliateByOrderId = affiliateData.reduce((acc, line) => {
-        const orderId = line["ID đơn hàng"]
-        if (!acc[orderId]) acc[orderId] = []
-        acc[orderId].push(line)
-        return acc
-      }, {} as Record<string, XlsxAffiliateData[]>)
-
-      const orderIds = Object.keys(affiliateByOrderId)
-      const BATCH_SIZE = 50 // Xử lý 50 orders một lần
-
-      for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-        const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE)
-        
-        // Lấy tất cả orders trong batch một lần
-        const existedOrders = await this.incomeModel
-          .find({
-            orderId: { $in: batchOrderIds }
+      affiliateData.forEach(async (line) => {
+        const existedOrder = await this.incomeModel
+          .findOne({
+            orderId: line["ID đơn hàng"]
           })
           .exec()
+        if (existedOrder) {
+          const foundProduct = existedOrder.products.find((p) => {
+            return (
+              p.code === line["Sku người bán"] &&
+              p.quantity === Number(line["Số lượng"]) &&
+              p.sourceChecked === false
+            )
+          })
 
-        // Xử lý từng order trong batch
-        const bulkOps: any[] = []
-        for (const order of existedOrders) {
-          const affiliateLines = affiliateByOrderId[order.orderId] || []
-          let hasChanges = false
-
-          for (const line of affiliateLines) {
-            const foundProduct = order.products.find((p) => {
-              return (
-                p.code === line["Sku người bán"] &&
-                p.quantity === Number(line["Số lượng"]) &&
-                p.sourceChecked === false
-              )
-            })
-
-            if (foundProduct) {
-              foundProduct.sourceChecked = true
-              foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
-              foundProduct.source = OWN_USERS.includes(
-                line["Tên người dùng nhà sáng tạo"]
-              )
-                ? "ads"
-                : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
-                    !line["Tỷ lệ hoa hồng tiêu chuẩn"]
-                  ? "affiliate-ads"
-                  : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
-                      !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-                    ? "affiliate"
-                    : "other"
-              foundProduct.content = line["Loại nội dung"]
-              foundProduct.affiliateAdsPercentage = Number(
-                line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-              )
-              foundProduct.affiliateAdsAmount = Number(
-                line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
-              )
-              foundProduct.standardAffPercentage = Number(
-                line["Tỷ lệ hoa hồng tiêu chuẩn"]
-              )
-              foundProduct.standardAffAmount = Number(
-                line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
-              )
-              hasChanges = true
-            }
-          }
-
-          if (hasChanges) {
-            bulkOps.push({
-              updateOne: {
-                filter: { _id: order._id },
-                update: { $set: { products: order.products } }
-              }
-            })
+          if (foundProduct) {
+            foundProduct.sourceChecked = true
+            foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
+            foundProduct.source = OWN_USERS.includes(
+              line["Tên người dùng nhà sáng tạo"]
+            )
+              ? "ads"
+              : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
+                  !line["Tỷ lệ hoa hồng tiêu chuẩn"]
+                ? "affiliate-ads"
+                : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
+                    !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+                  ? "affiliate"
+                  : "other"
+            foundProduct.content = line["Loại nội dung"]
+            foundProduct.affiliateAdsPercentage = Number(
+              line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+            )
+            foundProduct.affiliateAdsAmount = Number(
+              line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
+            )
+            foundProduct.standardAffPercentage = Number(
+              line["Tỷ lệ hoa hồng tiêu chuẩn"]
+            )
+            foundProduct.standardAffAmount = Number(
+              line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
+            )
+            await existedOrder.save()
           }
         }
-
-        // Bulk update toàn bộ batch
-        if (bulkOps.length > 0) {
-          await this.incomeModel.bulkWrite(bulkOps, { ordered: false })
-        }
-
-        // Log progress
-        console.log(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(orderIds.length / BATCH_SIZE)}`)
-      }
+      })
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -1493,6 +1783,10 @@ export class IncomeService {
 
   private sumProductsAmount(products: any[]) {
     return products.reduce((sum, p) => sum + this.getActualPrice(p), 0)
+  }
+
+  private sumProductsAmountBeforeDiscount(products: any[]) {
+    return products.reduce((sum, p) => sum + (p.price || 0), 0)
   }
 
   private sumProductsQuantity(products: any[]) {

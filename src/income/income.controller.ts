@@ -186,7 +186,7 @@ export class IncomeController {
   async totalIncomeByMonthSplit(
     @Query("month") month: string,
     @Query("year") year: string
-  ): Promise<{ totalIncome: { live: number; shop: number } }> {
+  ): Promise<{ totalIncome: { beforeDiscount: { live: number; shop: number }; afterDiscount: { live: number; shop: number } } }> {
     const totalIncome = await this.incomeService.totalIncomeByMonthSplit(
       Number(month),
       Number(year)
@@ -227,15 +227,28 @@ export class IncomeController {
   @HttpCode(HttpStatus.OK)
   async getDailyStats(@Query("date") date: string): Promise<{
     boxes: { box: string; quantity: number }[]
-    totalIncome: number
-    sources: {
-      ads: number
-      affiliate: number
-      affiliateAds: number
-      other: number
+    beforeDiscount: {
+      totalIncome: number
+      sources: {
+        ads: number
+        affiliate: number
+        affiliateAds: number
+        other: number
+      }
+      liveIncome: number
+      videoIncome: number
     }
-    liveIncome: number
-    videoIncome: number
+    afterDiscount: {
+      totalIncome: number
+      sources: {
+        ads: number
+        affiliate: number
+        affiliateAds: number
+        other: number
+      }
+      liveIncome: number
+      videoIncome: number
+    }
     shippingProviders: { provider: string; orders: number }[]
     dailyAds?: { liveAdsCost: number; videoAdsCost: number }
     percentages?: {
@@ -254,8 +267,14 @@ export class IncomeController {
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string
   ): Promise<{
-    affiliate: { creator: string; totalIncome: number; percentage: number }[]
-    affiliateAds: { creator: string; totalIncome: number; percentage: number }[]
+    affiliate: {
+      beforeDiscount: { creator: string; totalIncome: number; percentage: number }[]
+      afterDiscount: { creator: string; totalIncome: number; percentage: number }[]
+    }
+    affiliateAds: {
+      beforeDiscount: { creator: string; totalIncome: number; percentage: number }[]
+      afterDiscount: { creator: string; totalIncome: number; percentage: number }[]
+    }
   }> {
     return this.incomeService.getTopCreators(
       new Date(startDate),
@@ -290,7 +309,7 @@ export class IncomeController {
   async totalLiveAndVideoIncomeByMonth(
     @Query("month") month: string,
     @Query("year") year: string
-  ): Promise<{ totalIncome: { live: number; video: number } }> {
+  ): Promise<{ totalIncome: { beforeDiscount: { live: number; video: number }; afterDiscount: { live: number; video: number } } }> {
     const totalIncome = await this.incomeService.totalLiveAndVideoIncomeByMonth(
       Number(month),
       Number(year)
@@ -323,17 +342,33 @@ export class IncomeController {
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
-      totalIncome: number
-      liveIncome: number
-      videoIncome: number
-      ownVideoIncome: number
-      otherVideoIncome: number
-      otherIncome: number
-      sources: {
-        ads: number
-        affiliate: number
-        affiliateAds: number
-        other: number
+      beforeDiscount: {
+        totalIncome: number
+        liveIncome: number
+        videoIncome: number
+        ownVideoIncome: number
+        otherVideoIncome: number
+        otherIncome: number
+        sources: {
+          ads: number
+          affiliate: number
+          affiliateAds: number
+          other: number
+        }
+      }
+      afterDiscount: {
+        totalIncome: number
+        liveIncome: number
+        videoIncome: number
+        ownVideoIncome: number
+        otherVideoIncome: number
+        otherIncome: number
+        sources: {
+          ads: number
+          affiliate: number
+          affiliateAds: number
+          other: number
+        }
       }
       boxes: { box: string; quantity: number }[]
       shippingProviders: { provider: string; orders: number }[]
@@ -354,16 +389,31 @@ export class IncomeController {
       }
     }
     changes?: {
-      totalIncomePct: number
-      liveIncomePct: number
-      videoIncomePct: number
-      ownVideoIncomePct: number
-      otherVideoIncomePct: number
-      sources: {
-        adsPct: number
-        affiliatePct: number
-        affiliateAdsPct: number
-        otherPct: number
+      beforeDiscount: {
+        totalIncomePct: number
+        liveIncomePct: number
+        videoIncomePct: number
+        ownVideoIncomePct: number
+        otherVideoIncomePct: number
+        sources: {
+          adsPct: number
+          affiliatePct: number
+          affiliateAdsPct: number
+          otherPct: number
+        }
+      }
+      afterDiscount: {
+        totalIncomePct: number
+        liveIncomePct: number
+        videoIncomePct: number
+        ownVideoIncomePct: number
+        otherVideoIncomePct: number
+        sources: {
+          adsPct: number
+          affiliatePct: number
+          affiliateAdsPct: number
+          otherPct: number
+        }
       }
       ads: {
         liveAdsCostPct: number
