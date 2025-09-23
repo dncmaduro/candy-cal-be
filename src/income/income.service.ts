@@ -1264,7 +1264,7 @@ export class IncomeService {
       // Cập nhật quy cách đóng hộp
       await this.updateIncomesBox(new Date(dto.date))
 
-      // 2. Xử lý file affiliate: update source
+            // 2. Xử lý file affiliate: update source với batch processing
       const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
         type: "buffer"
       })
@@ -1274,51 +1274,90 @@ export class IncomeService {
         affiliateSheet
       ) as XlsxAffiliateData[]
 
-      for (const line of affiliateData) {
-        const existedOrder = await this.incomeModel
-          .findOne({
-            orderId: line["ID đơn hàng"]
+      // Group affiliate data by orderId để giảm số lần query
+      const affiliateByOrderId = affiliateData.reduce((acc, line) => {
+        const orderId = line["ID đơn hàng"]
+        if (!acc[orderId]) acc[orderId] = []
+        acc[orderId].push(line)
+        return acc
+      }, {} as Record<string, XlsxAffiliateData[]>)
+
+      const orderIds = Object.keys(affiliateByOrderId)
+      const BATCH_SIZE = 50 // Xử lý 50 orders một lần
+
+      for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+        const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE)
+        
+        // Lấy tất cả orders trong batch một lần
+        const existedOrders = await this.incomeModel
+          .find({
+            orderId: { $in: batchOrderIds }
           })
           .exec()
-        if (existedOrder) {
-          const foundProduct = existedOrder.products.find((p) => {
-            return (
-              p.code === line["Sku người bán"] &&
-              p.quantity === Number(line["Số lượng"]) &&
-              p.sourceChecked === false
-            )
-          })
 
-          if (foundProduct) {
-            foundProduct.sourceChecked = true
-            foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
-            foundProduct.source = OWN_USERS.includes(
-              line["Tên người dùng nhà sáng tạo"]
-            )
-              ? "ads"
-              : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
-                  !line["Tỷ lệ hoa hồng tiêu chuẩn"]
-                ? "affiliate-ads"
-                : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
-                    !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-                  ? "affiliate"
-                  : "other"
-            foundProduct.content = line["Loại nội dung"]
-            foundProduct.affiliateAdsPercentage = Number(
-              line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-            )
-            foundProduct.affiliateAdsAmount = Number(
-              line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
-            )
-            foundProduct.standardAffPercentage = Number(
-              line["Tỷ lệ hoa hồng tiêu chuẩn"]
-            )
-            foundProduct.standardAffAmount = Number(
-              line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
-            )
-            await existedOrder.save()
+        // Xử lý từng order trong batch
+        const bulkOps: any[] = []
+        for (const order of existedOrders) {
+          const affiliateLines = affiliateByOrderId[order.orderId] || []
+          let hasChanges = false
+
+          for (const line of affiliateLines) {
+            const foundProduct = order.products.find((p) => {
+              return (
+                p.code === line["Sku người bán"] &&
+                p.quantity === Number(line["Số lượng"]) &&
+                p.sourceChecked === false
+              )
+            })
+
+            if (foundProduct) {
+              foundProduct.sourceChecked = true
+              foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
+              foundProduct.source = OWN_USERS.includes(
+                line["Tên người dùng nhà sáng tạo"]
+              )
+                ? "ads"
+                : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
+                    !line["Tỷ lệ hoa hồng tiêu chuẩn"]
+                  ? "affiliate-ads"
+                  : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
+                      !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+                    ? "affiliate"
+                    : "other"
+              foundProduct.content = line["Loại nội dung"]
+              foundProduct.affiliateAdsPercentage = Number(
+                line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+              )
+              foundProduct.affiliateAdsAmount = Number(
+                line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
+              )
+              foundProduct.standardAffPercentage = Number(
+                line["Tỷ lệ hoa hồng tiêu chuẩn"]
+              )
+              foundProduct.standardAffAmount = Number(
+                line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
+              )
+              hasChanges = true
+            }
+          }
+
+          if (hasChanges) {
+            bulkOps.push({
+              updateOne: {
+                filter: { _id: order._id },
+                update: { $set: { products: order.products } }
+              }
+            })
           }
         }
+
+        // Bulk update toàn bộ batch
+        if (bulkOps.length > 0) {
+          await this.incomeModel.bulkWrite(bulkOps, { ordered: false })
+        }
+
+        // Log progress
+        console.log(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(orderIds.length / BATCH_SIZE)}`)
       }
     } catch (error) {
       console.error(error)
