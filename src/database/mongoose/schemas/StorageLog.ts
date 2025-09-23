@@ -1,4 +1,4 @@
-import { Schema, Document, model, Types } from "mongoose"
+import { Schema, Document, model, Types, Model } from "mongoose"
 
 export interface StorageLogItem {
   _id: Types.ObjectId // Reference to Item schema
@@ -6,12 +6,26 @@ export interface StorageLogItem {
 }
 
 export interface StorageLog extends Document {
-  item: StorageLogItem
+  item?: StorageLogItem // Keep for backward compatibility with old data
+  items?: StorageLogItem[] // New field for multiple items
   note?: string
   status: string
   date: Date
   tag?: string
   deliveredRequestId?: Types.ObjectId
+}
+
+export interface StorageLogModel extends Model<StorageLog> {
+  createWithItems(
+    items: StorageLogItem[],
+    data: {
+      note?: string
+      status: string
+      date: Date
+      tag?: string
+      deliveredRequestId?: Types.ObjectId
+    }
+  ): StorageLog
 }
 
 const StorageLogItemSchema = new Schema<StorageLogItem>({
@@ -20,7 +34,8 @@ const StorageLogItemSchema = new Schema<StorageLogItem>({
 })
 
 export const StorageLogSchema = new Schema<StorageLog>({
-  item: { type: StorageLogItemSchema, required: true },
+  item: { type: StorageLogItemSchema, required: false }, // Keep for old data
+  items: { type: [StorageLogItemSchema], required: false }, // New field for multiple items
   note: { type: String, required: false },
   status: { type: String, required: true },
   date: { type: Date, required: true },
@@ -31,5 +46,3 @@ export const StorageLogSchema = new Schema<StorageLog>({
     required: false
   }
 })
-
-export const StorageLogModel = model<StorageLog>("StorageLog", StorageLogSchema)

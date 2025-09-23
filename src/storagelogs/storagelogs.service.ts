@@ -15,24 +15,56 @@ export class StorageLogsService {
     private readonly storageItemModel: Model<StorageItem>
   ) {}
 
+  // Helper function to get items from both old and new format
+  private getItemsFromLog(
+    log: StorageLog
+  ): Array<{ _id: string; quantity: number }> {
+    if (log.items && log.items.length > 0) {
+      return log.items.map((item) => ({
+        _id: item._id.toString(),
+        quantity: item.quantity
+      }))
+    } else if (log.item) {
+      return [
+        {
+          _id: log.item._id.toString(),
+          quantity: log.item.quantity
+        }
+      ]
+    }
+    return []
+  }
+
   async createRequest(storageLog: StorageLogDto): Promise<StorageLog> {
     try {
-      const newStorageLog = new this.storageLogsModel(storageLog)
+      // Only create new format with items array
+      const newStorageLog = new this.storageLogsModel({
+        items: storageLog.items,
+        note: storageLog.note,
+        status: storageLog.status,
+        date: storageLog.date,
+        tag: storageLog.tag,
+        deliveredRequestId: storageLog.deliveredRequestId
+      })
       const savedLog = await newStorageLog.save()
 
-      const item = await this.storageItemModel.findById(storageLog.item._id)
-      if (!item) throw new Error("Item not found")
+      // Update storage items quantities
+      for (const logItem of storageLog.items) {
+        const item = await this.storageItemModel.findById(logItem._id)
+        if (!item) throw new Error(`Item with id ${logItem._id} not found`)
 
-      if (storageLog.status === "received") {
-        item.receivedQuantity.quantity += storageLog.item.quantity
-      } else if (storageLog.status === "delivered") {
-        item.deliveredQuantity.quantity += storageLog.item.quantity
+        if (storageLog.status === "received") {
+          item.receivedQuantity.quantity += logItem.quantity
+        } else if (storageLog.status === "delivered") {
+          item.deliveredQuantity.quantity += logItem.quantity
+        }
+
+        item.restQuantity.quantity =
+          item.receivedQuantity.quantity - item.deliveredQuantity.quantity
+
+        await item.save()
       }
 
-      item.restQuantity.quantity =
-        item.receivedQuantity.quantity - item.deliveredQuantity.quantity
-
-      await item.save()
       return savedLog
     } catch (error) {
       console.error(error)
@@ -72,7 +104,10 @@ export class StorageLogsService {
         query.tag = tag
       }
       if (itemId) {
-        query["item._id"] = itemId
+        query.$or = [
+          { "item._id": itemId }, // Old format
+          { "items._id": itemId } // New format
+        ]
       }
 
       const [data, total] = await Promise.all([
@@ -108,41 +143,53 @@ export class StorageLogsService {
       const existingLog = await this.storageLogsModel.findById(id)
       if (!existingLog) throw new Error("Storage log not found")
 
-      const oldItemId = existingLog.item._id.toString()
-      const newItemId = updatedLog.item._id.toString()
+      // Get items from existing log (handle both old and new format)
+      const existingItems = this.getItemsFromLog(existingLog)
 
-      const oldItem = await this.storageItemModel.findById(oldItemId)
-      if (!oldItem) throw new Error("Old item not found")
+      // Revert the quantities of existing items
+      for (const existingItem of existingItems) {
+        const item = await this.storageItemModel.findById(existingItem._id)
+        if (!item) continue
 
-      let newItem =
-        oldItemId === newItemId
-          ? oldItem
-          : await this.storageItemModel.findById(newItemId)
-      if (!newItem) throw new Error("New item not found")
+        if (existingLog.status === "received") {
+          item.receivedQuantity.quantity -= existingItem.quantity
+        } else if (existingLog.status === "delivered") {
+          item.deliveredQuantity.quantity -= existingItem.quantity
+        }
 
-      if (existingLog.status === "received") {
-        oldItem.receivedQuantity.quantity -= existingLog.item.quantity
-      } else if (existingLog.status === "delivered") {
-        oldItem.deliveredQuantity.quantity -= existingLog.item.quantity
+        item.restQuantity.quantity =
+          item.receivedQuantity.quantity - item.deliveredQuantity.quantity
+        await item.save()
       }
 
-      oldItem.restQuantity.quantity =
-        oldItem.receivedQuantity.quantity - oldItem.deliveredQuantity.quantity
-      await oldItem.save()
+      // Apply the new quantities from updated log
+      for (const newItem of updatedLog.items) {
+        const item = await this.storageItemModel.findById(newItem._id)
+        if (!item) throw new Error(`Item with id ${newItem._id} not found`)
 
-      if (updatedLog.status === "received") {
-        newItem.receivedQuantity.quantity += updatedLog.item.quantity
-      } else if (updatedLog.status === "delivered") {
-        newItem.deliveredQuantity.quantity += updatedLog.item.quantity
+        if (updatedLog.status === "received") {
+          item.receivedQuantity.quantity += newItem.quantity
+        } else if (updatedLog.status === "delivered") {
+          item.deliveredQuantity.quantity += newItem.quantity
+        }
+
+        item.restQuantity.quantity =
+          item.receivedQuantity.quantity - item.deliveredQuantity.quantity
+        await item.save()
       }
 
-      newItem.restQuantity.quantity =
-        newItem.receivedQuantity.quantity - newItem.deliveredQuantity.quantity
-      await newItem.save()
-
+      // Update the log with new format
       const updated = await this.storageLogsModel.findByIdAndUpdate(
         id,
-        updatedLog,
+        {
+          items: updatedLog.items,
+          note: updatedLog.note,
+          status: updatedLog.status,
+          date: updatedLog.date,
+          tag: updatedLog.tag,
+          deliveredRequestId: updatedLog.deliveredRequestId,
+          $unset: { item: 1 } // Remove old item field if exists
+        },
         { new: true }
       )
 
@@ -186,32 +233,36 @@ export class StorageLogsService {
       >()
 
       logs.forEach((log) => {
-        const itemId = log.item._id.toString()
-        const quantity = log.item.quantity
+        const items = this.getItemsFromLog(log)
         const gmt7Date = toZonedTime(log.date, timeZone)
         const day = gmt7Date.getDate()
 
-        if (!itemMap.has(itemId)) {
-          itemMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
-        }
-        const totalStats = itemMap.get(itemId)!
-        if (log.status === "delivered") {
-          totalStats.deliveredQuantity += quantity
-        } else if (log.status === "received") {
-          totalStats.receivedQuantity += quantity
-        }
+        items.forEach((logItem) => {
+          const itemId = logItem._id
+          const quantity = logItem.quantity
 
-        if (!byDayMap.has(day)) byDayMap.set(day, new Map())
-        const dayMap = byDayMap.get(day)!
-        if (!dayMap.has(itemId)) {
-          dayMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
-        }
-        const dayStats = dayMap.get(itemId)!
-        if (log.status === "delivered") {
-          dayStats.deliveredQuantity += quantity
-        } else if (log.status === "received") {
-          dayStats.receivedQuantity += quantity
-        }
+          if (!itemMap.has(itemId)) {
+            itemMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
+          }
+          const totalStats = itemMap.get(itemId)!
+          if (log.status === "delivered") {
+            totalStats.deliveredQuantity += quantity
+          } else if (log.status === "received") {
+            totalStats.receivedQuantity += quantity
+          }
+
+          if (!byDayMap.has(day)) byDayMap.set(day, new Map())
+          const dayMap = byDayMap.get(day)!
+          if (!dayMap.has(itemId)) {
+            dayMap.set(itemId, { deliveredQuantity: 0, receivedQuantity: 0 })
+          }
+          const dayStats = dayMap.get(itemId)!
+          if (log.status === "delivered") {
+            dayStats.deliveredQuantity += quantity
+          } else if (log.status === "received") {
+            dayStats.receivedQuantity += quantity
+          }
+        })
       })
 
       const itemIds = Array.from(itemMap.keys())
@@ -258,27 +309,35 @@ export class StorageLogsService {
       const log = await this.storageLogsModel.findById(id)
       if (!log) throw new Error("Storage log not found")
 
-      const item = await this.storageItemModel.findById(log.item._id)
-      if (!item) throw new Error("Item not found")
+      const items = this.getItemsFromLog(log)
 
-      if (log.status === "received") {
-        item.receivedQuantity.quantity -= log.item.quantity
-      } else if (log.status === "delivered") {
-        item.deliveredQuantity.quantity -= log.item.quantity
+      // Revert quantities for all items in the log
+      for (const logItem of items) {
+        const item = await this.storageItemModel.findById(logItem._id)
+        if (!item) throw new Error(`Item with id ${logItem._id} not found`)
+
+        if (log.status === "received") {
+          item.receivedQuantity.quantity -= logItem.quantity
+        } else if (log.status === "delivered") {
+          item.deliveredQuantity.quantity -= logItem.quantity
+        }
+
+        item.restQuantity.quantity =
+          item.receivedQuantity.quantity - item.deliveredQuantity.quantity
+
+        if (
+          item.receivedQuantity.quantity < 0 ||
+          item.deliveredQuantity.quantity < 0 ||
+          item.restQuantity.quantity < 0
+        ) {
+          throw new Error(
+            `Item ${item.name} quantity cannot be negative after deletion`
+          )
+        }
+
+        await item.save()
       }
 
-      item.restQuantity.quantity =
-        item.receivedQuantity.quantity - item.deliveredQuantity.quantity
-
-      if (
-        item.receivedQuantity.quantity < 0 ||
-        item.deliveredQuantity.quantity < 0 ||
-        item.restQuantity.quantity < 0
-      ) {
-        throw new Error("Item quantity cannot be negative after deletion")
-      }
-
-      await item.save()
       await this.storageLogsModel.findByIdAndDelete(id)
     } catch (error) {
       console.error(error)

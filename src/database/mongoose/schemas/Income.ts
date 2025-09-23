@@ -14,6 +14,9 @@ export interface Income {
     quantity: number
     quotation: number
     price: number
+    platformDiscount?: number
+    sellerDiscount?: number
+    priceAfterDiscount?: number
     affiliateAdsPercentage?: number
     affiliateAdsAmount?: number
     sourceChecked: boolean
@@ -39,6 +42,9 @@ export const IncomeSchema = new Schema<Income>({
       quantity: { type: Number, required: true },
       quotation: { type: Number, required: true },
       price: { type: Number, required: true },
+      platformDiscount: { type: Number, required: false },
+      sellerDiscount: { type: Number, required: false },
+      priceAfterDiscount: { type: Number, required: false },
       affiliateAdsPercentage: { type: Number, required: false },
       affiliateAdsAmount: { type: Number, required: false },
       sourceChecked: { type: Boolean, required: true, default: false },

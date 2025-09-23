@@ -13,11 +13,15 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard"
 import { RolesGuard } from "../../roles/roles.guard"
 import { Roles } from "../../roles/roles.decorator"
 import { ApiEndpointsService } from "./apiendpoints.service"
+import { ApiEndpointAutoDiscoverService } from "./apiendpoints.autodiscover"
 
 @Controller("api-endpoints")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ApiEndpointsController {
-  constructor(private readonly apiEndpointsService: ApiEndpointsService) {}
+  constructor(
+    private readonly apiEndpointsService: ApiEndpointsService,
+    private readonly autoDiscoverService: ApiEndpointAutoDiscoverService
+  ) {}
 
   @Roles("admin")
   @Get()
@@ -77,5 +81,16 @@ export class ApiEndpointsController {
   @HttpCode(HttpStatus.OK)
   async delete(@Param("key") key: string): Promise<{ deleted: boolean }> {
     return this.apiEndpointsService.softDelete(key)
+  }
+
+  @Roles("admin")
+  @Post("discover")
+  @HttpCode(HttpStatus.OK)
+  async triggerDiscovery(): Promise<{ message: string }> {
+    // Chạy discovery ngay lập tức (manual trigger)
+    this.autoDiscoverService.runDiscoveryNow().catch((error) => {
+      console.error("Manual discovery failed:", error)
+    })
+    return { message: "API endpoints discovery triggered successfully" }
   }
 }

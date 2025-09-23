@@ -110,6 +110,9 @@ export class IncomeService {
               quantity: line["Quantity"],
               quotation: line["SKU Unit Original Price"],
               price: line["SKU Subtotal Before Discount"],
+              platformDiscount: line["SKU Platform Discount"],
+              sellerDiscount: line["SKU Seller Discount"],
+              priceAfterDiscount: line["SKU Subtotal After Discount"],
               sourceChecked: false
             }))
           } else {
@@ -121,6 +124,9 @@ export class IncomeService {
                 quantity: line["Quantity"],
                 quotation: line["SKU Unit Original Price"],
                 price: line["SKU Subtotal Before Discount"],
+                platformDiscount: line["SKU Platform Discount"],
+                sellerDiscount: line["SKU Seller Discount"],
+                priceAfterDiscount: line["SKU Subtotal After Discount"],
                 sourceChecked: false
               }))
             }
@@ -146,6 +152,9 @@ export class IncomeService {
             quantity: line["Quantity"],
             quotation: line["SKU Unit Original Price"],
             price: line["SKU Subtotal Before Discount"],
+            platformDiscount: line["SKU Platform Discount"] || 0,
+            sellerDiscount: line["SKU Seller Discount"] || 0,
+            priceAfterDiscount: line["SKU Subtotal After Discount"] || 0,
             sourceChecked: false
           }))
           inserts.push({
@@ -507,6 +516,11 @@ export class IncomeService {
             "Số lượng": product.quantity,
             "Báo giá": this.formatMoney(product.quotation),
             "Giá bán": this.formatMoney(product.price),
+            "Giảm giá từ platform": this.formatMoney(product.platformDiscount),
+            "Giảm giá từ người bán": this.formatMoney(product.sellerDiscount),
+            "Giá sau giảm voucher": this.formatMoney(
+              product.priceAfterDiscount
+            ),
             "Phần trăm Affiliate": product.affiliateAdsPercentage ?? "",
             "Phần trăm Affiliate tiêu chuẩn":
               product.standardAffPercentage ?? "",
@@ -600,7 +614,7 @@ export class IncomeService {
         shipMap[provider] = (shipMap[provider] || 0) + 1
 
         for (const p of income.products || []) {
-          const price = p.price || 0
+          const price = this.getActualPrice(p)
           totalIncome += price
           if (p.source === "ads") sourceTotals.ads += price
           else if (p.source === "affiliate") sourceTotals.affiliate += price
@@ -698,7 +712,16 @@ export class IncomeService {
               source: "$products.source",
               creator: { $ifNull: ["$products.creator", "(unknown)"] }
             },
-            totalIncome: { $sum: { $ifNull: ["$products.price", 0] } }
+            totalIncome: {
+              $sum: {
+                $ifNull: [
+                  {
+                    $ifNull: ["$products.priceAfterDiscount", "$products.price"]
+                  },
+                  0
+                ]
+              }
+            }
           }
         }
       ])
@@ -808,7 +831,7 @@ export class IncomeService {
       let video = 0
       for (const income of incomes) {
         for (const p of income.products || []) {
-          const price = p.price || 0
+          const price = this.getActualPrice(p)
           if (typeof p.content === "string") {
             if (/Phát trực tiếp|livestream/i.test(p.content)) live += price
             else if (/video/i.test(p.content)) video += price
@@ -915,6 +938,13 @@ export class IncomeService {
           videoAdsToVideoIncome: number
         }
       }
+      discounts: {
+        totalPlatformDiscount: number
+        totalSellerDiscount: number
+        totalDiscount: number
+        avgDiscountPerOrder: number
+        discountPercentage: number
+      }
     }
     changes?: {
       totalIncomePct: number
@@ -933,6 +963,13 @@ export class IncomeService {
         videoAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
         videoAdsToVideoIncomePctDiff: number
+      }
+      discounts: {
+        totalPlatformDiscountPct: number
+        totalSellerDiscountPct: number
+        totalDiscountPct: number
+        avgDiscountPerOrderPct: number
+        discountPercentageDiff: number
       }
     }
   }> {
@@ -959,12 +996,24 @@ export class IncomeService {
         let ownVideoIncome = 0
         let otherVideoIncome = 0
         const sources = { ads: 0, affiliate: 0, affiliateAds: 0, other: 0 }
+        let totalPlatformDiscount = 0
+        let totalSellerDiscount = 0
+        let totalOriginalPrice = 0
+        let orderCount = incomes.reduce(
+          (sum, income) => sum + (income.products ? income.products.length : 0),
+          0
+        )
+
         for (const income of incomes) {
           const provider = income.shippingProvider || "(unknown)"
           shipMap[provider] = (shipMap[provider] || 0) + 1
           for (const p of income.products || []) {
-            const price = p.price || 0
+            const price = this.getActualPrice(p)
             totalIncome += price
+            totalPlatformDiscount += p.platformDiscount || 0
+            totalSellerDiscount += p.sellerDiscount || 0
+            totalOriginalPrice += p.price || 0
+
             if (p.source === "ads") sources.ads += price
             else if (p.source === "affiliate") sources.affiliate += price
             else if (p.source === "affiliate-ads") sources.affiliateAds += price
@@ -1014,6 +1063,15 @@ export class IncomeService {
               ? 0
               : Math.round((videoAdsCost / videoIncome) * 10000) / 100
         }
+
+        const totalDiscount = totalPlatformDiscount + totalSellerDiscount
+        const avgDiscountPerOrder =
+          orderCount > 0 ? totalDiscount / orderCount : 0
+        const discountPercentage =
+          totalOriginalPrice > 0
+            ? (totalDiscount / totalOriginalPrice) * 100
+            : 0
+
         return {
           totalIncome,
           liveIncome,
@@ -1024,7 +1082,14 @@ export class IncomeService {
           sources,
           boxes,
           shippingProviders,
-          ads: { liveAdsCost, videoAdsCost, percentages }
+          ads: { liveAdsCost, videoAdsCost, percentages },
+          discounts: {
+            totalPlatformDiscount,
+            totalSellerDiscount,
+            totalDiscount,
+            avgDiscountPerOrder,
+            discountPercentage: Math.round(discountPercentage * 100) / 100
+          }
         }
       }
 
@@ -1082,6 +1147,30 @@ export class IncomeService {
             Math.round(
               (current.ads.percentages.videoAdsToVideoIncome -
                 previous.ads.percentages.videoAdsToVideoIncome) *
+                100
+            ) / 100
+        },
+        discounts: {
+          totalPlatformDiscountPct: pct(
+            current.discounts.totalPlatformDiscount,
+            previous.discounts.totalPlatformDiscount
+          ),
+          totalSellerDiscountPct: pct(
+            current.discounts.totalSellerDiscount,
+            previous.discounts.totalSellerDiscount
+          ),
+          totalDiscountPct: pct(
+            current.discounts.totalDiscount,
+            previous.discounts.totalDiscount
+          ),
+          avgDiscountPerOrderPct: pct(
+            current.discounts.avgDiscountPerOrder,
+            previous.discounts.avgDiscountPerOrder
+          ),
+          discountPercentageDiff:
+            Math.round(
+              (current.discounts.discountPercentage -
+                previous.discounts.discountPercentage) *
                 100
             ) / 100
         }
@@ -1152,19 +1241,25 @@ export class IncomeService {
           quantity: line["Quantity"],
           quotation: line["SKU Unit Original Price"],
           price: line["SKU Subtotal Before Discount"],
+          platformDiscount: line["SKU Platform Discount"] || 0,
+          sellerDiscount: line["SKU Seller Discount"] || 0,
+          priceAfterDiscount: line["SKU Subtotal After Discount"] || 0,
           sourceChecked: false
         }))
         inserts.push({
           orderId,
-          customer: lines[0]["Buyer Username"],
-          province: lines[0]["Province"],
+          customer: lines[0]["Buyer Username"] || "user",
+          province: lines[0]["Province"] || "",
           shippingProvider,
           date: dto.date,
           products
         })
       }
-      if (inserts.length)
-        await this.incomeModel.insertMany(inserts, { ordered: false })
+      if (inserts.length) {
+        await this.incomeModel.insertMany(inserts, {
+          ordered: false
+        })
+      }
 
       // Cập nhật quy cách đóng hộp
       await this.updateIncomesBox(new Date(dto.date))
@@ -1208,9 +1303,6 @@ export class IncomeService {
                     !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
                   ? "affiliate"
                   : "other"
-            if (existedOrder.orderId === "580137965604931583") {
-              console.log(foundProduct.source, foundProduct)
-            }
             foundProduct.content = line["Loại nội dung"]
             foundProduct.affiliateAdsPercentage = Number(
               line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
@@ -1237,6 +1329,120 @@ export class IncomeService {
     }
   }
 
+  async getDetailedProductStats(
+    startDate: Date,
+    endDate: Date,
+    page = 1,
+    limit = 20
+  ): Promise<{
+    products: Array<{
+      code: string
+      name: string
+      totalQuantity: number
+      totalOriginalPrice: number
+      totalPlatformDiscount: number
+      totalSellerDiscount: number
+      totalPriceAfterDiscount: number
+      avgDiscountPercentage: number
+      orderCount: number
+    }>
+    total: number
+  }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      const pipeline = [
+        { $match: { date: { $gte: start, $lte: end } } },
+        { $unwind: "$products" },
+        {
+          $group: {
+            _id: {
+              code: "$products.code",
+              name: "$products.name"
+            },
+            totalQuantity: { $sum: "$products.quantity" },
+            totalOriginalPrice: { $sum: { $ifNull: ["$products.price", 0] } },
+            totalPlatformDiscount: {
+              $sum: { $ifNull: ["$products.platformDiscount", 0] }
+            },
+            totalSellerDiscount: {
+              $sum: { $ifNull: ["$products.sellerDiscount", 0] }
+            },
+            totalPriceAfterDiscount: {
+              $sum: {
+                $ifNull: ["$products.priceAfterDiscount", "$products.price"]
+              }
+            },
+            orderCount: { $sum: 1 }
+          }
+        },
+        {
+          $addFields: {
+            avgDiscountPercentage: {
+              $cond: {
+                if: { $gt: ["$totalOriginalPrice", 0] },
+                then: {
+                  $multiply: [
+                    {
+                      $divide: [
+                        {
+                          $add: [
+                            "$totalPlatformDiscount",
+                            "$totalSellerDiscount"
+                          ]
+                        },
+                        "$totalOriginalPrice"
+                      ]
+                    },
+                    100
+                  ]
+                },
+                else: 0
+              }
+            }
+          }
+        },
+        { $sort: { totalOriginalPrice: -1 } }
+      ]
+
+      const [results, totalCount] = await Promise.all([
+        this.incomeModel.aggregate([
+          ...pipeline,
+          { $skip: (page - 1) * limit },
+          { $limit: limit }
+        ] as any),
+        this.incomeModel.aggregate([...pipeline, { $count: "total" }] as any)
+      ])
+
+      const products = results.map((item) => ({
+        code: item._id.code,
+        name: item._id.name,
+        totalQuantity: item.totalQuantity,
+        totalOriginalPrice: item.totalOriginalPrice,
+        totalPlatformDiscount: item.totalPlatformDiscount,
+        totalSellerDiscount: item.totalSellerDiscount,
+        totalPriceAfterDiscount: item.totalPriceAfterDiscount,
+        avgDiscountPercentage:
+          Math.round(item.avgDiscountPercentage * 100) / 100,
+        orderCount: item.orderCount
+      }))
+
+      return {
+        products,
+        total: totalCount[0]?.total || 0
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi lấy thống kê chi tiết sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   private splitByChannel(products: Income["products"]) {
     const isLive = (p: any) =>
       typeof p.content === "string" &&
@@ -1247,11 +1453,15 @@ export class IncomeService {
   }
 
   private sumProductsAmount(products: any[]) {
-    return products.reduce((sum, p) => sum + (p.price || 0), 0)
+    return products.reduce((sum, p) => sum + this.getActualPrice(p), 0)
   }
 
   private sumProductsQuantity(products: any[]) {
     return products.reduce((sum, p) => sum + (p.quantity || 0), 0)
+  }
+
+  private getActualPrice(product: any): number {
+    return product.priceAfterDiscount || product.price || 0
   }
 
   private getShippingProviderName(
