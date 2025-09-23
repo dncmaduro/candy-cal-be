@@ -212,7 +212,7 @@ export class IncomeService {
       const sheet = workbook.Sheets[sheetName]
       const data = XLSX.utils.sheet_to_json(sheet) as XlsxAffiliateData[]
 
-      data.forEach(async (line) => {
+      for (const line of data) {
         const existedOrder = await this.incomeModel
           .findOne({
             orderId: line["ID đơn hàng"]
@@ -257,7 +257,7 @@ export class IncomeService {
             await existedOrder.save()
           }
         }
-      })
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -1274,7 +1274,7 @@ export class IncomeService {
         affiliateSheet
       ) as XlsxAffiliateData[]
 
-      affiliateData.forEach(async (line) => {
+      for (const line of affiliateData) {
         const existedOrder = await this.incomeModel
           .findOne({
             orderId: line["ID đơn hàng"]
@@ -1319,7 +1319,7 @@ export class IncomeService {
             await existedOrder.save()
           }
         }
-      })
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
