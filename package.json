@@ -7,7 +7,11 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "tsc",
-    "start:prod": "node dist/main"
+    "start:prod": "node dist/main",
+    "up:prod": "docker buildx build --platform linux/amd64 -t gunnyrealer9/candy-cal-be:latest --push .",
+    "up:staging": "docker buildx build --platform linux/amd64 -f Dockerfile.staging -t gunnyrealer9/candy-cal-be:staging --push .",
+    "dump:prod": "mongodump --uri=\"mongodb+srv://manhdungtranvnuuet:madurc29@candy.j3wyn.mongodb.net/?retryWrites=true&w=majority&appName=Candy\"",
+    "restore:staging": "mongorestore --uri=\"mongodb+srv://manhdungtran:manhdungtran29@candy-cal-staging.mkpz8xb.mongodb.net/?retryWrites=true&w=majority&appName=candy-cal-staging\""
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
