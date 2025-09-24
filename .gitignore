@@ -43,6 +43,7 @@
 .env.production.local
 .env.local
 .env.production
+.env.staging
 
 # temp directory
 .temp
