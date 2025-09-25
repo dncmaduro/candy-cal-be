@@ -15,4 +15,6 @@ export class StorageItemDto {
     real: number
   }
   note?: string
+  // optional deletion timestamp (null or undefined means not deleted)
+  deletedAt?: Date
 }
