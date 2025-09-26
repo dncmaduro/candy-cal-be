@@ -17,6 +17,7 @@ export interface StorageItem extends Document {
     real: number
   }
   note?: string
+  deletedAt?: Date
 }
 
 export const StorageItemSchema = new Schema<StorageItem>({
@@ -35,7 +36,8 @@ export const StorageItemSchema = new Schema<StorageItem>({
   restQuantity: {
     quantity: { type: Number, required: true, default: 0 },
     real: { type: Number, required: true, default: 0 }
-  }
+  },
+  deletedAt: { type: Date, required: false, default: null }
 })
 
 export const StorageItemModel = model<StorageItem>(

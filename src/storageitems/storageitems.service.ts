@@ -48,7 +48,7 @@ export class StorageItemsService {
 
   async getAllItemsForOrderPage(): Promise<string[]> {
     try {
-      const items = await this.storageItemModel.find().exec()
+      const items = await this.storageItemModel.find({ deletedAt: null }).exec()
       return items.map((i) => i.get("name"))
     } catch (error) {
       console.error(error)
@@ -77,13 +77,23 @@ export class StorageItemsService {
     }
   }
 
-  async searchItems(searchText: string): Promise<StorageItem[]> {
+  // Updated: accept optional searchText and optional deleted filter
+  async searchItems(
+    searchText?: string,
+    deleted?: boolean | undefined
+  ): Promise<StorageItem[]> {
     try {
-      const items = await this.storageItemModel
-        .find({
-          name: { $regex: `.*${searchText}.*`, $options: "i" }
-        })
-        .exec()
+      const filter: any = {}
+
+      if (typeof deleted === "boolean") {
+        filter.deletedAt = deleted ? { $ne: null } : null
+      }
+
+      if (searchText && searchText.trim().length > 0) {
+        filter.name = { $regex: `.*${searchText}.*`, $options: "i" }
+      }
+
+      const items = await this.storageItemModel.find(filter).exec()
       return items
     } catch (error) {
       console.error(error)
@@ -96,7 +106,7 @@ export class StorageItemsService {
 
   async getAllItemsForStoragePage(): Promise<StorageItem[]> {
     try {
-      const items = await this.storageItemModel.find().exec()
+      const items = await this.storageItemModel.find({ deletedAt: null }).exec()
       return items
     } catch (error) {
       console.error(error)
@@ -107,9 +117,36 @@ export class StorageItemsService {
     }
   }
 
+  // Soft delete: set deletedAt to now
   async deleteItem(id: string): Promise<void> {
     try {
-      await this.storageItemModel.findByIdAndDelete(id)
+      const res = await this.storageItemModel.findByIdAndUpdate(
+        id,
+        { $set: { deletedAt: new Date() } },
+        { new: true }
+      )
+      if (!res) {
+        throw new HttpException("Item not found", HttpStatus.NOT_FOUND)
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async restoreItem(id: string): Promise<void> {
+    try {
+      const res = await this.storageItemModel.findByIdAndUpdate(
+        id,
+        { $set: { deletedAt: null } },
+        { new: true }
+      )
+      if (!res) {
+        throw new HttpException("Item not found", HttpStatus.NOT_FOUND)
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(

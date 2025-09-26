@@ -82,9 +82,13 @@ export class StorageItemsController {
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(
-    @Query("searchText") searchText: string
+    @Query("searchText") searchText: string,
+    @Query("deleted") deleted?: string
   ): Promise<StorageItem[]> {
-    return this.storageItemsService.searchItems(searchText)
+    let deletedFlag: boolean | undefined = undefined
+    if (deleted === "true") deletedFlag = true
+    else if (deleted === "false") deletedFlag = false
+    return this.storageItemsService.searchItems(searchText, deletedFlag)
   }
 
   @Roles("admin", "accounting-emp")
@@ -96,6 +100,23 @@ export class StorageItemsController {
       {
         type: "storage",
         action: "deleted",
+        entity: "storage_item",
+        entityId: id,
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  @Roles("admin", "accounting-emp")
+  @Post(":id/restore")
+  @HttpCode(HttpStatus.OK)
+  async restoreItem(@Param("id") id: string, @Req() req): Promise<void> {
+    await this.storageItemsService.restoreItem(id)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "storage",
+        action: "restored",
         entity: "storage_item",
         entityId: id,
         result: "success"
