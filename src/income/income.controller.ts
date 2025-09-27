@@ -186,7 +186,12 @@ export class IncomeController {
   async totalIncomeByMonthSplit(
     @Query("month") month: string,
     @Query("year") year: string
-  ): Promise<{ totalIncome: { beforeDiscount: { live: number; shop: number }; afterDiscount: { live: number; shop: number } } }> {
+  ): Promise<{
+    totalIncome: {
+      beforeDiscount: { live: number; shop: number }
+      afterDiscount: { live: number; shop: number }
+    }
+  }> {
     const totalIncome = await this.incomeService.totalIncomeByMonthSplit(
       Number(month),
       Number(year)
@@ -223,44 +228,6 @@ export class IncomeController {
   }
 
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")
-  @Get("daily-stats")
-  @HttpCode(HttpStatus.OK)
-  async getDailyStats(@Query("date") date: string): Promise<{
-    boxes: { box: string; quantity: number }[]
-    beforeDiscount: {
-      totalIncome: number
-      sources: {
-        ads: number
-        affiliate: number
-        affiliateAds: number
-        other: number
-      }
-      liveIncome: number
-      videoIncome: number
-    }
-    afterDiscount: {
-      totalIncome: number
-      sources: {
-        ads: number
-        affiliate: number
-        affiliateAds: number
-        other: number
-      }
-      liveIncome: number
-      videoIncome: number
-    }
-    shippingProviders: { provider: string; orders: number }[]
-    dailyAds?: { liveAdsCost: number; videoAdsCost: number }
-    percentages?: {
-      liveAdsToLiveIncome: number
-      videoAdsToVideoIncome: number
-    }
-  }> {
-    const res = await this.incomeService.getDailyStats(new Date(date))
-    return res
-  }
-
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get("top-creators")
   @HttpCode(HttpStatus.OK)
   async getTopCreators(
@@ -268,12 +235,28 @@ export class IncomeController {
     @Query("endDate") endDate: string
   ): Promise<{
     affiliate: {
-      beforeDiscount: { creator: string; totalIncome: number; percentage: number }[]
-      afterDiscount: { creator: string; totalIncome: number; percentage: number }[]
+      beforeDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
+      afterDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
     }
     affiliateAds: {
-      beforeDiscount: { creator: string; totalIncome: number; percentage: number }[]
-      afterDiscount: { creator: string; totalIncome: number; percentage: number }[]
+      beforeDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
+      afterDiscount: {
+        creator: string
+        totalIncome: number
+        percentage: number
+      }[]
     }
   }> {
     return this.incomeService.getTopCreators(
@@ -304,13 +287,18 @@ export class IncomeController {
   }
 
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")
-  @Get("monthly-live-video-income")
+  @Get("monthly-live-shop-income")
   @HttpCode(HttpStatus.OK)
-  async totalLiveAndVideoIncomeByMonth(
+  async totalLiveAndShopIncomeByMonth(
     @Query("month") month: string,
     @Query("year") year: string
-  ): Promise<{ totalIncome: { beforeDiscount: { live: number; video: number }; afterDiscount: { live: number; video: number } } }> {
-    const totalIncome = await this.incomeService.totalLiveAndVideoIncomeByMonth(
+  ): Promise<{
+    totalIncome: {
+      beforeDiscount: { live: number; shop: number }
+      afterDiscount: { live: number; shop: number }
+    }
+  }> {
+    const totalIncome = await this.incomeService.totalLiveAndShopIncomeByMonth(
       Number(month),
       Number(year)
     )
@@ -325,9 +313,9 @@ export class IncomeController {
     @Query("year") year: string
   ): Promise<{
     liveAdsCost: number
-    videoAdsCost: number
-    percentages: { liveAdsToLiveIncome: number; videoAdsToVideoIncome: number }
-    totalIncome: { live: number; video: number }
+    shopAdsCost: number
+    percentages: { liveAdsToLiveIncome: number; shopAdsToShopIncome: number }
+    totalIncome: { live: number; shop: number }
   }> {
     return this.incomeService.adsCostSplitByMonth(Number(month), Number(year))
   }
@@ -453,7 +441,7 @@ export class IncomeController {
       )
     }
     const [totalIncomeFile, affiliateFile] = files
-    
+
     // Chạy async trong background để tránh timeout
     setImmediate(async () => {
       try {
@@ -462,7 +450,7 @@ export class IncomeController {
           affiliateFile,
           date: new Date(body.date)
         })
-        
+
         void this.systemLogsService.createSystemLog(
           {
             type: "income",
@@ -524,9 +512,10 @@ export class IncomeController {
     })
 
     // Trả response ngay lập tức
-    return { 
-      success: true, 
-      message: "Đang xử lý file trong background. Vui lòng chờ vài phút để hoàn thành." 
+    return {
+      success: true,
+      message:
+        "Đang xử lý file trong background. Vui lòng chờ vài phút để hoàn thành."
     }
   }
 
