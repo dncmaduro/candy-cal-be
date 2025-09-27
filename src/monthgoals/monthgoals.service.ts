@@ -124,7 +124,7 @@ export class MonthGoalService {
 
         const adsPercentage = {
           live: adsSplit.percentages.liveAdsToLiveIncome,
-          shop: adsSplit.percentages.videoAdsToVideoIncome
+          shop: adsSplit.percentages.shopAdsToShopIncome
         }
 
         const adsGoalComparison = {
