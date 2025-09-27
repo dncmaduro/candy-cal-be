@@ -588,173 +588,6 @@ export class IncomeService {
     }
   }
 
-  async getDailyStats(date: Date): Promise<{
-    boxes: { box: string; quantity: number }[]
-    beforeDiscount: {
-      totalIncome: number
-      sources: {
-        ads: number
-        affiliate: number
-        affiliateAds: number
-        other: number
-      }
-      liveIncome: number
-      videoIncome: number
-    }
-    afterDiscount: {
-      totalIncome: number
-      sources: {
-        ads: number
-        affiliate: number
-        affiliateAds: number
-        other: number
-      }
-      liveIncome: number
-      videoIncome: number
-    }
-    shippingProviders: { provider: string; orders: number }[]
-    dailyAds?: { liveAdsCost: number; videoAdsCost: number }
-    percentages?: {
-      liveAdsToLiveIncome: number
-      videoAdsToVideoIncome: number
-    }
-  }> {
-    try {
-      const start = new Date(date)
-      start.setHours(0, 0, 0)
-      const end = new Date(date)
-      end.setHours(23, 59, 59, 999)
-
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
-
-      const boxMap: Record<string, number> = {}
-      const shipMap: Record<string, number> = {}
-
-      // Before discount stats
-      let totalIncomeBeforeDiscount = 0
-      let liveIncomeBeforeDiscount = 0
-      let videoIncomeBeforeDiscount = 0
-      const sourceTotalsBeforeDiscount = {
-        ads: 0,
-        affiliate: 0,
-        affiliateAds: 0,
-        other: 0
-      }
-
-      // After discount stats
-      let totalIncomeAfterDiscount = 0
-      let liveIncomeAfterDiscount = 0
-      let videoIncomeAfterDiscount = 0
-      const sourceTotalsAfterDiscount = {
-        ads: 0,
-        affiliate: 0,
-        affiliateAds: 0,
-        other: 0
-      }
-
-      for (const income of incomes) {
-        const provider = income.shippingProvider || "(unknown)"
-        shipMap[provider] = (shipMap[provider] || 0) + 1
-
-        for (const p of income.products || []) {
-          const priceBeforeDiscount = p.price || 0
-          const priceAfterDiscount = this.getActualPrice(p)
-
-          // Calculate before discount
-          totalIncomeBeforeDiscount += priceBeforeDiscount
-          if (p.source === "ads")
-            sourceTotalsBeforeDiscount.ads += priceBeforeDiscount
-          else if (p.source === "affiliate")
-            sourceTotalsBeforeDiscount.affiliate += priceBeforeDiscount
-          else if (p.source === "affiliate-ads")
-            sourceTotalsBeforeDiscount.affiliateAds += priceBeforeDiscount
-          else sourceTotalsBeforeDiscount.other += priceBeforeDiscount
-
-          // Calculate after discount
-          totalIncomeAfterDiscount += priceAfterDiscount
-          if (p.source === "ads")
-            sourceTotalsAfterDiscount.ads += priceAfterDiscount
-          else if (p.source === "affiliate")
-            sourceTotalsAfterDiscount.affiliate += priceAfterDiscount
-          else if (p.source === "affiliate-ads")
-            sourceTotalsAfterDiscount.affiliateAds += priceAfterDiscount
-          else sourceTotalsAfterDiscount.other += priceAfterDiscount
-
-          if (typeof p.content === "string") {
-            if (/Phát trực tiếp|livestream/i.test(p.content)) {
-              liveIncomeBeforeDiscount += priceBeforeDiscount
-              liveIncomeAfterDiscount += priceAfterDiscount
-            } else if (/video/i.test(p.content)) {
-              videoIncomeBeforeDiscount += priceBeforeDiscount
-              videoIncomeAfterDiscount += priceAfterDiscount
-            }
-          }
-
-          if (p.box) {
-            boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
-          }
-        }
-      }
-
-      const boxes = Object.entries(boxMap)
-        .map(([box, quantity]) => ({ box, quantity }))
-        .sort((a, b) => a.box.localeCompare(b.box))
-
-      const shippingProviders = Object.entries(shipMap)
-        .map(([provider, orders]) => ({ provider, orders }))
-        .sort((a, b) => b.orders - a.orders)
-
-      // Fetch daily ads by exact date (same day)
-      const dailyAds = await this.dailyAdsModel
-        .findOne({
-          date: { $gte: start, $lte: end }
-        })
-        .lean()
-
-      const liveAdsCost = dailyAds?.liveAdsCost || 0
-      const videoAdsCost = dailyAds?.videoAdsCost || 0
-
-      const percentages = {
-        liveAdsToLiveIncome:
-          liveIncomeAfterDiscount === 0
-            ? 0
-            : Math.round((liveAdsCost / liveIncomeAfterDiscount) * 10000) / 100,
-        videoAdsToVideoIncome:
-          videoIncomeAfterDiscount === 0
-            ? 0
-            : Math.round((videoAdsCost / videoIncomeAfterDiscount) * 10000) /
-              100
-      }
-
-      return {
-        boxes,
-        beforeDiscount: {
-          totalIncome: totalIncomeBeforeDiscount,
-          sources: sourceTotalsBeforeDiscount,
-          liveIncome: liveIncomeBeforeDiscount,
-          videoIncome: videoIncomeBeforeDiscount
-        },
-        afterDiscount: {
-          totalIncome: totalIncomeAfterDiscount,
-          sources: sourceTotalsAfterDiscount,
-          liveIncome: liveIncomeAfterDiscount,
-          videoIncome: videoIncomeAfterDiscount
-        },
-        shippingProviders,
-        dailyAds: { liveAdsCost, videoAdsCost },
-        percentages
-      }
-    } catch (error) {
-      console.error(error)
-      throw new HttpException(
-        "Lỗi khi tính thống kê ngày",
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
-    }
-  }
-
   async getTopCreators(
     startDate: Date,
     endDate: Date
@@ -955,12 +788,12 @@ export class IncomeService {
     }
   }
 
-  async totalLiveAndVideoIncomeByMonth(
+  async totalLiveAndShopIncomeByMonth(
     month: number,
     year: number
   ): Promise<{
-    beforeDiscount: { live: number; video: number }
-    afterDiscount: { live: number; video: number }
+    beforeDiscount: { live: number; shop: number }
+    afterDiscount: { live: number; shop: number }
   }> {
     try {
       const start = new Date(year, month, 1)
@@ -970,23 +803,26 @@ export class IncomeService {
         .lean()
 
       let liveBeforeDiscount = 0
-      let videoBeforeDiscount = 0
+      let shopBeforeDiscount = 0
       let liveAfterDiscount = 0
-      let videoAfterDiscount = 0
+      let shopAfterDiscount = 0
 
       for (const income of incomes) {
         for (const p of income.products || []) {
           const priceBeforeDiscount = p.price || 0
           const priceAfterDiscount = this.getActualPrice(p)
 
-          if (typeof p.content === "string") {
-            if (/Phát trực tiếp|livestream/i.test(p.content)) {
-              liveBeforeDiscount += priceBeforeDiscount
-              liveAfterDiscount += priceAfterDiscount
-            } else if (/video/i.test(p.content)) {
-              videoBeforeDiscount += priceBeforeDiscount
-              videoAfterDiscount += priceAfterDiscount
-            }
+          // Split by channel: live vs shop (non-livestream)
+          if (
+            typeof p.content === "string" &&
+            /Phát trực tiếp|livestream/i.test(p.content)
+          ) {
+            liveBeforeDiscount += priceBeforeDiscount
+            liveAfterDiscount += priceAfterDiscount
+          } else {
+            // Everything else is considered "shop"
+            shopBeforeDiscount += priceBeforeDiscount
+            shopAfterDiscount += priceAfterDiscount
           }
         }
       }
@@ -994,14 +830,14 @@ export class IncomeService {
       return {
         beforeDiscount: {
           live: liveBeforeDiscount,
-          video: videoBeforeDiscount
+          shop: shopBeforeDiscount
         },
-        afterDiscount: { live: liveAfterDiscount, video: videoAfterDiscount }
+        afterDiscount: { live: liveAfterDiscount, shop: shopAfterDiscount }
       }
     } catch (error) {
       console.error(error)
       throw new HttpException(
-        "Lỗi khi tính doanh thu live/video theo tháng",
+        "Lỗi khi tính doanh thu live/shop theo tháng",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -1012,12 +848,12 @@ export class IncomeService {
     year: number
   ): Promise<{
     liveAdsCost: number
-    videoAdsCost: number
+    shopAdsCost: number
     percentages: {
       liveAdsToLiveIncome: number
-      videoAdsToVideoIncome: number
+      shopAdsToShopIncome: number
     }
-    totalIncome: { live: number; video: number }
+    totalIncome: { live: number; shop: number }
   }> {
     try {
       const start = new Date(year, month, 1)
@@ -1031,6 +867,7 @@ export class IncomeService {
             $group: {
               _id: null,
               liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
+              shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } },
               videoAdsCost: { $sum: { $ifNull: ["$videoAdsCost", 0] } }
             }
           }
@@ -1038,28 +875,32 @@ export class IncomeService {
         .exec()
 
       const liveAdsCost = rows?.[0]?.liveAdsCost || 0
-      const videoAdsCost = rows?.[0]?.videoAdsCost || 0
+      // Accumulate both shopAdsCost (new) and videoAdsCost (legacy) for total shop ads cost
+      const shopAdsCost =
+        (rows?.[0]?.shopAdsCost || 0) + (rows?.[0]?.videoAdsCost || 0)
 
-      // Get total live/video incomes in month
-      const totalLiveVideo = await this.totalLiveAndVideoIncomeByMonth(
+      // Get total live/shop incomes in month
+      const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
         month,
         year
       )
-      const live = totalLiveVideo.afterDiscount.live
-      const video = totalLiveVideo.afterDiscount.video
+      const live = totalLiveShop.afterDiscount.live
+      const shop = totalLiveShop.afterDiscount.shop
 
       const percentages = {
         liveAdsToLiveIncome:
           live === 0 ? 0 : Math.round((liveAdsCost / live) * 10000) / 100,
-        videoAdsToVideoIncome:
-          video === 0 ? 0 : Math.round((videoAdsCost / video) * 10000) / 100
+        shopAdsToShopIncome:
+          shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100
       }
+
+      console.log()
 
       return {
         liveAdsCost,
-        videoAdsCost,
+        shopAdsCost,
         percentages,
-        totalIncome: { live, video }
+        totalIncome: { live, shop }
       }
     } catch (error) {
       console.error(error)
