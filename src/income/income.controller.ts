@@ -362,10 +362,10 @@ export class IncomeController {
       shippingProviders: { provider: string; orders: number }[]
       ads: {
         liveAdsCost: number
-        videoAdsCost: number
+        shopAdsCost: number
         percentages: {
           liveAdsToLiveIncome: number
-          videoAdsToVideoIncome: number
+          shopAdsToShopIncome: number
         }
       }
       discounts: {
@@ -405,9 +405,9 @@ export class IncomeController {
       }
       ads: {
         liveAdsCostPct: number
-        videoAdsCostPct: number
+        shopAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
-        videoAdsToVideoIncomePctDiff: number
+        shopAdsToShopIncomePctDiff: number
       }
       discounts: {
         totalPlatformDiscountPct: number
