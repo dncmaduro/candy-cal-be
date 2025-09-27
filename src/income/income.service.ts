@@ -867,17 +867,14 @@ export class IncomeService {
             $group: {
               _id: null,
               liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
-              shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } },
-              videoAdsCost: { $sum: { $ifNull: ["$videoAdsCost", 0] } }
+              shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
             }
           }
         ])
         .exec()
 
       const liveAdsCost = rows?.[0]?.liveAdsCost || 0
-      // Accumulate both shopAdsCost (new) and videoAdsCost (legacy) for total shop ads cost
-      const shopAdsCost =
-        (rows?.[0]?.shopAdsCost || 0) + (rows?.[0]?.videoAdsCost || 0)
+      const shopAdsCost = rows?.[0]?.shopAdsCost || 0
 
       // Get total live/shop incomes in month
       const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
@@ -893,8 +890,6 @@ export class IncomeService {
         shopAdsToShopIncome:
           shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100
       }
-
-      console.log()
 
       return {
         liveAdsCost,
@@ -950,10 +945,10 @@ export class IncomeService {
       shippingProviders: { provider: string; orders: number }[]
       ads: {
         liveAdsCost: number
-        videoAdsCost: number
+        shopAdsCost: number
         percentages: {
           liveAdsToLiveIncome: number
-          videoAdsToVideoIncome: number
+          shopAdsToShopIncome: number
         }
       }
       discounts: {
@@ -993,9 +988,9 @@ export class IncomeService {
       }
       ads: {
         liveAdsCostPct: number
-        videoAdsCostPct: number
+        shopAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
-        videoAdsToVideoIncomePctDiff: number
+        shopAdsToShopIncomePctDiff: number
       }
       discounts: {
         totalPlatformDiscountPct: number
@@ -1143,23 +1138,23 @@ export class IncomeService {
               $group: {
                 _id: null,
                 liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
-                videoAdsCost: { $sum: { $ifNull: ["$videoAdsCost", 0] } }
+                shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
               }
             }
           ])
           .exec()
         const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
-        const videoAdsCost = adsAgg?.[0]?.videoAdsCost || 0
+        const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
         const percentages = {
           liveAdsToLiveIncome:
             liveIncomeAfterDiscount === 0
               ? 0
               : Math.round((liveAdsCost / liveIncomeAfterDiscount) * 10000) /
                 100,
-          videoAdsToVideoIncome:
+          shopAdsToShopIncome:
             videoIncomeAfterDiscount === 0
               ? 0
-              : Math.round((videoAdsCost / videoIncomeAfterDiscount) * 10000) /
+              : Math.round((shopAdsCost / videoIncomeAfterDiscount) * 10000) /
                 100
         }
 
@@ -1192,7 +1187,7 @@ export class IncomeService {
           },
           boxes,
           shippingProviders,
-          ads: { liveAdsCost, videoAdsCost, percentages },
+          ads: { liveAdsCost, shopAdsCost, percentages },
           discounts: {
             totalPlatformDiscount,
             totalSellerDiscount,
@@ -1303,9 +1298,9 @@ export class IncomeService {
             current.ads.liveAdsCost,
             previous.ads.liveAdsCost
           ),
-          videoAdsCostPct: pct(
-            current.ads.videoAdsCost,
-            previous.ads.videoAdsCost
+          shopAdsCostPct: pct(
+            current.ads.shopAdsCost,
+            previous.ads.shopAdsCost
           ),
           liveAdsToLiveIncomePctDiff:
             Math.round(
@@ -1313,10 +1308,10 @@ export class IncomeService {
                 previous.ads.percentages.liveAdsToLiveIncome) *
                 100
             ) / 100,
-          videoAdsToVideoIncomePctDiff:
+          shopAdsToShopIncomePctDiff:
             Math.round(
-              (current.ads.percentages.videoAdsToVideoIncome -
-                previous.ads.percentages.videoAdsToVideoIncome) *
+              (current.ads.percentages.shopAdsToShopIncome -
+                previous.ads.percentages.shopAdsToShopIncome) *
                 100
             ) / 100
         },
