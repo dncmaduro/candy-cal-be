@@ -389,8 +389,12 @@ export class IncomeService {
         )
         liveBeforeDiscount += this.sumProductsAmountBeforeDiscount(liveProducts)
         shopBeforeDiscount += this.sumProductsAmountBeforeDiscount(shopProducts)
-        liveAfterDiscount += this.sumProductsAmount(liveProducts)
-        shopAfterDiscount += this.sumProductsAmount(shopProducts)
+
+        // CHỈ TRỪ SELLER DISCOUNT, KHÔNG TRỪ PLATFORM DISCOUNT
+        liveAfterDiscount +=
+          this.sumProductsAmountAfterSellerDiscount(liveProducts)
+        shopAfterDiscount +=
+          this.sumProductsAmountAfterSellerDiscount(shopProducts)
       }
 
       return {
@@ -826,7 +830,9 @@ export class IncomeService {
       for (const income of incomes) {
         for (const p of income.products || []) {
           const priceBeforeDiscount = p.price || 0
-          const priceAfterDiscount = this.getActualPrice(p)
+          const sellerDiscount = p.sellerDiscount || 0
+          // CHỈ TRỪ SELLER DISCOUNT, KHÔNG TRỪ PLATFORM DISCOUNT
+          const priceAfterSellerDiscount = priceBeforeDiscount - sellerDiscount
 
           // Split by channel: live vs shop (non-livestream)
           if (
@@ -834,11 +840,11 @@ export class IncomeService {
             /Phát trực tiếp|livestream/i.test(p.content)
           ) {
             liveBeforeDiscount += priceBeforeDiscount
-            liveAfterDiscount += priceAfterDiscount
+            liveAfterDiscount += priceAfterSellerDiscount
           } else {
             // Everything else is considered "shop"
             shopBeforeDiscount += priceBeforeDiscount
-            shopAfterDiscount += priceAfterDiscount
+            shopAfterDiscount += priceAfterSellerDiscount
           }
         }
       }
@@ -1645,11 +1651,21 @@ export class IncomeService {
     return products.reduce((sum, p) => sum + (p.price || 0), 0)
   }
 
+  private sumProductsAmountAfterSellerDiscount(products: any[]) {
+    return products.reduce((sum, p) => {
+      const priceBeforeDiscount = p.price || 0
+      const sellerDiscount = p.sellerDiscount || 0
+      return sum + (priceBeforeDiscount - sellerDiscount)
+    }, 0)
+  }
+
   private sumProductsQuantity(products: any[]) {
     return products.reduce((sum, p) => sum + (p.quantity || 0), 0)
   }
 
   private getActualPrice(product: any): number {
+    // CẢNH BÁO: Hàm này trừ CẢ PLATFORM + SELLER DISCOUNT
+    // Không dùng cho business logic chỉ trừ seller discount
     return product.priceAfterDiscount || product.price || 0
   }
 
