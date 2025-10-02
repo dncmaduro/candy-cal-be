@@ -366,8 +366,14 @@ export class IncomeService {
     afterDiscount: { live: number; shop: number }
   }> {
     try {
-      const start = new Date(year, month, 1)
-      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
+      // Adjust for GMT+7 timezone (Vietnam time)
+      // Create dates in UTC then adjust to match Vietnam timezone
+      const start = new Date(Date.UTC(year, month, 1))
+      start.setUTCHours(start.getUTCHours() - 7) // Subtract 7 hours to get GMT+7 start in UTC
+
+      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+      end.setUTCHours(end.getUTCHours() - 7) // Subtract 7 hours to get GMT+7 end in UTC
+
       const incomes = await this.incomeModel
         .find({ date: { $gte: start, $lte: end } })
         .lean()
@@ -405,8 +411,13 @@ export class IncomeService {
     year: number
   ): Promise<{ live: number; shop: number }> {
     try {
-      const start = new Date(year, month, 1)
-      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
+      // Adjust for GMT+7 timezone (Vietnam time)
+      const start = new Date(Date.UTC(year, month, 1))
+      start.setUTCHours(start.getUTCHours() - 7)
+
+      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+      end.setUTCHours(end.getUTCHours() - 7)
+
       const incomes = await this.incomeModel
         .find({ date: { $gte: start, $lte: end } })
         .lean()
@@ -796,8 +807,13 @@ export class IncomeService {
     afterDiscount: { live: number; shop: number }
   }> {
     try {
-      const start = new Date(year, month, 1)
-      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
+      // Adjust for GMT+7 timezone (Vietnam time)
+      const start = new Date(Date.UTC(year, month, 1))
+      start.setUTCHours(start.getUTCHours() - 7)
+
+      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+      end.setUTCHours(end.getUTCHours() - 7)
+
       const incomes = await this.incomeModel
         .find({ date: { $gte: start, $lte: end } })
         .lean()
@@ -856,8 +872,12 @@ export class IncomeService {
     totalIncome: { live: number; shop: number }
   }> {
     try {
-      const start = new Date(year, month, 1)
-      const end = new Date(year, month + 1, 0, 23, 59, 59, 999)
+      // Adjust for GMT+7 timezone (Vietnam time)
+      const start = new Date(Date.UTC(year, month, 1))
+      start.setUTCHours(start.getUTCHours() - 7)
+
+      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+      end.setUTCHours(end.getUTCHours() - 7)
 
       // Sum daily ads cost in month
       const rows = await this.dailyAdsModel
