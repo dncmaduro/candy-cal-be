@@ -11,10 +11,12 @@ import {
   UseInterceptors,
   UseGuards,
   Patch,
-  Req
+  Req,
+  Delete,
+  Param
 } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
-import { ProductsService } from "./products.service"
+import { ProductsService, ProductResponse } from "./products.service"
 import { ProductDto } from "./dto/product.dto"
 import { Product } from "../database/mongoose/schemas/Product"
 import { CalItemsResponse } from "./products"
@@ -37,7 +39,7 @@ export class ProductsController {
   async createProduct(
     @Body() product: ProductDto,
     @Req() req
-  ): Promise<Product> {
+  ): Promise<ProductResponse> {
     const created = await this.productsService.createProduct(product)
     void this.systemLogsService.createSystemLog(
       {
@@ -56,7 +58,10 @@ export class ProductsController {
   @Roles("admin", "order-emp")
   @Put()
   @HttpCode(HttpStatus.OK)
-  async updateProduct(@Body() product: Product, @Req() req): Promise<Product> {
+  async updateProduct(
+    @Body() product: Product,
+    @Req() req
+  ): Promise<ProductResponse> {
     const updated = await this.productsService.updateProduct(product)
     void this.systemLogsService.createSystemLog(
       {
@@ -78,7 +83,7 @@ export class ProductsController {
     @Query("productId") productId: string,
     @Body("items") items: Product["items"],
     @Req() req
-  ): Promise<Product> {
+  ): Promise<ProductResponse> {
     const updated = await this.productsService.updateItemsForProduct(
       productId,
       items
@@ -100,14 +105,14 @@ export class ProductsController {
   @Roles("admin", "order-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
-  async getAllProducts(): Promise<Product[]> {
+  async getAllProducts(): Promise<ProductResponse[]> {
     return this.productsService.getAllProducts()
   }
 
   @Roles("admin", "order-emp", "system-emp")
   @Get("/product")
   @HttpCode(HttpStatus.OK)
-  async getProduct(@Query("id") id: string): Promise<Product> {
+  async getProduct(@Query("id") id: string): Promise<ProductResponse> {
     return this.productsService.getProduct(id)
   }
 
@@ -115,9 +120,18 @@ export class ProductsController {
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
-    @Query("searchText") searchText: string
-  ): Promise<Product[]> {
-    return this.productsService.searchProducts(searchText)
+    @Query("searchText") searchText: string,
+    @Query("deleted") deleted?: string
+  ): Promise<ProductResponse[]> {
+    // Convert string to boolean if provided
+    let deletedFilter: boolean | undefined = undefined
+    if (deleted === "true") {
+      deletedFilter = true
+    } else if (deleted === "false") {
+      deletedFilter = false
+    }
+
+    return this.productsService.searchProducts(searchText, deletedFilter)
   }
 
   @Roles("admin", "order-emp")
@@ -154,7 +168,7 @@ export class ProductsController {
   async changeReadyStatus(
     @Query("productId") productId: string,
     @Req() req
-  ): Promise<Product> {
+  ): Promise<ProductResponse> {
     const updated = await this.productsService.changeReadyStatus(productId)
     void this.systemLogsService.createSystemLog(
       {
@@ -167,5 +181,47 @@ export class ProductsController {
       req.user.userId
     )
     return updated
+  }
+
+  @Roles("admin", "order-emp")
+  @Delete(":productId")
+  @HttpCode(HttpStatus.OK)
+  async deleteProduct(
+    @Param("productId") productId: string,
+    @Req() req
+  ): Promise<{ message: string }> {
+    await this.productsService.deleteProduct(productId)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "products",
+        action: "deleted",
+        entity: "product",
+        entityId: productId,
+        result: "success"
+      },
+      req.user.userId
+    )
+    return { message: "Sản phẩm đã được xóa thành công" }
+  }
+
+  @Roles("admin", "order-emp")
+  @Patch(":productId/restore")
+  @HttpCode(HttpStatus.OK)
+  async restoreProduct(
+    @Param("productId") productId: string,
+    @Req() req
+  ): Promise<{ message: string }> {
+    await this.productsService.restoreProduct(productId)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "products",
+        action: "restored",
+        entity: "product",
+        entityId: productId,
+        result: "success"
+      },
+      req.user.userId
+    )
+    return { message: "Sản phẩm đã được phục hồi thành công" }
   }
 }

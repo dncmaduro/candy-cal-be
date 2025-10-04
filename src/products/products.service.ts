@@ -6,23 +6,28 @@ import { Product } from "../database/mongoose/schemas/Product"
 import { CalXlsxDto, ProductDto } from "./dto/product.dto"
 import * as XLSX from "xlsx"
 import { StorageItem } from "../database/mongoose/schemas/StorageItem"
-import { Item } from "../database/mongoose/schemas/Item"
+
+// Type for limited Product response
+export type ProductResponse = Pick<Product, "name" | "items" | "_id">
 
 @Injectable()
 export class ProductsService {
   constructor(
     @InjectModel("products")
     private readonly productModel: Model<Product>,
-    @InjectModel("items")
-    private readonly itemModel: Model<Item>,
     @InjectModel("storageitems")
     private readonly storageItemModel: Model<StorageItem>
   ) {}
 
-  async createProduct(product: ProductDto): Promise<Product> {
+  async createProduct(product: ProductDto): Promise<ProductResponse> {
     try {
       const newProduct = new this.productModel(product)
-      return await newProduct.save()
+      const saved = await newProduct.save()
+      return {
+        _id: saved._id,
+        name: saved.name,
+        items: saved.items
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -32,19 +37,23 @@ export class ProductsService {
     }
   }
 
-  async updateProduct(product: Product): Promise<Product> {
+  async updateProduct(product: Product): Promise<ProductResponse> {
     try {
-      const updatedProduct = await this.productModel.findByIdAndUpdate(
-        product._id,
+      const updatedProduct = await this.productModel.findOneAndUpdate(
+        { _id: product._id, deletedAt: null },
         product,
-        { new: true }
+        { new: true, select: "name items" }
       )
 
       if (!updatedProduct) {
         throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
 
-      return updatedProduct
+      return {
+        _id: updatedProduct._id,
+        name: updatedProduct.name,
+        items: updatedProduct.items
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -57,19 +66,23 @@ export class ProductsService {
   async updateItemsForProduct(
     productId: string,
     items: Product["items"]
-  ): Promise<Product> {
+  ): Promise<ProductResponse> {
     try {
-      const updatedProduct = await this.productModel.findByIdAndUpdate(
-        productId,
+      const updatedProduct = await this.productModel.findOneAndUpdate(
+        { _id: productId, deletedAt: null },
         { items },
-        { new: true }
+        { new: true, select: "name items" }
       )
 
       if (!updatedProduct) {
         throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
 
-      return updatedProduct
+      return {
+        _id: updatedProduct._id,
+        name: updatedProduct.name,
+        items: updatedProduct.items
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -79,9 +92,12 @@ export class ProductsService {
     }
   }
 
-  async getAllProducts(): Promise<Product[]> {
+  async getAllProducts(): Promise<ProductResponse[]> {
     try {
-      return await this.productModel.find().exec()
+      return await this.productModel
+        .find({ deletedAt: null }, "name items")
+        .lean()
+        .exec()
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -91,9 +107,12 @@ export class ProductsService {
     }
   }
 
-  async getProduct(id: string): Promise<Product> {
+  async getProduct(id: string): Promise<ProductResponse> {
     try {
-      const product = await this.productModel.findById(id).exec()
+      const product = await this.productModel
+        .findOne({ _id: id, deletedAt: null }, "name items")
+        .lean()
+        .exec()
 
       if (!product) {
         throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
@@ -109,12 +128,29 @@ export class ProductsService {
     }
   }
 
-  async searchProducts(searchText: string): Promise<Product[]> {
+  async searchProducts(
+    searchText: string,
+    deleted?: boolean
+  ): Promise<ProductResponse[]> {
     try {
+      // Build filter condition based on deleted parameter
+      let deletedFilter = {}
+      if (deleted === true) {
+        deletedFilter = { deletedAt: { $ne: null } } // Only deleted products
+      } else if (deleted === false) {
+        deletedFilter = { deletedAt: null } // Only active products
+      }
+      // If deleted is undefined, search in both active and deleted products
+
       const products = await this.productModel
-        .find({
-          name: { $regex: `.*${searchText}.*`, $options: "i" }
-        })
+        .find(
+          {
+            name: { $regex: `.*${searchText}.*`, $options: "i" },
+            ...deletedFilter
+          },
+          "name items"
+        )
+        .lean()
         .exec()
       return products
     } catch (error) {
@@ -158,14 +194,20 @@ export class ProductsService {
   //   }
   // }
 
-  async changeReadyStatus(productId: string): Promise<Product> {
+  async changeReadyStatus(productId: string): Promise<ProductResponse> {
     try {
-      const product = await this.productModel.findById(productId).exec()
+      const product = await this.productModel
+        .findOne({ _id: productId, deletedAt: null }, "name items")
+        .exec()
       if (!product) {
         throw new HttpException("Không tìm thấy sản phẩm", HttpStatus.NOT_FOUND)
       }
       await product.save()
-      return product
+      return {
+        _id: product._id,
+        name: product.name,
+        items: product.items
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -210,7 +252,10 @@ export class ProductsService {
       // 2. Query products 1 lần
       const productNames = Array.from(new Set(data.map((row) => row.sellerSKU)))
       const productsDocs = await this.productModel
-        .find({ name: { $in: productNames } }, { name: 1, items: 1 })
+        .find(
+          { name: { $in: productNames }, deletedAt: null },
+          { name: 1, items: 1 }
+        )
         .lean()
       const productMap = new Map(productsDocs.map((prod) => [prod.name, prod]))
 
@@ -251,30 +296,22 @@ export class ProductsService {
       const orders = Object.values(groupedOrders)
       const total = orders.reduce((acc, order) => acc + order.quantity, 0)
 
-      // 5. Query items và storageItems 1 lần
-      const itemIds = Object.keys(itemQuantities)
-      const itemDocs = await this.itemModel
-        .find({ _id: { $in: itemIds } }, { name: 1, variants: 1 })
+      // 5. Query storage items directly (simplified from Item -> StorageItem chain)
+      const storageItemIds = Object.keys(itemQuantities)
+      const storageItemDocs = await this.storageItemModel
+        .find({ _id: { $in: storageItemIds } }, { name: 1, code: 1 })
         .lean()
-      const allVariantIds = itemDocs.flatMap((item) => item.variants || [])
-      const uniqueVariantIds = Array.from(
-        new Set(allVariantIds.map((id) => id.toString()))
-      )
-      const storageItems = await this.storageItemModel
-        .find({ _id: { $in: uniqueVariantIds } })
-        .lean()
+
       const storageItemMap = new Map(
-        storageItems.map((i) => [i._id.toString(), i])
+        storageItemDocs.map((i) => [i._id.toString(), i])
       )
 
-      // 6. Kết quả cuối
-      const resultWithStorageItems = itemDocs.map((itemDoc) => ({
-        _id: itemDoc._id.toString(),
-        name: itemDoc.name,
-        quantity: itemQuantities[itemDoc._id.toString()] || 0,
-        storageItems: (itemDoc.variants || [])
-          .map((variantId) => storageItemMap.get(variantId.toString()))
-          .filter(Boolean)
+      // 6. Kết quả cuối với StorageItems trực tiếp
+      const resultWithStorageItems = storageItemDocs.map((storageItem) => ({
+        _id: storageItem._id.toString(),
+        name: storageItem.name,
+        quantity: itemQuantities[storageItem._id.toString()] || 0,
+        storageItems: [storageItem] // Direct storage item reference
       }))
 
       return { items: resultWithStorageItems, orders, total }
@@ -282,6 +319,52 @@ export class ProductsService {
       console.error("Error in calFromXlsx:", error)
       throw new HttpException(
         "Có lỗi khi tính toán từ file Excel",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Soft delete: set deletedAt to now
+  async deleteProduct(id: string): Promise<void> {
+    try {
+      const res = await this.productModel.findOneAndUpdate(
+        { _id: id, deletedAt: null },
+        { $set: { deletedAt: new Date() } },
+        { new: true }
+      )
+      if (!res) {
+        throw new HttpException(
+          "Không tìm thấy sản phẩm hoặc sản phẩm đã bị xóa",
+          HttpStatus.NOT_FOUND
+        )
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi xóa sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Restore product: set deletedAt to null
+  async restoreProduct(id: string): Promise<void> {
+    try {
+      const res = await this.productModel.findOneAndUpdate(
+        { _id: id, deletedAt: { $ne: null } },
+        { $set: { deletedAt: null } },
+        { new: true }
+      )
+      if (!res) {
+        throw new HttpException(
+          "Không tìm thấy sản phẩm đã bị xóa",
+          HttpStatus.NOT_FOUND
+        )
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi phục hồi sản phẩm",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

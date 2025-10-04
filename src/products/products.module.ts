@@ -3,7 +3,6 @@ import { MongooseModule } from "@nestjs/mongoose"
 import { ProductSchema } from "../database/mongoose/schemas/Product"
 import { ProductsController } from "./products.controller"
 import { ProductsService } from "./products.service"
-import { ItemSchema } from "../database/mongoose/schemas/Item"
 import { StorageItemSchema } from "../database/mongoose/schemas/StorageItem"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
@@ -11,7 +10,6 @@ import { SystemLogsModule } from "../systemlogs/systemlogs.module"
   imports: [
     MongooseModule.forFeature([
       { name: "products", schema: ProductSchema },
-      { name: "items", schema: ItemSchema },
       { name: "storageitems", schema: StorageItemSchema }
     ]),
     SystemLogsModule
