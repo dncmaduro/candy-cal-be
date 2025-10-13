@@ -331,9 +331,21 @@ export class IncomeService {
         .exec()
 
       for (const income of incomes) {
+        // Only update packing for orders that have exactly 1 unique product code
+        const productsArr = income.products || []
+        const uniqueCodes = new Set(
+          productsArr
+            .map((p) => (typeof p?.code === "string" ? p.code.trim() : ""))
+            .filter((c) => c.length > 0)
+        )
+        if (uniqueCodes.size !== 1) {
+          // Skip orders having 2+ different product codes
+          continue
+        }
+
         let needSave = false
 
-        for (const product of income.products) {
+        for (const product of productsArr) {
           const boxType = await this.packingRulesService.getPackingType(
             product.code,
             product.quantity
