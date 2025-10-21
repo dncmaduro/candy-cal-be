@@ -43,7 +43,9 @@ export class PackingRulesController {
         entity: "packing_rule",
         entityId: created._id.toString(),
         result: "success",
-        meta: { productCode: created.productCode }
+        meta: {
+          productCodes: (created.products || []).map((p) => p.productCode)
+        }
       },
       req.user.userId
     )
@@ -51,14 +53,14 @@ export class PackingRulesController {
   }
 
   @Roles("admin", "accounting-emp")
-  @Patch(":productCode")
+  @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateRule(
-    @Param("productCode") productCode: string,
-    @Body() dto: Omit<PackingRuleDto, "productCode">,
+    @Param("id") id: string,
+    @Body() dto: PackingRuleDto,
     @Req() req
   ): Promise<PackingRule> {
-    const updated = await this.packingRulesService.updateRule(productCode, dto)
+    const updated = await this.packingRulesService.updateRule(id, dto)
     void this.systemLogsService.createSystemLog(
       {
         type: "packingrules",
@@ -73,19 +75,16 @@ export class PackingRulesController {
   }
 
   @Roles("admin", "accounting-emp")
-  @Delete(":productCode")
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteRule(
-    @Param("productCode") productCode: string,
-    @Req() req
-  ): Promise<void> {
-    await this.packingRulesService.deleteRule(productCode)
+  async deleteRule(@Param("id") id: string, @Req() req): Promise<void> {
+    await this.packingRulesService.deleteRule(id)
     void this.systemLogsService.createSystemLog(
       {
         type: "packingrules",
         action: "deleted",
         entity: "packing_rule",
-        entityId: productCode,
+        entityId: id,
         result: "success"
       },
       req.user.userId
@@ -93,12 +92,10 @@ export class PackingRulesController {
   }
 
   @Roles("admin", "order-emp", "accounting-emp", "system-emp")
-  @Get(":productCode")
+  @Get(":id")
   @HttpCode(HttpStatus.OK)
-  async getRuleByProductCode(
-    @Param("productCode") productCode: string
-  ): Promise<PackingRule | null> {
-    return this.packingRulesService.getRuleByProductCode(productCode)
+  async getRuleById(@Param("id") id: string): Promise<PackingRule | null> {
+    return this.packingRulesService.getRuleById(id)
   }
 
   @Roles("admin", "order-emp", "accounting-emp", "system-emp")

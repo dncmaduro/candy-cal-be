@@ -331,34 +331,32 @@ export class IncomeService {
         .exec()
 
       for (const income of incomes) {
-        // Only update packing for orders that have exactly 1 unique product code
         const productsArr = income.products || []
-        const uniqueCodes = new Set(
-          productsArr
-            .map((p) => (typeof p?.code === "string" ? p.code.trim() : ""))
-            .filter((c) => c.length > 0)
-        )
-        if (uniqueCodes.size !== 1) {
-          // Skip orders having 2+ different product codes
-          continue
-        }
 
-        let needSave = false
+        // Build products array for getPackingType
+        const productsForPacking = productsArr.map((p) => ({
+          productCode: p.code,
+          quantity: p.quantity
+        }))
 
-        for (const product of productsArr) {
-          const boxType = await this.packingRulesService.getPackingType(
-            product.code,
-            product.quantity
-          )
+        // Get packing type for this combination of products
+        const boxType =
+          await this.packingRulesService.getPackingType(productsForPacking)
 
-          if (product.box !== boxType) {
-            product.box = boxType
-            needSave = true
+        // If a matching rule is found, update all products in the order
+        if (boxType) {
+          let needSave = false
+
+          for (const product of productsArr) {
+            if (product.box !== boxType) {
+              product.box = boxType
+              needSave = true
+            }
           }
-        }
 
-        if (needSave) {
-          await income.save()
+          if (needSave) {
+            await income.save()
+          }
         }
       }
     } catch (error) {
