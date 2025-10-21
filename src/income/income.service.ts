@@ -1655,10 +1655,6 @@ export class IncomeService {
     return { live, shop }
   }
 
-  private sumProductsAmount(products: any[]) {
-    return products.reduce((sum, p) => sum + this.getActualPrice(p), 0)
-  }
-
   private sumProductsAmountBeforeDiscount(products: any[]) {
     return products.reduce((sum, p) => sum + (p.price || 0), 0)
   }
