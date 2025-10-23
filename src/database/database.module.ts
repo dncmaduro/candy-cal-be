@@ -22,6 +22,10 @@ import { LivestreamEmployeeSchema } from "./mongoose/schemas/LivestreamEmployee"
 import { LivestreamSchema } from "./mongoose/schemas/Livestream"
 import { ShopeeProductSchema } from "./mongoose/schemas/ShopeeProduct"
 import { LivestreamMonthGoalSchema } from "./mongoose/schemas/LivestreamGoal"
+import { SalesPriceItemSchema } from "./mongoose/schemas/SalesPriceItem"
+import { SalesChannelSchema } from "./mongoose/schemas/SalesChannel"
+import { ProvinceSchema } from "./mongoose/schemas/Province"
+import { SalesFunnelSchema } from "./mongoose/schemas/SalesFunnel"
 
 @Module({
   imports: [
@@ -47,7 +51,11 @@ import { LivestreamMonthGoalSchema } from "./mongoose/schemas/LivestreamGoal"
       { name: "livestreamemployees", schema: LivestreamEmployeeSchema },
       { name: "livestreams", schema: LivestreamSchema },
       { name: "shopeeproducts", schema: ShopeeProductSchema },
-      { name: "livestreammonthgoals", schema: LivestreamMonthGoalSchema }
+      { name: "livestreammonthgoals", schema: LivestreamMonthGoalSchema },
+      { name: "salespriceitems", schema: SalesPriceItemSchema },
+      { name: "saleschannels", schema: SalesChannelSchema },
+      { name: "provinces", schema: ProvinceSchema },
+      { name: "salesfunnels", schema: SalesFunnelSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

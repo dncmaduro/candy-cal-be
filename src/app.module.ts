@@ -58,6 +58,8 @@ import { ShopeeProductsModule } from "./shopeeproducts/shopeeproducts.module"
     DailyAdsModule,
     LivestreamModule,
     ShopeeProductsModule,
+    require("./salespriceitems/salespriceitems.module").SalesPriceItemsModule,
+    require("./provinces/provinces.module").ProvincesModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
