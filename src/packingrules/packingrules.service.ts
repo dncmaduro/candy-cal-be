@@ -13,7 +13,10 @@ export class PackingRulesService {
 
   async createRule(dto: PackingRuleDto): Promise<PackingRule> {
     try {
-      const rule = new this.packingRuleModel(dto)
+      const rule = new this.packingRuleModel({
+        products: dto.products || [],
+        packingType: dto.packingType
+      })
       return await rule.save()
     } catch (error) {
       console.error(error)
@@ -24,16 +27,19 @@ export class PackingRulesService {
     }
   }
 
-  async updateRule(
-    productCode: string,
-    dto: Omit<PackingRuleDto, "productCode">
-  ): Promise<PackingRule> {
+  async updateRule(id: string, dto: PackingRuleDto): Promise<PackingRule> {
     try {
-      const updated = await this.packingRuleModel.findOneAndUpdate(
-        { productCode },
-        dto,
+      const updated = await this.packingRuleModel.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            products: dto.products || [],
+            packingType: dto.packingType
+          }
+        },
         { new: true }
       )
+
       if (!updated) {
         throw new HttpException("Rule not found", HttpStatus.NOT_FOUND)
       }
@@ -47,9 +53,9 @@ export class PackingRulesService {
     }
   }
 
-  async getRuleByProductCode(productCode: string): Promise<PackingRule | null> {
+  async getRuleById(id: string): Promise<PackingRule | null> {
     try {
-      return await this.packingRuleModel.findOne({ productCode }).lean()
+      return await this.packingRuleModel.findById(id).lean()
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -67,11 +73,14 @@ export class PackingRulesService {
       const filter: any = {}
 
       if (searchText) {
-        filter.productCode = { $regex: `.*${searchText}.*`, $options: "i" }
+        filter["products.productCode"] = {
+          $regex: `.*${searchText}.*`,
+          $options: "i"
+        }
       }
 
       if (packingType) {
-        filter["requirements.packingType"] = packingType
+        filter.packingType = packingType
       }
 
       const rules = await this.packingRuleModel.find(filter).lean()
@@ -86,9 +95,9 @@ export class PackingRulesService {
     }
   }
 
-  async deleteRule(productCode: string): Promise<void> {
+  async deleteRule(id: string): Promise<void> {
     try {
-      const res = await this.packingRuleModel.findOneAndDelete({ productCode })
+      const res = await this.packingRuleModel.findByIdAndDelete(id)
       if (!res) {
         throw new HttpException("Rule not found", HttpStatus.NOT_FOUND)
       }
@@ -102,20 +111,42 @@ export class PackingRulesService {
   }
 
   async getPackingType(
-    productCode: string,
-    quantity: number
+    products: {
+      productCode: string
+      quantity: number
+    }[]
   ): Promise<string | null> {
     try {
-      const rule = await this.packingRuleModel.findOne({ productCode }).lean()
-      if (!rule || !rule.requirements) return null
+      // Get all unique product codes
+      const productCodes = [...new Set(products.map((p) => p.productCode))]
 
-      const found = rule.requirements.find(
-        (r) =>
-          (r.minQuantity === null || quantity >= r.minQuantity) &&
-          (r.maxQuantity === null || quantity <= r.maxQuantity)
-      )
+      // Find a rule that contains all these product codes
+      const rule = await this.packingRuleModel
+        .findOne({
+          "products.productCode": { $all: productCodes }
+        })
+        .lean()
 
-      return found ? found.packingType : null
+      if (!rule || !rule.products) return null
+
+      // For each product in the order, check if it matches the rule's quantity requirements
+      for (const orderProduct of products) {
+        const ruleProduct = rule.products.find(
+          (p: any) => p.productCode === orderProduct.productCode
+        )
+
+        if (!ruleProduct) return null
+
+        // Check if quantity is within range
+        const minQty = ruleProduct.minQuantity
+        const maxQty = ruleProduct.maxQuantity
+
+        if (minQty !== null && orderProduct.quantity < minQty) return null
+        if (maxQty !== null && orderProduct.quantity > maxQty) return null
+      }
+
+      // If all products match, return the rule's packing type
+      return rule.packingType
     } catch (error) {
       console.error(error)
       throw new HttpException(
