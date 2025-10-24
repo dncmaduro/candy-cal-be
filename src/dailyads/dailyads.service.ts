@@ -47,10 +47,12 @@ export class DailyAdsService {
             const key = Object.keys(r).find(
               (k) => k && k.toLowerCase().trim() === "chi phí"
             )
-            // fallback: any key that contains 'cost'
+            // fallback: any key that contains 'chi phí'
             const keyFallback =
               !key &&
-              Object.keys(r).find((k) => k && k.toLowerCase().includes("cost"))
+              Object.keys(r).find(
+                (k) => k && k.toLowerCase().includes("chi phí")
+              )
 
             const costKey = key || keyFallback
             if (!costKey) continue
