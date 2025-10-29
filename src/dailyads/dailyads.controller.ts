@@ -16,7 +16,6 @@ import { DailyAdsService } from "./dailyads.service"
 import { Roles } from "../roles/roles.decorator"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
-import { DailyAdsDto } from "./dto/dailyads.dto"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { FilesInterceptor } from "@nestjs/platform-express"
 
@@ -80,5 +79,83 @@ export class DailyAdsController {
       },
       req.user.userId
     )
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp")
+  @Post("/update-with-saved-before4pm")
+  @UseInterceptors(FilesInterceptor("files", 4))
+  @HttpCode(HttpStatus.OK)
+  async updateDailyAdsUsingSavedBefore4pm(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req
+  ): Promise<void> {
+    // Expect 4 files in order:
+    // 0 - yesterdayLiveAdsCostFile
+    // 1 - yesterdayShopAdsCostFile
+    // 2 - todayLiveAdsCostFileBefore4pm
+    // 3 - todayShopAdsCostFileBefore4pm
+    if (!files || files.length !== 4) {
+      throw new HttpException(
+        "Cần upload 4 file chi phí",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const dateStr = req.body?.date || req.query?.date
+    if (!dateStr) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    await this.dailyAdsService.updateDailyAdsUsingSavedBefore4pm(
+      files[0],
+      files[1],
+      files[2],
+      files[3],
+      date
+    )
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "updated-with-saved-before4pm",
+        entity: "daily_ads",
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp")
+  @Get("/before4pm")
+  @HttpCode(HttpStatus.OK)
+  async getBefore4pmCosts(@Query("date") dateStr: string) {
+    if (!dateStr) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const result = await this.dailyAdsService.getBefore4pmCosts(date)
+
+    if (!result) {
+      throw new HttpException(
+        "Không tìm thấy dữ liệu cho ngày này",
+        HttpStatus.NOT_FOUND
+      )
+    }
+
+    return result
   }
 }
