@@ -1,0 +1,68 @@
+import { Schema, Document, model, Types } from "mongoose"
+
+export type SalesFunnelStage = "lead" | "contacted" | "customer" | "closed"
+
+export interface SalesFunnel extends Document {
+  psid: string
+  name: string
+  facebook: string
+  province?: Types.ObjectId // Reference to Province schema
+  phoneNumber?: string
+  channel: Types.ObjectId // Reference to SalesChannel schema
+  user: Types.ObjectId // Reference to User schema
+  hasBuyed: boolean
+  stage: SalesFunnelStage
+  cost?: number
+  updateStageLogs: {
+    stage: SalesFunnelStage
+    updatedAt: Date
+  }[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+export const SalesFunnelSchema = new Schema<SalesFunnel>({
+  psid: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  facebook: { type: String, required: true },
+  province: {
+    type: Schema.Types.ObjectId,
+    ref: "provinces",
+    required: false
+  }, // Reference to Province schema
+  phoneNumber: { type: String, required: false },
+  channel: {
+    type: Schema.Types.ObjectId,
+    ref: "saleschannels",
+    required: true
+  }, // Reference to SalesChannel schema
+  user: {
+    type: Schema.Types.ObjectId,
+    ref: "users",
+    required: true
+  }, // Reference to User schema
+  hasBuyed: { type: Boolean, default: false, required: false },
+  stage: {
+    type: String,
+    enum: ["lead", "contacted", "customer", "closed"],
+    default: "lead"
+  },
+  cost: { type: Number, default: 0, required: false },
+  updateStageLogs: [
+    {
+      stage: {
+        type: String,
+        enum: ["lead", "contacted", "customer", "closed"],
+        required: true
+      },
+      updatedAt: { type: Date, required: true }
+    }
+  ],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+})
+
+export const SalesFunnelModel = model<SalesFunnel>(
+  "SalesFunnel",
+  SalesFunnelSchema
+)
