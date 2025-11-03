@@ -28,6 +28,15 @@ import { RequestAuditInterceptor } from "./dailytasks/interceptors/request-audit
 import { DailyAdsModule } from "./dailyads/dailyads.module"
 import { LivestreamModule } from "./livestream/livestream.module"
 import { ShopeeProductsModule } from "./shopeeproducts/shopeeproducts.module"
+import { SalesPriceItemsModule } from "./salespriceitems/salespriceitems.module"
+import { ProvincesModule } from "./provinces/provinces.module"
+import { SalesChannelsModule } from "./saleschannels/saleschannels.module"
+import { SalesFunnelModule } from "./salesfunnel/salesfunnel.module"
+import { SalesOrdersModule } from "./salesorders/salesorders.module"
+import { SalesItemsModule } from "./salesitems/salesitems.module"
+import { SalesDashboardModule } from "./salesdashboard/salesdashboard.module"
+import { AppController } from "./app.controller"
+import { MetaModule } from "./meta/meta.module"
 
 @Module({
   imports: [
@@ -58,11 +67,19 @@ import { ShopeeProductsModule } from "./shopeeproducts/shopeeproducts.module"
     DailyAdsModule,
     LivestreamModule,
     ShopeeProductsModule,
+    SalesPriceItemsModule,
+    ProvincesModule,
+    SalesChannelsModule,
+    SalesFunnelModule,
+    SalesOrdersModule,
+    SalesItemsModule,
+    SalesDashboardModule,
+    MetaModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
   ],
-  controllers: [],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_FILTER,

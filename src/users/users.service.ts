@@ -292,4 +292,43 @@ export class UsersService {
       )
     }
   }
+
+  async publicSearchUsers(
+    searchText: string,
+    page = 1,
+    limit = 10
+  ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
+    try {
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+
+      const filter: any = {}
+      if (searchText && String(searchText).trim().length > 0) {
+        filter.name = {
+          $regex: `.*${String(searchText).trim()}.*`,
+          $options: "i"
+        }
+      }
+
+      const [users, total] = await Promise.all([
+        this.userModel
+          .find(filter)
+          .skip((safePage - 1) * safeLimit)
+          .limit(safeLimit)
+          .lean(),
+        this.userModel.countDocuments(filter)
+      ])
+
+      return {
+        data: users.map((u) => ({ _id: u._id.toString(), name: u.name })),
+        total
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
 }

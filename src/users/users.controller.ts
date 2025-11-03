@@ -7,7 +7,8 @@ import {
   Get,
   UseGuards,
   Req,
-  Patch
+  Patch,
+  Query
 } from "@nestjs/common"
 import { UsersService } from "./users.service"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
@@ -86,5 +87,20 @@ export class UsersController {
     @Req() req
   ): Promise<{ message: string }> {
     return this.usersService.updateUser(req.user.username, { name: body.name })
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("publicsearch")
+  @HttpCode(HttpStatus.OK)
+  async publicSearchUsers(
+    @Query("searchText") searchText: string,
+    @Query("page") page = 1,
+    @Query("limit") limit = 10
+  ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
+    return this.usersService.publicSearchUsers(
+      searchText,
+      Number(page),
+      Number(limit)
+    )
   }
 }
