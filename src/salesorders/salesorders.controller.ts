@@ -10,8 +10,10 @@ import {
   Req,
   Delete,
   Patch,
-  UseGuards
+  UseGuards,
+  Res
 } from "@nestjs/common"
+import { Response } from "express"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
@@ -153,6 +155,7 @@ export class SalesOrdersController {
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
     @Query("searchText") searchText?: string,
+    @Query("shippingType") shippingType?: SalesOrderShippingType,
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: SalesOrder[]; total: number }> {
@@ -167,7 +170,8 @@ export class SalesOrdersController {
               : undefined,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
-        searchText
+        searchText,
+        shippingType
       },
       Number(page),
       Number(limit)
@@ -215,5 +219,36 @@ export class SalesOrdersController {
     data: Array<{ value: SalesOrderShippingType; label: string }>
   }> {
     return this.salesOrdersService.getAllShippingTypes()
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("export/xlsx")
+  @HttpCode(HttpStatus.OK)
+  async exportOrdersToExcel(
+    @Query("salesFunnelId") salesFunnelId?: string,
+    @Query("returning") returning?: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("searchText") searchText?: string,
+    @Query("shippingType") shippingType?: SalesOrderShippingType,
+    @Res() res?: Response
+  ): Promise<void> {
+    const buffer = await this.salesOrdersService.exportOrdersToExcel({
+      salesFunnelId,
+      returning:
+        returning === "true" ? true : returning === "false" ? false : undefined,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      searchText,
+      shippingType
+    })
+
+    const filename = `orders_${new Date().getTime()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
   }
 }
