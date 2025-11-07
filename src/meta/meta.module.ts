@@ -5,7 +5,7 @@ import { MetaWebhookController } from "./meta-webhook.controller"
 import { SalesFunnelModule } from "../salesfunnel/salesfunnel.module"
 import { NotificationsModule } from "../notifications/notifications.module"
 import { MetaGateway } from "./meta.gateway"
-import { SalesChannelsModule } from "src/saleschannels/saleschannels.module"
+import { SalesChannelsModule } from "../saleschannels/saleschannels.module"
 
 @Module({
   imports: [SalesFunnelModule, NotificationsModule, SalesChannelsModule],
