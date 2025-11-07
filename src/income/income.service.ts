@@ -9,6 +9,7 @@ import {
   XlsxIncomeData
 } from "./dto/income.dto"
 import * as XLSX from "xlsx"
+import * as ExcelJS from "exceljs"
 import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
@@ -535,64 +536,124 @@ export class IncomeService {
         .sort({ date: 1, _id: 1 })
         .lean()
 
-      // Flatten dữ liệu thành từng dòng sản phẩm
-      const rows = []
-      const merges = []
-      let rowIndex = 1 // 0 là header
+      // Create workbook using ExcelJS
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet("DoanhThu")
+
+      // Define columns with headers
+      worksheet.columns = [
+        { header: "Ngày xuất đơn", key: "date", width: 15 },
+        { header: "Mã đơn hàng", key: "orderId", width: 20 },
+        { header: "Khách hàng", key: "customer", width: 25 },
+        { header: "Tỉnh thành", key: "province", width: 20 },
+        { header: "Đơn vị vận chuyển", key: "shippingProvider", width: 20 },
+        { header: "Mã SP", key: "code", width: 15 },
+        { header: "Tên SP", key: "name", width: 30 },
+        { header: "Nguồn", key: "source", width: 15 },
+        { header: "Số lượng", key: "quantity", width: 12 },
+        { header: "Báo giá", key: "quotation", width: 15 },
+        { header: "Giá bán", key: "price", width: 15 },
+        { header: "Giảm giá từ platform", key: "platformDiscount", width: 20 },
+        { header: "Giảm giá từ người bán", key: "sellerDiscount", width: 20 },
+        {
+          header: "Giá sau giảm voucher",
+          key: "priceAfterDiscount",
+          width: 20
+        },
+        {
+          header: "Phần trăm Affiliate",
+          key: "affiliateAdsPercentage",
+          width: 20
+        },
+        {
+          header: "Phần trăm Affiliate tiêu chuẩn",
+          key: "standardAffPercentage",
+          width: 25
+        },
+        { header: "Loại nội dung", key: "content", width: 20 },
+        { header: "Quy cách đóng hộp", key: "box", width: 20 },
+        { header: "Nhà sáng tạo", key: "creator", width: 20 },
+        {
+          header: "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính",
+          key: "affiliateAdsAmount",
+          width: 35
+        },
+        {
+          header: "Thanh toán hoa hồng tiêu chuẩn ước tính",
+          key: "standardAffAmount",
+          width: 35
+        }
+      ]
+
+      // Flatten dữ liệu thành từng dòng sản phẩm và track merges
+      const mergeCells: Array<{
+        startRow: number
+        endRow: number
+        colIndex: number
+      }> = []
+      let currentRow = 2 // Row 1 is header
 
       incomes.forEach((income) => {
+        const startRow = currentRow
         income.products.forEach((product, idx) => {
-          rows.push({
-            "Ngày xuất đơn":
-              idx === 0 ? this.formatDate(income.date as Date) : "",
-            "Mã đơn hàng": idx === 0 ? income.orderId : "",
-            "Khách hàng": idx === 0 ? income.customer : "",
-            "Tỉnh thành": idx === 0 ? income.province : "",
-            "Đơn vị vận chuyển": idx === 0 ? income.shippingProvider || "" : "",
-            "Mã SP": product.code,
-            "Tên SP": product.name,
-            Nguồn: sourcesMap[product.source],
-            "Số lượng": product.quantity,
-            "Báo giá": this.formatMoney(product.quotation),
-            "Giá bán": this.formatMoney(product.price),
-            "Giảm giá từ platform": this.formatMoney(product.platformDiscount),
-            "Giảm giá từ người bán": this.formatMoney(product.sellerDiscount),
-            "Giá sau giảm voucher": this.formatMoney(
-              product.priceAfterDiscount
-            ),
-            "Phần trăm Affiliate": product.affiliateAdsPercentage ?? "",
-            "Phần trăm Affiliate tiêu chuẩn":
-              product.standardAffPercentage ?? "",
-            "Loại nội dung": product.content ?? "",
-            "Quy cách đóng hộp": packingTypesMap[product.box ?? ""],
-            "Nhà sáng tạo": product.creator ?? "",
-            "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính": this.formatMoney(
-              product.affiliateAdsAmount
-            ),
-            "Thanh toán hoa hồng tiêu chuẩn ước tính": this.formatMoney(
-              product.standardAffAmount
-            )
-          })
+          worksheet.addRow([
+            idx === 0 ? this.formatDate(income.date as Date) : "",
+            idx === 0 ? income.orderId : "",
+            idx === 0 ? income.customer : "",
+            idx === 0 ? income.province : "",
+            idx === 0 ? income.shippingProvider || "" : "",
+            product.code,
+            product.name,
+            sourcesMap[product.source],
+            product.quantity,
+            this.formatMoney(product.quotation),
+            this.formatMoney(product.price),
+            this.formatMoney(product.platformDiscount),
+            this.formatMoney(product.sellerDiscount),
+            this.formatMoney(product.priceAfterDiscount),
+            product.affiliateAdsPercentage ?? "",
+            product.standardAffPercentage ?? "",
+            product.content ?? "",
+            packingTypesMap[product.box ?? ""],
+            product.creator ?? "",
+            this.formatMoney(product.affiliateAdsAmount),
+            this.formatMoney(product.standardAffAmount)
+          ])
+          currentRow++
         })
+
+        // Track cells to merge (first 5 columns)
         if (income.products.length > 1) {
-          ;[0, 1, 2, 3, 4].forEach((colIdx) => {
-            merges.push({
-              s: { r: rowIndex, c: colIdx },
-              e: { r: rowIndex + income.products.length - 1, c: colIdx }
+          for (let colIdx = 0; colIdx < 5; colIdx++) {
+            mergeCells.push({
+              startRow,
+              endRow: currentRow - 1,
+              colIndex: colIdx + 1 // ExcelJS columns are 1-based
             })
-          })
+          }
         }
-        rowIndex += income.products.length
       })
 
-      // Tạo workbook & worksheet
-      const ws = XLSX.utils.json_to_sheet(rows)
-      ws["!merges"] = merges
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, "DoanhThu")
+      // Apply merges
+      mergeCells.forEach((merge) => {
+        worksheet.mergeCells(
+          merge.startRow,
+          merge.colIndex,
+          merge.endRow,
+          merge.colIndex
+        )
+      })
 
-      // Ghi ra buffer
-      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" })
+      // Apply Times New Roman font to all cells
+      worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          cell.font = { name: "Times New Roman", size: 11 }
+          cell.alignment = { vertical: "middle", horizontal: "left" }
+        })
+      })
+
+      // Generate buffer
+      const buffer = await workbook.xlsx.writeBuffer()
 
       // Xuất file về FE (dùng @Res())
       res.setHeader(
@@ -603,7 +664,7 @@ export class IncomeService {
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       )
-      res.send(buffer)
+      res.send(Buffer.from(buffer))
     } catch (error) {
       console.error(error)
       throw new HttpException(
