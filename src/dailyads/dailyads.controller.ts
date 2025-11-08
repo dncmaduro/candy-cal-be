@@ -18,6 +18,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { FilesInterceptor } from "@nestjs/platform-express"
+import { SimpleDailyAdsDto } from "./dto/dailyads.dto"
 
 @Controller("dailyads")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -61,6 +62,20 @@ export class DailyAdsController {
     if (isNaN(date.getTime())) {
       throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
     }
+
+    // currency can be vnd or usd, default to vnd
+    const currency = (
+      req.body?.currency ||
+      req.query?.currency ||
+      "vnd"
+    ).toLowerCase()
+    if (currency !== "vnd" && currency !== "usd") {
+      throw new HttpException(
+        "Currency phải là 'vnd' hoặc 'usd'",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
     await this.dailyAdsService.createOrUpdateDailyAds(
       files[0],
       files[1],
@@ -68,7 +83,8 @@ export class DailyAdsController {
       files[3],
       files[4],
       files[5],
-      date
+      date,
+      currency as "vnd" | "usd"
     )
     void this.systemLogsService.createSystemLog(
       {
@@ -113,12 +129,26 @@ export class DailyAdsController {
       throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
     }
 
+    // currency can be vnd or usd, default to vnd
+    const currency = (
+      req.body?.currency ||
+      req.query?.currency ||
+      "vnd"
+    ).toLowerCase()
+    if (currency !== "vnd" && currency !== "usd") {
+      throw new HttpException(
+        "Currency phải là 'vnd' hoặc 'usd'",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
     await this.dailyAdsService.updateDailyAdsUsingSavedBefore4pm(
       files[0],
       files[1],
       files[2],
       files[3],
-      date
+      date,
+      currency as "vnd" | "usd"
     )
 
     void this.systemLogsService.createSystemLog(
@@ -157,5 +187,72 @@ export class DailyAdsController {
     }
 
     return result
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp")
+  @Post("/simpledailyads")
+  @HttpCode(HttpStatus.OK)
+  async simpleCreateOrUpdateDailyAds(
+    @Body() dto: SimpleDailyAdsDto,
+    @Req() req
+  ): Promise<{ success: boolean; data: any }> {
+    if (!dto.date) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const date = new Date(dto.date)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    if (dto.liveAdsCost === undefined || dto.liveAdsCost === null) {
+      throw new HttpException(
+        "Cần cung cấp liveAdsCost",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    if (dto.shopAdsCost === undefined || dto.shopAdsCost === null) {
+      throw new HttpException(
+        "Cần cung cấp shopAdsCost",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const currency = (dto.currency || "vnd").toLowerCase()
+    if (currency !== "vnd" && currency !== "usd") {
+      throw new HttpException(
+        "Currency phải là 'vnd' hoặc 'usd'",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const result = await this.dailyAdsService.simpleCreateOrUpdateDailyAds(
+      date,
+      Number(dto.liveAdsCost),
+      Number(dto.shopAdsCost),
+      currency as "vnd" | "usd"
+    )
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "simple_create_update",
+        entity: "daily_ads",
+        result: "success",
+        meta: {
+          date: dto.date,
+          liveAdsCost: dto.liveAdsCost,
+          shopAdsCost: dto.shopAdsCost,
+          currency
+        }
+      },
+      req.user.userId
+    )
+
+    return { success: true, data: result }
   }
 }

@@ -3,12 +3,14 @@ import { InjectModel } from "@nestjs/mongoose"
 import { Model } from "mongoose"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import * as XLSX from "xlsx"
+import { CurrencyExchangeService } from "../common/currency-exchange.service"
 
 @Injectable()
 export class DailyAdsService {
   constructor(
     @InjectModel("dailyads")
-    private readonly dailyAdsModel: Model<DailyAds>
+    private readonly dailyAdsModel: Model<DailyAds>,
+    private readonly currencyExchangeService: CurrencyExchangeService
   ) {}
 
   async createOrUpdateDailyAds(
@@ -18,7 +20,8 @@ export class DailyAdsService {
     yesterdayShopAdsCostFile: Express.Multer.File,
     todayLiveAdsCostFileBefore4pm: Express.Multer.File,
     todayShopAdsCostFileBefore4pm: Express.Multer.File,
-    date: Date
+    date: Date,
+    currency: "vnd" | "usd" = "vnd"
   ): Promise<void> {
     try {
       const parseCost = (file?: Express.Multer.File): number => {
@@ -65,12 +68,23 @@ export class DailyAdsService {
         }
       }
 
-      const yLiveBefore4 = parseCost(yesterdayLiveAdsCostFileBefore4pm)
-      const yShopBefore4 = parseCost(yesterdayShopAdsCostFileBefore4pm)
-      const yLiveFull = parseCost(yesterdayLiveAdsCostFile)
-      const yShopFull = parseCost(yesterdayShopAdsCostFile)
-      const tLiveBefore4 = parseCost(todayLiveAdsCostFileBefore4pm)
-      const tShopBefore4 = parseCost(todayShopAdsCostFileBefore4pm)
+      let yLiveBefore4 = parseCost(yesterdayLiveAdsCostFileBefore4pm)
+      let yShopBefore4 = parseCost(yesterdayShopAdsCostFileBefore4pm)
+      let yLiveFull = parseCost(yesterdayLiveAdsCostFile)
+      let yShopFull = parseCost(yesterdayShopAdsCostFile)
+      let tLiveBefore4 = parseCost(todayLiveAdsCostFileBefore4pm)
+      let tShopBefore4 = parseCost(todayShopAdsCostFileBefore4pm)
+
+      // Convert from USD to VND if needed
+      if (currency === "usd") {
+        const rate = await this.currencyExchangeService.getUsdToVndRate()
+        yLiveBefore4 = Math.round(yLiveBefore4 * rate)
+        yShopBefore4 = Math.round(yShopBefore4 * rate)
+        yLiveFull = Math.round(yLiveFull * rate)
+        yShopFull = Math.round(yShopFull * rate)
+        tLiveBefore4 = Math.round(tLiveBefore4 * rate)
+        tShopBefore4 = Math.round(tShopBefore4 * rate)
+      }
 
       const liveAdsCost = yLiveFull - yLiveBefore4 + tLiveBefore4
       const shopAdsCost = yShopFull - yShopBefore4 + tShopBefore4
@@ -109,7 +123,8 @@ export class DailyAdsService {
     yesterdayShopAdsCostFile: Express.Multer.File,
     todayLiveAdsCostFileBefore4pm: Express.Multer.File,
     todayShopAdsCostFileBefore4pm: Express.Multer.File,
-    date: Date
+    date: Date,
+    currency: "vnd" | "usd" = "vnd"
   ): Promise<void> {
     try {
       const parseCost = (file?: Express.Multer.File): number => {
@@ -185,10 +200,19 @@ export class DailyAdsService {
         )
       }
 
-      const yLiveFull = parseCost(yesterdayLiveAdsCostFile)
-      const yShopFull = parseCost(yesterdayShopAdsCostFile)
-      const tLiveBefore4 = parseCost(todayLiveAdsCostFileBefore4pm)
-      const tShopBefore4 = parseCost(todayShopAdsCostFileBefore4pm)
+      let yLiveFull = parseCost(yesterdayLiveAdsCostFile)
+      let yShopFull = parseCost(yesterdayShopAdsCostFile)
+      let tLiveBefore4 = parseCost(todayLiveAdsCostFileBefore4pm)
+      let tShopBefore4 = parseCost(todayShopAdsCostFileBefore4pm)
+
+      // Convert from USD to VND if needed
+      if (currency === "usd") {
+        const rate = await this.currencyExchangeService.getUsdToVndRate()
+        yLiveFull = Math.round(yLiveFull * rate)
+        yShopFull = Math.round(yShopFull * rate)
+        tLiveBefore4 = Math.round(tLiveBefore4 * rate)
+        tShopBefore4 = Math.round(tShopBefore4 * rate)
+      }
 
       const liveAdsCost = yLiveFull - yLiveBefore4 + tLiveBefore4
       const shopAdsCost = yShopFull - yShopBefore4 + tShopBefore4
@@ -247,6 +271,52 @@ export class DailyAdsService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi lấy chi phí trước 16h",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * Simple create/update daily ads without file upload
+   * Just provide date, liveAdsCost, shopAdsCost and currency
+   */
+  async simpleCreateOrUpdateDailyAds(
+    date: Date,
+    liveAdsCost: number,
+    shopAdsCost: number,
+    currency: "vnd" | "usd" = "vnd"
+  ): Promise<DailyAds> {
+    try {
+      let finalLiveAdsCost = liveAdsCost
+      let finalShopAdsCost = shopAdsCost
+
+      // Convert from USD to VND if needed
+      if (currency === "usd") {
+        const rate = await this.currencyExchangeService.getUsdToVndRate()
+        finalLiveAdsCost = Math.round(liveAdsCost * rate)
+        finalShopAdsCost = Math.round(shopAdsCost * rate)
+      }
+
+      const target = new Date(date)
+      target.setHours(0, 0, 0, 0)
+
+      const result = await this.dailyAdsModel.findOneAndUpdate(
+        { date: target },
+        {
+          $set: {
+            liveAdsCost: finalLiveAdsCost || 0,
+            shopAdsCost: finalShopAdsCost || 0,
+            updatedAt: new Date()
+          }
+        },
+        { upsert: true, new: true }
+      )
+
+      return result
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tạo/cập nhật quảng cáo ngày (simple)",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
