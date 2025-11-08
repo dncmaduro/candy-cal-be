@@ -4,6 +4,7 @@ import { DailyAdsSchema } from "../database/mongoose/schemas/DailyAds"
 import { DailyAdsController } from "./dailyads.controller"
 import { DailyAdsService } from "./dailyads.service"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
+import { CurrencyExchangeService } from "../common/currency-exchange.service"
 
 @Module({
   imports: [
@@ -11,7 +12,7 @@ import { SystemLogsModule } from "../systemlogs/systemlogs.module"
     SystemLogsModule
   ],
   controllers: [DailyAdsController],
-  providers: [DailyAdsService],
+  providers: [DailyAdsService, CurrencyExchangeService],
   exports: [DailyAdsService]
 })
 export class DailyAdsModule {}
