@@ -5,6 +5,7 @@ export interface Income {
   customer: string
   province: string
   shippingProvider?: string
+  channel: Types.ObjectId
   date: Date
   products: {
     creator?: string
@@ -32,6 +33,11 @@ export const IncomeSchema = new Schema<Income>({
   customer: { type: String, required: true },
   province: { type: String, required: true },
   shippingProvider: { type: String, required: false },
+  channel: {
+    type: Schema.Types.ObjectId,
+    ref: "livestreamchannels",
+    required: true
+  },
   date: { type: Date, required: true },
   products: [
     {

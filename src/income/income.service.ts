@@ -163,6 +163,7 @@ export class IncomeService {
             customer: lines[0]["Buyer Username"],
             province: lines[0]["Province"],
             shippingProvider,
+            channel: dto.channel,
             date: dto.date,
             products
           })
@@ -268,7 +269,6 @@ export class IncomeService {
     }
   }
 
-  /** @deprecated */
   async getIncomesByDateRange(
     startDate: Date,
     endDate: Date,
@@ -276,7 +276,8 @@ export class IncomeService {
     limit = 10,
     orderId?: string,
     productCode?: string,
-    productSource?: string
+    productSource?: string,
+    channelId?: string
   ): Promise<{ incomes: Income[]; total: number }> {
     try {
       const safePage = Math.max(1, Number(page) || 1)
@@ -295,11 +296,13 @@ export class IncomeService {
       // Lọc theo các trường trong mảng products
       if (productCode) filter["products.code"] = productCode
       if (productSource) filter["products.source"] = productSource
+      if (channelId) filter.channel = channelId
 
       const total = await this.incomeModel.countDocuments(filter)
 
       const incomes = await this.incomeModel
         .find(filter)
+        .populate("channel", "_id name")
         .sort({ date: 1, _id: 1 })
         .skip((safePage - 1) * safeLimit)
         .limit(safeLimit)
@@ -371,7 +374,8 @@ export class IncomeService {
 
   async totalIncomeByMonthSplit(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{
     beforeDiscount: { live: number; shop: number }
     afterDiscount: { live: number; shop: number }
@@ -385,9 +389,10 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setUTCHours(end.getUTCHours() - 7) // Subtract 7 hours to get GMT+7 end in UTC
 
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
 
       let liveBeforeDiscount = 0
       let shopBeforeDiscount = 0
@@ -423,7 +428,8 @@ export class IncomeService {
 
   async totalQuantityByMonthSplit(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{ live: number; shop: number }> {
     try {
       // Adjust for GMT+7 timezone (Vietnam time)
@@ -433,9 +439,10 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setUTCHours(end.getUTCHours() - 7)
 
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
 
       let live = 0
       let shop = 0
@@ -458,18 +465,26 @@ export class IncomeService {
 
   async KPIPercentageByMonthSplit(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{ live: number; shop: number }> {
     try {
-      const goal = await this.monthGoalModel.findOne({ month, year }).lean()
+      const filter: any = { month, year }
+      if (channelId) filter.channel = channelId
+
+      const goal = await this.monthGoalModel.findOne(filter).lean()
       if (!goal) {
         throw new HttpException(
-          "Chưa thiết lập mục tiêu tháng này",
+          "Chưa thiết lập mục tiêu tháng/channel này",
           HttpStatus.NOT_FOUND
         )
       }
 
-      const totalIncome = await this.totalIncomeByMonthSplit(month, year)
+      const totalIncome = await this.totalIncomeByMonthSplit(
+        month,
+        year,
+        channelId
+      )
       const live = totalIncome.afterDiscount.live
       const shop = totalIncome.afterDiscount.shop
       const livePct =
@@ -533,6 +548,7 @@ export class IncomeService {
       // Lấy toàn bộ incomes
       const incomes = await this.incomeModel
         .find(filter)
+        .populate("channel", "_id name")
         .sort({ date: 1, _id: 1 })
         .lean()
 
@@ -546,6 +562,7 @@ export class IncomeService {
         { header: "Mã đơn hàng", key: "orderId", width: 20 },
         { header: "Khách hàng", key: "customer", width: 25 },
         { header: "Tỉnh thành", key: "province", width: 20 },
+        { header: "Kênh", key: "channel", width: 20 },
         { header: "Đơn vị vận chuyển", key: "shippingProvider", width: 20 },
         { header: "Mã SP", key: "code", width: 15 },
         { header: "Tên SP", key: "name", width: 30 },
@@ -595,12 +612,14 @@ export class IncomeService {
 
       incomes.forEach((income) => {
         const startRow = currentRow
+        const channelName = (income.channel as any)?.name || ""
         income.products.forEach((product, idx) => {
           worksheet.addRow([
             idx === 0 ? this.formatDate(income.date as Date) : "",
             idx === 0 ? income.orderId : "",
             idx === 0 ? income.customer : "",
             idx === 0 ? income.province : "",
+            idx === 0 ? channelName : "",
             idx === 0 ? income.shippingProvider || "" : "",
             product.code,
             product.name,
@@ -622,9 +641,9 @@ export class IncomeService {
           currentRow++
         })
 
-        // Track cells to merge (first 5 columns)
+        // Track cells to merge (first 6 columns now including channel)
         if (income.products.length > 1) {
-          for (let colIdx = 0; colIdx < 5; colIdx++) {
+          for (let colIdx = 0; colIdx < 6; colIdx++) {
             mergeCells.push({
               startRow,
               endRow: currentRow - 1,
@@ -876,7 +895,8 @@ export class IncomeService {
 
   async totalLiveAndShopIncomeByMonth(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{
     beforeDiscount: { live: number; shop: number }
     afterDiscount: { live: number; shop: number }
@@ -889,9 +909,10 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setUTCHours(end.getUTCHours() - 7)
 
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
 
       let liveBeforeDiscount = 0
       let shopBeforeDiscount = 0
@@ -938,7 +959,8 @@ export class IncomeService {
 
   async adsCostSplitByMonth(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{
     liveAdsCost: number
     shopAdsCost: number
@@ -976,7 +998,8 @@ export class IncomeService {
       // Get total live/shop incomes in month
       const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
         month,
-        year
+        year,
+        channelId
       )
       const live = totalLiveShop.afterDiscount.live
       const shop = totalLiveShop.afterDiscount.shop
@@ -1006,7 +1029,8 @@ export class IncomeService {
   async getRangeStats(
     startDate: Date,
     endDate: Date,
-    comparePrevious = true
+    comparePrevious = true,
+    channelId?: string
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -1111,9 +1135,10 @@ export class IncomeService {
       const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
 
       const buildStats = async (s: Date, e: Date) => {
-        const incomes = await this.incomeModel
-          .find({ date: { $gte: s, $lte: e } })
-          .lean()
+        const filter: any = { date: { $gte: s, $lte: e } }
+        if (channelId) filter.channel = channelId
+
+        const incomes = await this.incomeModel.find(filter).lean()
         const boxMap: Record<string, number> = {}
         const shipMap: Record<string, number> = {}
 
@@ -1456,6 +1481,7 @@ export class IncomeService {
     totalIncomeFile: Express.Multer.File
     affiliateFile: Express.Multer.File
     date: Date
+    channel: string
   }): Promise<void> {
     try {
       // 1. Xử lý file tổng doanh thu: insert với source trống
@@ -1476,9 +1502,10 @@ export class IncomeService {
       const end = new Date(dto.date)
       end.setHours(23, 59, 59, 999)
 
-      // Xóa toàn bộ incomes trong ngày (vì là file tổng)
+      // Xóa incomes trong ngày nhưng chỉ cho channel này
       await this.incomeModel.deleteMany({
-        date: { $gte: start, $lte: end }
+        date: { $gte: start, $lte: end },
+        channel: dto.channel
       })
 
       // Group data
@@ -1513,6 +1540,7 @@ export class IncomeService {
           customer: lines[0]["Buyer Username"] || "user",
           province: lines[0]["Province"] || "",
           shippingProvider,
+          channel: dto.channel,
           date: dto.date,
           products
         })

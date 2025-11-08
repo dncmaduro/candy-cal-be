@@ -2,11 +2,13 @@ export class InsertIncomeFileDto {
   file: Express.Multer.File
   type: "affiliate" | "ads" | "other"
   date: Date
+  channel: string
 }
 
 export class InsertIncomeRequest {
   type: "affiliate" | "ads" | "other"
   date: Date
+  channel: string
 }
 
 export class XlsxIncomeData {
