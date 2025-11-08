@@ -15,19 +15,23 @@ export class MonthGoalService {
 
   async createGoal(dto: CreateMonthGoalDto): Promise<MonthGoal> {
     try {
-      const existed = await this.monthGoalModel.findOne({
+      const filter: any = {
         month: dto.month,
         year: dto.year
-      })
+      }
+      if (dto.channel) filter.channel = dto.channel
+
+      const existed = await this.monthGoalModel.findOne(filter)
       if (existed)
         throw new HttpException(
-          "Đã có KPI cho tháng/năm này",
+          "Đã có KPI cho tháng/năm/channel này",
           HttpStatus.CONFLICT
         )
 
       const goal = new this.monthGoalModel({
         month: dto.month,
         year: dto.year,
+        channel: dto.channel,
         liveStreamGoal: dto.liveStreamGoal,
         shopGoal: dto.shopGoal,
         liveAdsPercentageGoal: dto.liveAdsPercentageGoal,
@@ -44,14 +48,24 @@ export class MonthGoalService {
     }
   }
 
-  async getGoal(month: number, year: number): Promise<MonthGoal | null> {
-    return this.monthGoalModel.findOne({ month, year }).lean()
+  async getGoal(
+    month: number,
+    year: number,
+    channelId?: string
+  ): Promise<MonthGoal | null> {
+    const filter: any = { month, year }
+    if (channelId) filter.channel = channelId
+    return this.monthGoalModel.findOne(filter).lean()
   }
 
-  async getGoals(year?: number): Promise<{
+  async getGoals(
+    year?: number,
+    channelId?: string
+  ): Promise<{
     monthGoals: {
       month: number
       year: number
+      channel?: any
       liveStreamGoal: number
       shopGoal: number
       liveAdsPercentageGoal: number
@@ -73,24 +87,52 @@ export class MonthGoalService {
     let monthGoals: MonthGoal[] = []
     let total: number = 0
 
+    const filter: any = {}
+    if (year) filter.year = year
+    if (channelId) filter.channel = channelId
+
     if (year) {
       ;[monthGoals, total] = await Promise.all([
-        this.monthGoalModel.find({ year }).sort({ month: 1 }).lean(),
-        this.monthGoalModel.countDocuments({ year }).exec()
+        this.monthGoalModel
+          .find(filter)
+          .populate("channel", "_id name")
+          .sort({ month: 1 })
+          .lean(),
+        this.monthGoalModel.countDocuments(filter).exec()
       ])
     } else {
       ;[monthGoals, total] = await Promise.all([
-        this.monthGoalModel.find({}).sort({ year: -1, month: 1 }).lean(),
-        this.monthGoalModel.countDocuments().exec()
+        this.monthGoalModel
+          .find(filter)
+          .populate("channel", "_id name")
+          .sort({ year: -1, month: 1 })
+          .lean(),
+        this.monthGoalModel.countDocuments(filter).exec()
       ])
     }
 
     const results = await Promise.all(
       monthGoals.map(async (goal) => {
+        const goalChannelId = goal.channel
+          ? String((goal.channel as any)._id || goal.channel)
+          : undefined
+
         const [incomeSplit, quantitySplit, adsSplit] = await Promise.all([
-          this.incomeService.totalIncomeByMonthSplit(goal.month, goal.year),
-          this.incomeService.totalQuantityByMonthSplit(goal.month, goal.year),
-          this.incomeService.adsCostSplitByMonth(goal.month, goal.year)
+          this.incomeService.totalIncomeByMonthSplit(
+            goal.month,
+            goal.year,
+            goalChannelId
+          ),
+          this.incomeService.totalQuantityByMonthSplit(
+            goal.month,
+            goal.year,
+            goalChannelId
+          ),
+          this.incomeService.adsCostSplitByMonth(
+            goal.month,
+            goal.year,
+            goalChannelId
+          )
         ])
 
         // Build KPIPercentage for before and after discount using goals
@@ -145,6 +187,7 @@ export class MonthGoalService {
         return {
           month: goal.month,
           year: goal.year,
+          channel: goal.channel,
           liveStreamGoal: goal.liveStreamGoal,
           shopGoal: goal.shopGoal,
           liveAdsPercentageGoal: goal.liveAdsPercentageGoal,
@@ -164,12 +207,17 @@ export class MonthGoalService {
   async updateGoal(
     month: number,
     year: number,
-    dto: UpdateMonthGoalDto
+    dto: UpdateMonthGoalDto,
+    channelId?: string
   ): Promise<MonthGoal> {
+    const filter: any = { month, year }
+    if (channelId) filter.channel = channelId
+
     const updated = await this.monthGoalModel.findOneAndUpdate(
-      { month, year },
+      filter,
       {
         $set: {
+          channel: dto.channel,
           liveStreamGoal: dto.liveStreamGoal,
           shopGoal: dto.shopGoal,
           liveAdsPercentageGoal: dto.liveAdsPercentageGoal,
@@ -183,8 +231,15 @@ export class MonthGoalService {
     return updated
   }
 
-  async deleteGoal(month: number, year: number): Promise<void> {
-    const deleted = await this.monthGoalModel.findOneAndDelete({ month, year })
+  async deleteGoal(
+    month: number,
+    year: number,
+    channelId?: string
+  ): Promise<void> {
+    const filter: any = { month, year }
+    if (channelId) filter.channel = channelId
+
+    const deleted = await this.monthGoalModel.findOneAndDelete(filter)
     if (!deleted)
       throw new HttpException("Không tìm thấy KPI", HttpStatus.NOT_FOUND)
   }

@@ -9,6 +9,7 @@ import {
   XlsxIncomeData
 } from "./dto/income.dto"
 import * as XLSX from "xlsx"
+import * as ExcelJS from "exceljs"
 import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
@@ -162,6 +163,7 @@ export class IncomeService {
             customer: lines[0]["Buyer Username"],
             province: lines[0]["Province"],
             shippingProvider,
+            channel: dto.channel,
             date: dto.date,
             products
           })
@@ -284,7 +286,6 @@ export class IncomeService {
     }
   }
 
-  /** @deprecated */
   async getIncomesByDateRange(
     startDate: Date,
     endDate: Date,
@@ -292,7 +293,8 @@ export class IncomeService {
     limit = 10,
     orderId?: string,
     productCode?: string,
-    productSource?: string
+    productSource?: string,
+    channelId?: string
   ): Promise<{ incomes: Income[]; total: number }> {
     try {
       const safePage = Math.max(1, Number(page) || 1)
@@ -311,11 +313,13 @@ export class IncomeService {
       // Lọc theo các trường trong mảng products
       if (productCode) filter["products.code"] = productCode
       if (productSource) filter["products.source"] = productSource
+      if (channelId) filter.channel = channelId
 
       const total = await this.incomeModel.countDocuments(filter)
 
       const incomes = await this.incomeModel
         .find(filter)
+        .populate("channel", "_id name")
         .sort({ date: 1, _id: 1 })
         .skip((safePage - 1) * safeLimit)
         .limit(safeLimit)
@@ -387,7 +391,8 @@ export class IncomeService {
 
   async totalIncomeByMonthSplit(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{
     beforeDiscount: { live: number; shop: number }
     afterDiscount: { live: number; shop: number }
@@ -401,9 +406,10 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setUTCHours(end.getUTCHours() - 7) // Subtract 7 hours to get GMT+7 end in UTC
 
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
 
       let liveBeforeDiscount = 0
       let shopBeforeDiscount = 0
@@ -439,7 +445,8 @@ export class IncomeService {
 
   async totalQuantityByMonthSplit(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{ live: number; shop: number }> {
     try {
       // Adjust for GMT+7 timezone (Vietnam time)
@@ -449,9 +456,10 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setUTCHours(end.getUTCHours() - 7)
 
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
 
       let live = 0
       let shop = 0
@@ -474,18 +482,26 @@ export class IncomeService {
 
   async KPIPercentageByMonthSplit(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{ live: number; shop: number }> {
     try {
-      const goal = await this.monthGoalModel.findOne({ month, year }).lean()
+      const filter: any = { month, year }
+      if (channelId) filter.channel = channelId
+
+      const goal = await this.monthGoalModel.findOne(filter).lean()
       if (!goal) {
         throw new HttpException(
-          "Chưa thiết lập mục tiêu tháng này",
+          "Chưa thiết lập mục tiêu tháng/channel này",
           HttpStatus.NOT_FOUND
         )
       }
 
-      const totalIncome = await this.totalIncomeByMonthSplit(month, year)
+      const totalIncome = await this.totalIncomeByMonthSplit(
+        month,
+        year,
+        channelId
+      )
       const live = totalIncome.afterDiscount.live
       const shop = totalIncome.afterDiscount.shop
       const livePct =
@@ -549,67 +565,131 @@ export class IncomeService {
       // Lấy toàn bộ incomes
       const incomes = await this.incomeModel
         .find(filter)
+        .populate("channel", "_id name")
         .sort({ date: 1, _id: 1 })
         .lean()
 
-      // Flatten dữ liệu thành từng dòng sản phẩm
-      const rows = []
-      const merges = []
-      let rowIndex = 1 // 0 là header
+      // Create workbook using ExcelJS
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet("DoanhThu")
+
+      // Define columns with headers
+      worksheet.columns = [
+        { header: "Ngày xuất đơn", key: "date", width: 15 },
+        { header: "Mã đơn hàng", key: "orderId", width: 20 },
+        { header: "Khách hàng", key: "customer", width: 25 },
+        { header: "Tỉnh thành", key: "province", width: 20 },
+        { header: "Kênh", key: "channel", width: 20 },
+        { header: "Đơn vị vận chuyển", key: "shippingProvider", width: 20 },
+        { header: "Mã SP", key: "code", width: 15 },
+        { header: "Tên SP", key: "name", width: 30 },
+        { header: "Nguồn", key: "source", width: 15 },
+        { header: "Số lượng", key: "quantity", width: 12 },
+        { header: "Báo giá", key: "quotation", width: 15 },
+        { header: "Giá bán", key: "price", width: 15 },
+        { header: "Giảm giá từ platform", key: "platformDiscount", width: 20 },
+        { header: "Giảm giá từ người bán", key: "sellerDiscount", width: 20 },
+        {
+          header: "Giá sau giảm voucher",
+          key: "priceAfterDiscount",
+          width: 20
+        },
+        {
+          header: "Phần trăm Affiliate",
+          key: "affiliateAdsPercentage",
+          width: 20
+        },
+        {
+          header: "Phần trăm Affiliate tiêu chuẩn",
+          key: "standardAffPercentage",
+          width: 25
+        },
+        { header: "Loại nội dung", key: "content", width: 20 },
+        { header: "Quy cách đóng hộp", key: "box", width: 20 },
+        { header: "Nhà sáng tạo", key: "creator", width: 20 },
+        {
+          header: "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính",
+          key: "affiliateAdsAmount",
+          width: 35
+        },
+        {
+          header: "Thanh toán hoa hồng tiêu chuẩn ước tính",
+          key: "standardAffAmount",
+          width: 35
+        }
+      ]
+
+      // Flatten dữ liệu thành từng dòng sản phẩm và track merges
+      const mergeCells: Array<{
+        startRow: number
+        endRow: number
+        colIndex: number
+      }> = []
+      let currentRow = 2 // Row 1 is header
 
       incomes.forEach((income) => {
+        const startRow = currentRow
+        const channelName = (income.channel as any)?.name || ""
         income.products.forEach((product, idx) => {
-          rows.push({
-            "Ngày xuất đơn":
-              idx === 0 ? this.formatDate(income.date as Date) : "",
-            "Mã đơn hàng": idx === 0 ? income.orderId : "",
-            "Khách hàng": idx === 0 ? income.customer : "",
-            "Tỉnh thành": idx === 0 ? income.province : "",
-            "Đơn vị vận chuyển": idx === 0 ? income.shippingProvider || "" : "",
-            "Mã SP": product.code,
-            "Tên SP": product.name,
-            Nguồn: sourcesMap[product.source],
-            "Số lượng": product.quantity,
-            "Báo giá": this.formatMoney(product.quotation),
-            "Giá bán": this.formatMoney(product.price),
-            "Giảm giá từ platform": this.formatMoney(product.platformDiscount),
-            "Giảm giá từ người bán": this.formatMoney(product.sellerDiscount),
-            "Giá sau giảm voucher": this.formatMoney(
-              product.priceAfterDiscount
-            ),
-            "Phần trăm Affiliate": product.affiliateAdsPercentage ?? "",
-            "Phần trăm Affiliate tiêu chuẩn":
-              product.standardAffPercentage ?? "",
-            "Loại nội dung": product.content ?? "",
-            "Quy cách đóng hộp": packingTypesMap[product.box ?? ""],
-            "Nhà sáng tạo": product.creator ?? "",
-            "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính": this.formatMoney(
-              product.affiliateAdsAmount
-            ),
-            "Thanh toán hoa hồng tiêu chuẩn ước tính": this.formatMoney(
-              product.standardAffAmount
-            )
-          })
+          worksheet.addRow([
+            idx === 0 ? this.formatDate(income.date as Date) : "",
+            idx === 0 ? income.orderId : "",
+            idx === 0 ? income.customer : "",
+            idx === 0 ? income.province : "",
+            idx === 0 ? channelName : "",
+            idx === 0 ? income.shippingProvider || "" : "",
+            product.code,
+            product.name,
+            sourcesMap[product.source],
+            product.quantity,
+            this.formatMoney(product.quotation),
+            this.formatMoney(product.price),
+            this.formatMoney(product.platformDiscount),
+            this.formatMoney(product.sellerDiscount),
+            this.formatMoney(product.priceAfterDiscount),
+            product.affiliateAdsPercentage ?? "",
+            product.standardAffPercentage ?? "",
+            product.content ?? "",
+            packingTypesMap[product.box ?? ""],
+            product.creator ?? "",
+            this.formatMoney(product.affiliateAdsAmount),
+            this.formatMoney(product.standardAffAmount)
+          ])
+          currentRow++
         })
+
+        // Track cells to merge (first 6 columns now including channel)
         if (income.products.length > 1) {
-          ;[0, 1, 2, 3, 4].forEach((colIdx) => {
-            merges.push({
-              s: { r: rowIndex, c: colIdx },
-              e: { r: rowIndex + income.products.length - 1, c: colIdx }
+          for (let colIdx = 0; colIdx < 6; colIdx++) {
+            mergeCells.push({
+              startRow,
+              endRow: currentRow - 1,
+              colIndex: colIdx + 1 // ExcelJS columns are 1-based
             })
-          })
+          }
         }
-        rowIndex += income.products.length
       })
 
-      // Tạo workbook & worksheet
-      const ws = XLSX.utils.json_to_sheet(rows)
-      ws["!merges"] = merges
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, "DoanhThu")
+      // Apply merges
+      mergeCells.forEach((merge) => {
+        worksheet.mergeCells(
+          merge.startRow,
+          merge.colIndex,
+          merge.endRow,
+          merge.colIndex
+        )
+      })
 
-      // Ghi ra buffer
-      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" })
+      // Apply Times New Roman font to all cells
+      worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          cell.font = { name: "Times New Roman", size: 11 }
+          cell.alignment = { vertical: "middle", horizontal: "left" }
+        })
+      })
+
+      // Generate buffer
+      const buffer = await workbook.xlsx.writeBuffer()
 
       // Xuất file về FE (dùng @Res())
       res.setHeader(
@@ -620,7 +700,7 @@ export class IncomeService {
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       )
-      res.send(buffer)
+      res.send(Buffer.from(buffer))
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -832,7 +912,8 @@ export class IncomeService {
 
   async totalLiveAndShopIncomeByMonth(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{
     beforeDiscount: { live: number; shop: number }
     afterDiscount: { live: number; shop: number }
@@ -845,9 +926,10 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setUTCHours(end.getUTCHours() - 7)
 
-      const incomes = await this.incomeModel
-        .find({ date: { $gte: start, $lte: end } })
-        .lean()
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
 
       let liveBeforeDiscount = 0
       let shopBeforeDiscount = 0
@@ -894,7 +976,8 @@ export class IncomeService {
 
   async adsCostSplitByMonth(
     month: number,
-    year: number
+    year: number,
+    channelId?: string
   ): Promise<{
     liveAdsCost: number
     shopAdsCost: number
@@ -932,7 +1015,8 @@ export class IncomeService {
       // Get total live/shop incomes in month
       const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
         month,
-        year
+        year,
+        channelId
       )
       const live = totalLiveShop.afterDiscount.live
       const shop = totalLiveShop.afterDiscount.shop
@@ -962,7 +1046,8 @@ export class IncomeService {
   async getRangeStats(
     startDate: Date,
     endDate: Date,
-    comparePrevious = true
+    comparePrevious = true,
+    channelId?: string
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -1067,9 +1152,10 @@ export class IncomeService {
       const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
 
       const buildStats = async (s: Date, e: Date) => {
-        const incomes = await this.incomeModel
-          .find({ date: { $gte: s, $lte: e } })
-          .lean()
+        const filter: any = { date: { $gte: s, $lte: e } }
+        if (channelId) filter.channel = channelId
+
+        const incomes = await this.incomeModel.find(filter).lean()
         const boxMap: Record<string, number> = {}
         const shipMap: Record<string, number> = {}
 
@@ -1412,6 +1498,7 @@ export class IncomeService {
     totalIncomeFile: Express.Multer.File
     affiliateFile: Express.Multer.File
     date: Date
+    channel: string
   }): Promise<void> {
     try {
       // 1. Xử lý file tổng doanh thu: insert với source trống
@@ -1432,9 +1519,10 @@ export class IncomeService {
       const end = new Date(dto.date)
       end.setHours(23, 59, 59, 999)
 
-      // Xóa toàn bộ incomes trong ngày (vì là file tổng)
+      // Xóa incomes trong ngày nhưng chỉ cho channel này
       await this.incomeModel.deleteMany({
-        date: { $gte: start, $lte: end }
+        date: { $gte: start, $lte: end },
+        channel: dto.channel
       })
 
       // Group data
@@ -1469,6 +1557,7 @@ export class IncomeService {
           customer: lines[0]["Buyer Username"] || "user",
           province: lines[0]["Province"] || "",
           shippingProvider,
+          channel: dto.channel,
           date: dto.date,
           products
         })

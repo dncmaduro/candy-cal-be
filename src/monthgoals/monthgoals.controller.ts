@@ -32,10 +32,14 @@ export class MonthGoalController {
   @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("year")
   @HttpCode(HttpStatus.OK)
-  async getGoals(@Query("year") year?: string): Promise<{
+  async getGoals(
+    @Query("year") year?: string,
+    @Query("channelId") channelId?: string
+  ): Promise<{
     monthGoals: {
       month: number
       year: number
+      channel?: any
       liveStreamGoal: number
       shopGoal: number
       liveAdsPercentageGoal: number
@@ -54,7 +58,10 @@ export class MonthGoalController {
     }[]
     total: number
   }> {
-    return this.monthGoalService.getGoals(year ? Number(year) : undefined)
+    return this.monthGoalService.getGoals(
+      year ? Number(year) : undefined,
+      channelId
+    )
   }
 
   @Roles("admin", "order-emp", "accounting-emp", "system-emp")
@@ -62,22 +69,36 @@ export class MonthGoalController {
   @HttpCode(HttpStatus.OK)
   async getGoal(
     @Query("year") year: string,
-    @Query("month") month: string
+    @Query("month") month: string,
+    @Query("channelId") channelId?: string
   ): Promise<MonthGoal | null> {
-    return this.monthGoalService.getGoal(Number(month), Number(year))
+    return this.monthGoalService.getGoal(Number(month), Number(year), channelId)
   }
 
   @Roles("admin", "accounting-emp")
   @Patch("")
   @HttpCode(HttpStatus.OK)
   async updateGoal(@Body() dto: UpdateMonthGoalDto): Promise<MonthGoal> {
-    return this.monthGoalService.updateGoal(dto.month, dto.year, dto)
+    return this.monthGoalService.updateGoal(
+      dto.month,
+      dto.year,
+      dto,
+      dto.channel
+    )
   }
 
   @Roles("admin", "accounting-emp")
   @Delete("")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteGoal(@Query("year") year: string, @Query("month") month: string) {
-    await this.monthGoalService.deleteGoal(Number(month), Number(year))
+  async deleteGoal(
+    @Query("year") year: string,
+    @Query("month") month: string,
+    @Query("channelId") channelId?: string
+  ) {
+    await this.monthGoalService.deleteGoal(
+      Number(month),
+      Number(year),
+      channelId
+    )
   }
 }

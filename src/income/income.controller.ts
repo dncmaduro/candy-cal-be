@@ -53,7 +53,7 @@ export class IncomeController {
         action: "inserted",
         entity: "income",
         result: "success",
-        meta: { type: body.type, fileSize: file?.size }
+        meta: { type: body.type, fileSize: file?.size, channel: body.channel }
       },
       req.user.userId
     )
@@ -113,7 +113,8 @@ export class IncomeController {
     @Query("limit") limit = 10,
     @Query("orderId") orderId?: string,
     @Query("productCode") productCode?: string,
-    @Query("productSource") productSource?: string
+    @Query("productSource") productSource?: string,
+    @Query("channelId") channelId?: string
   ): Promise<{ incomes: Income[]; total: number }> {
     const data = await this.incomeService.getIncomesByDateRange(
       new Date(startDate),
@@ -122,7 +123,8 @@ export class IncomeController {
       Number(limit),
       orderId,
       productCode,
-      productSource
+      productSource,
+      channelId
     )
     return data
   }
@@ -185,7 +187,8 @@ export class IncomeController {
   @HttpCode(HttpStatus.OK)
   async totalIncomeByMonthSplit(
     @Query("month") month: string,
-    @Query("year") year: string
+    @Query("year") year: string,
+    @Query("channelId") channelId?: string
   ): Promise<{
     totalIncome: {
       beforeDiscount: { live: number; shop: number }
@@ -194,7 +197,8 @@ export class IncomeController {
   }> {
     const totalIncome = await this.incomeService.totalIncomeByMonthSplit(
       Number(month),
-      Number(year)
+      Number(year),
+      channelId
     )
     return { totalIncome }
   }
@@ -204,11 +208,13 @@ export class IncomeController {
   @HttpCode(HttpStatus.OK)
   async totalQuantityByMonthSplit(
     @Query("month") month: string,
-    @Query("year") year: string
+    @Query("year") year: string,
+    @Query("channelId") channelId?: string
   ): Promise<{ totalQuantity: { live: number; shop: number } }> {
     const totalQuantity = await this.incomeService.totalQuantityByMonthSplit(
       Number(month),
-      Number(year)
+      Number(year),
+      channelId
     )
     return { totalQuantity }
   }
@@ -218,11 +224,13 @@ export class IncomeController {
   @HttpCode(HttpStatus.OK)
   async KPIPercentageByMonthSplit(
     @Query("month") month: string,
-    @Query("year") year: string
+    @Query("year") year: string,
+    @Query("channelId") channelId?: string
   ): Promise<{ KPIPercentage: { live: number; shop: number } }> {
     const KPIPercentage = await this.incomeService.KPIPercentageByMonthSplit(
       Number(month),
-      Number(year)
+      Number(year),
+      channelId
     )
     return { KPIPercentage }
   }
@@ -291,7 +299,8 @@ export class IncomeController {
   @HttpCode(HttpStatus.OK)
   async totalLiveAndShopIncomeByMonth(
     @Query("month") month: string,
-    @Query("year") year: string
+    @Query("year") year: string,
+    @Query("channelId") channelId?: string
   ): Promise<{
     totalIncome: {
       beforeDiscount: { live: number; shop: number }
@@ -300,7 +309,8 @@ export class IncomeController {
   }> {
     const totalIncome = await this.incomeService.totalLiveAndShopIncomeByMonth(
       Number(month),
-      Number(year)
+      Number(year),
+      channelId
     )
     return { totalIncome }
   }
@@ -310,14 +320,19 @@ export class IncomeController {
   @HttpCode(HttpStatus.OK)
   async adsCostSplitByMonth(
     @Query("month") month: string,
-    @Query("year") year: string
+    @Query("year") year: string,
+    @Query("channelId") channelId?: string
   ): Promise<{
     liveAdsCost: number
     shopAdsCost: number
     percentages: { liveAdsToLiveIncome: number; shopAdsToShopIncome: number }
     totalIncome: { live: number; shop: number }
   }> {
-    return this.incomeService.adsCostSplitByMonth(Number(month), Number(year))
+    return this.incomeService.adsCostSplitByMonth(
+      Number(month),
+      Number(year),
+      channelId
+    )
   }
 
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")
@@ -326,7 +341,8 @@ export class IncomeController {
   async getRangeStats(
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
-    @Query("comparePrevious") comparePrevious?: string
+    @Query("comparePrevious") comparePrevious?: string,
+    @Query("channelId") channelId?: string
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -421,7 +437,8 @@ export class IncomeController {
     return this.incomeService.getRangeStats(
       new Date(startDate),
       new Date(endDate),
-      comparePrevious !== "false"
+      comparePrevious !== "false",
+      channelId
     )
   }
 
@@ -431,7 +448,7 @@ export class IncomeController {
   @HttpCode(HttpStatus.ACCEPTED) // Đổi thành 202 ACCEPTED
   async insertAndUpdateAffiliateType(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() body: { date: string },
+    @Body() body: { date: string; channel: string },
     @Req() req
   ): Promise<{ success: true; message: string }> {
     if (!files || files.length !== 2) {
@@ -448,7 +465,8 @@ export class IncomeController {
         await this.incomeService.insertAndUpdateAffiliateType({
           totalIncomeFile,
           affiliateFile,
-          date: new Date(body.date)
+          date: new Date(body.date),
+          channel: body.channel
         })
 
         void this.systemLogsService.createSystemLog(
