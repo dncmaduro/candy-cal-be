@@ -11,9 +11,12 @@ import {
   Delete,
   Patch,
   UseGuards,
-  Res
+  Res,
+  UseInterceptors,
+  UploadedFile
 } from "@nestjs/common"
 import { Response } from "express"
+import { FileInterceptor } from "@nestjs/platform-express"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
@@ -21,7 +24,8 @@ import { SalesOrdersService } from "./salesorders.service"
 import {
   SalesOrder,
   SalesOrderShippingType,
-  SalesOrderStorage
+  SalesOrderStorage,
+  SalesOrderStatus
 } from "../database/mongoose/schemas/SalesOrder"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
@@ -43,6 +47,7 @@ export class SalesOrdersController {
       items: { code: string; quantity: number }[]
       storage: SalesOrderStorage
       date: string
+      discount?: number
     },
     @Req() req
   ): Promise<SalesOrder> {
@@ -50,7 +55,8 @@ export class SalesOrdersController {
       salesFunnelId: body.salesFunnelId,
       items: body.items,
       storage: body.storage,
-      date: new Date(body.date)
+      date: new Date(body.date),
+      discount: body.discount
     })
     void this.systemLogsService.createSystemLog(
       {
@@ -66,6 +72,59 @@ export class SalesOrdersController {
   }
 
   @Roles("admin", "sales-emp")
+  @Post("upload")
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: {
+        fileSize: 10 * 1024 * 1024 // 10 MB
+      }
+    })
+  )
+  async uploadSalesOrders(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req
+  ): Promise<{
+    success: true
+    inserted: number
+    warnings?: string[]
+    totalWarnings?: number
+  }> {
+    const result = await this.salesOrdersService.uploadSalesOrders(file)
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesorders",
+        action: "upload",
+        entity: "salesorder",
+        result: "success",
+        meta: {
+          fileSize: file?.size,
+          inserted: result.inserted
+        }
+      },
+      req.user.userId
+    )
+
+    return result
+  }
+
+  @Roles("admin", "sales-emp")
+  @Get("upload/template")
+  @HttpCode(HttpStatus.OK)
+  async downloadUploadTemplate(@Res() res: Response): Promise<void> {
+    const buffer = await this.salesOrdersService.generateUploadTemplate()
+
+    const filename = `orders_upload_template_${new Date().getTime()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
+  }
+
+  @Roles("admin", "sales-emp")
   @Patch(":id/items")
   @HttpCode(HttpStatus.OK)
   async updateOrderItems(
@@ -74,13 +133,17 @@ export class SalesOrdersController {
     body: {
       items: { code: string; quantity: number; price?: number }[]
       storage?: SalesOrderStorage
+      discount?: number
+      deposit?: number
     },
     @Req() req
   ): Promise<SalesOrder> {
     const updated = await this.salesOrdersService.updateOrderItems(
       id,
       body.items,
-      body.storage
+      body.storage,
+      body.discount,
+      body.deposit
     )
     void this.systemLogsService.createSystemLog(
       {
@@ -96,23 +159,24 @@ export class SalesOrdersController {
   }
 
   @Roles("admin", "sales-emp")
-  @Patch(":id/shipping")
+  @Patch(":id/shipping-tax")
   @HttpCode(HttpStatus.OK)
-  async updateShippingInfo(
+  async updateShippingAndTax(
     @Param("id") id: string,
     @Body()
-    body: { shippingCode?: string; shippingType?: SalesOrderShippingType },
+    body: {
+      shippingCode?: string
+      shippingType?: SalesOrderShippingType
+      tax?: number
+      shippingCost?: number
+    },
     @Req() req
   ): Promise<SalesOrder> {
-    const updated = await this.salesOrdersService.updateShippingInfo(
-      id,
-      body.shippingCode,
-      body.shippingType
-    )
+    const updated = await this.salesOrdersService.updateShippingAndTax(id, body)
     void this.systemLogsService.createSystemLog(
       {
         type: "salesorders",
-        action: "updated_shipping",
+        action: "updated_shipping_tax",
         entity: "salesorder",
         entityId: updated._id.toString(),
         result: "success"
@@ -146,6 +210,29 @@ export class SalesOrdersController {
     return this.salesOrdersService.getOrderById(id)
   }
 
+  @Roles("admin", "sales-emp")
+  @Get("funnel/:funnelId")
+  @HttpCode(HttpStatus.OK)
+  async getOrdersByFunnel(
+    @Param("funnelId") funnelId: string,
+    @Query("page") page = 1,
+    @Query("limit") limit = 10,
+    @Req() req
+  ): Promise<{
+    data: SalesOrder[]
+    total: number
+    daysSinceLastPurchase: number | null
+  }> {
+    const isAdmin = req.user.roles?.includes("admin") || false
+    return this.salesOrdersService.getOrdersByFunnel(
+      funnelId,
+      req.user.userId,
+      isAdmin,
+      Number(page),
+      Number(limit)
+    )
+  }
+
   @Roles("admin", "sales-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
@@ -156,6 +243,7 @@ export class SalesOrdersController {
     @Query("endDate") endDate?: string,
     @Query("searchText") searchText?: string,
     @Query("shippingType") shippingType?: SalesOrderShippingType,
+    @Query("status") status?: SalesOrderStatus,
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: SalesOrder[]; total: number }> {
@@ -171,7 +259,8 @@ export class SalesOrdersController {
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
         searchText,
-        shippingType
+        shippingType,
+        status
       },
       Number(page),
       Number(limit)
@@ -231,6 +320,7 @@ export class SalesOrdersController {
     @Query("endDate") endDate?: string,
     @Query("searchText") searchText?: string,
     @Query("shippingType") shippingType?: SalesOrderShippingType,
+    @Query("status") status?: SalesOrderStatus,
     @Res() res?: Response
   ): Promise<void> {
     const buffer = await this.salesOrdersService.exportOrdersToExcel({
@@ -240,7 +330,8 @@ export class SalesOrdersController {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       searchText,
-      shippingType
+      shippingType,
+      status
     })
 
     const filename = `orders_${new Date().getTime()}.xlsx`
@@ -250,5 +341,31 @@ export class SalesOrdersController {
     )
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
     res.send(buffer)
+  }
+
+  @Roles("admin", "sales-emp")
+  @Patch(":id/convert-official")
+  @HttpCode(HttpStatus.OK)
+  async convertToOfficial(
+    @Param("id") id: string,
+    @Body() body: { tax: number; shippingCost: number },
+    @Req() req
+  ): Promise<SalesOrder> {
+    const updated = await this.salesOrdersService.convertToOfficial(
+      id,
+      body.tax,
+      body.shippingCost
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesorders",
+        action: "converted_to_official",
+        entity: "salesorder",
+        entityId: updated._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
   }
 }

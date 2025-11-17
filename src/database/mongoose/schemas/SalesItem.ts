@@ -18,6 +18,7 @@ export interface SalesItem extends Document {
   factory: SalesItemFactory
   price: number
   source: SalesItemSource
+  specification: number // Quy cách: số lượng chiếc/đơn vị
   createdAt: Date
   updatedAt: Date
 }
@@ -39,6 +40,7 @@ export const SalesItemSchema = new Schema<SalesItem>({
     enum: ["inside", "outside"],
     required: true
   },
+  specification: { type: Number, required: true, default: 1 }, // Quy cách: số lượng chiếc/đơn vị
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })

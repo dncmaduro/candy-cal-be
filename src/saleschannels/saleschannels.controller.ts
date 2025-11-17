@@ -31,7 +31,7 @@ export class SalesChannelsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createChannel(
-    @Body() body: { channelName: string },
+    @Body() body: { channelName: string; assignedTo?: string },
     @Req() req
   ): Promise<SalesChannel> {
     const created = await this.salesChannelsService.createChannel(body)
@@ -53,7 +53,7 @@ export class SalesChannelsController {
   @HttpCode(HttpStatus.OK)
   async updateChannel(
     @Param("id") id: string,
-    @Body() body: { channelName?: string },
+    @Body() body: { channelName?: string; assignedTo?: string },
     @Req() req
   ): Promise<SalesChannel> {
     const updated = await this.salesChannelsService.updateChannel(id, body)
@@ -107,5 +107,27 @@ export class SalesChannelsController {
       Number(page),
       Number(limit)
     )
+  }
+
+  @Roles("admin", "sales-leader")
+  @Post(":id/assign")
+  @HttpCode(HttpStatus.OK)
+  async assignUser(
+    @Param("id") id: string,
+    @Body() body: { userId: string | null },
+    @Req() req
+  ): Promise<SalesChannel> {
+    const updated = await this.salesChannelsService.assignUser(id, body.userId)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "saleschannels",
+        action: "assigned",
+        entity: "saleschannel",
+        entityId: updated._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
   }
 }

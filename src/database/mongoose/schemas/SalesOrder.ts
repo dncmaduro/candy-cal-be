@@ -4,6 +4,8 @@ export type SalesOrderStorage = "position_HaNam" | "position_MKT"
 
 export type SalesOrderShippingType = "shipping_vtp" | "shipping_cargo"
 
+export type SalesOrderStatus = "draft" | "official"
+
 export interface SalesOrder extends Document {
   salesFunnelId: Types.ObjectId
   items: {
@@ -17,9 +19,12 @@ export interface SalesOrder extends Document {
   shippingType?: SalesOrderShippingType
   date: Date
   total: number
+  discount: number
+  deposit: number
   tax: number
   shippingCost: number
   storage: SalesOrderStorage
+  status: SalesOrderStatus
   createdAt: Date
   updatedAt: Date
 }
@@ -47,11 +52,19 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   returning: { type: Boolean, default: false, required: false },
   date: { type: Date, required: true },
   total: { type: Number, required: true },
+  discount: { type: Number, required: true, default: 0 },
+  deposit: { type: Number, required: true, default: 0 },
   tax: { type: Number, required: true, default: 0 },
   shippingCost: { type: Number, required: true, default: 0 },
   storage: {
     type: String,
     enum: ["position_HaNam", "position_MKT"],
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ["draft", "official"],
+    default: "draft",
     required: true
   },
   createdAt: { type: Date, default: Date.now },

@@ -6,10 +6,25 @@ import * as ExcelJS from "exceljs"
 import {
   SalesOrder,
   SalesOrderShippingType,
-  SalesOrderStorage
+  SalesOrderStorage,
+  SalesOrderStatus
 } from "../database/mongoose/schemas/SalesOrder"
 import { SalesItem } from "../database/mongoose/schemas/SalesItem"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
+
+interface XlsxSalesOrderData {
+  "SĐT Khách hàng"?: string
+  "Mã sản phẩm"?: string
+  "Số lượng"?: number
+  Kho?: string
+  Ngày?: string
+  "Giảm giá"?: number
+  "Đặt cọc"?: number
+  Thuế?: number
+  "Phí ship"?: number
+  "Mã vận đơn"?: string
+  "Loại vận chuyển"?: string
+}
 
 @Injectable()
 export class SalesOrdersService {
@@ -27,6 +42,7 @@ export class SalesOrdersService {
     items: { code: string; quantity: number }[]
     storage: SalesOrderStorage
     date: Date
+    discount?: number
   }): Promise<SalesOrder> {
     try {
       // Get sales funnel
@@ -74,7 +90,8 @@ export class SalesOrdersService {
         returning,
         storage: payload.storage,
         date: payload.date,
-        total
+        total,
+        discount: payload.discount || 0
       })
 
       const saved = await order.save()
@@ -95,10 +112,351 @@ export class SalesOrdersService {
     }
   }
 
+  async uploadSalesOrders(file: Express.Multer.File): Promise<{
+    success: true
+    inserted: number
+    warnings?: string[]
+    totalWarnings?: number
+  }> {
+    try {
+      // Read Excel file
+      const workbook = XLSX.read(file.buffer, { type: "buffer" })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const data = XLSX.utils.sheet_to_json(sheet) as XlsxSalesOrderData[]
+
+      if (!data || data.length === 0) {
+        throw new HttpException(
+          "File trống hoặc không hợp lệ",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      let inserted = 0
+      const errors: string[] = []
+
+      // Pre-fetch all funnels and items for mapping
+      const [funnels, items] = await Promise.all([
+        this.salesFunnelModel.find().lean(),
+        this.salesItemModel.find().lean()
+      ])
+
+      // Group rows by customer phone number to create orders with multiple items
+      const ordersByPhone = new Map<string, XlsxSalesOrderData[]>()
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i]
+        const phoneNumber = row["SĐT Khách hàng"]
+          ? row["SĐT Khách hàng"].toString().trim()
+          : ""
+
+        if (!phoneNumber) {
+          errors.push(`Dòng ${i + 2}: Thiếu số điện thoại khách hàng`)
+          continue
+        }
+
+        if (!ordersByPhone.has(phoneNumber)) {
+          ordersByPhone.set(phoneNumber, [])
+        }
+        ordersByPhone.get(phoneNumber)!.push(row)
+      }
+
+      // Process each order
+      for (const [phoneNumber, rows] of ordersByPhone.entries()) {
+        try {
+          // Find funnel by phone number
+          const funnel = funnels.find(
+            (f) =>
+              f.phoneNumber === phoneNumber ||
+              f.secondaryPhoneNumbers?.includes(phoneNumber)
+          )
+
+          if (!funnel) {
+            errors.push(
+              `Số điện thoại "${phoneNumber}": Không tìm thấy khách hàng`
+            )
+            continue
+          }
+
+          // Get order details from first row (assuming all rows for same phone have same order details)
+          const firstRow = rows[0]
+          const storageValue = firstRow["Kho"]
+            ? firstRow["Kho"].toString().trim().toLowerCase()
+            : ""
+          const dateValue = firstRow["Ngày"]
+            ? firstRow["Ngày"].toString().trim()
+            : ""
+          const discount = firstRow["Giảm giá"]
+            ? Number(firstRow["Giảm giá"])
+            : 0
+          const deposit = firstRow["Đặt cọc"] ? Number(firstRow["Đặt cọc"]) : 0
+          const tax = firstRow["Thuế"] ? Number(firstRow["Thuế"]) : 0
+          const shippingCost = firstRow["Phí ship"]
+            ? Number(firstRow["Phí ship"])
+            : 0
+          const shippingCode = firstRow["Mã vận đơn"]
+            ? firstRow["Mã vận đơn"].toString().trim()
+            : undefined
+          const shippingTypeValue = firstRow["Loại vận chuyển"]
+            ? firstRow["Loại vận chuyển"].toString().trim().toLowerCase()
+            : ""
+
+          // Validate and map storage
+          let storage: SalesOrderStorage = "position_HaNam"
+          if (
+            storageValue.includes("hà nam") ||
+            storageValue.includes("ha nam")
+          ) {
+            storage = "position_HaNam"
+          } else if (
+            storageValue.includes("mkt") ||
+            storageValue.includes("marketing")
+          ) {
+            storage = "position_MKT"
+          } else if (storageValue) {
+            errors.push(
+              `Số điện thoại "${phoneNumber}": Kho "${storageValue}" không hợp lệ, sử dụng mặc định "Hà Nam"`
+            )
+          }
+
+          // Validate and map shipping type
+          let shippingType: SalesOrderShippingType | undefined
+          if (
+            shippingTypeValue.includes("vtp") ||
+            shippingTypeValue.includes("viettel")
+          ) {
+            shippingType = "shipping_vtp"
+          } else if (
+            shippingTypeValue.includes("cargo") ||
+            shippingTypeValue.includes("chành")
+          ) {
+            shippingType = "shipping_cargo"
+          }
+
+          // Parse date
+          let date = new Date()
+          if (dateValue) {
+            const parsedDate = new Date(dateValue)
+            if (!isNaN(parsedDate.getTime())) {
+              date = parsedDate
+            } else {
+              errors.push(
+                `Số điện thoại "${phoneNumber}": Ngày không hợp lệ, sử dụng ngày hiện tại`
+              )
+            }
+          }
+
+          // Build items array
+          const orderItems: {
+            code: string
+            name: string
+            price: number
+            quantity: number
+          }[] = []
+          let hasItemErrors = false
+
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i]
+            const rowNumber = data.indexOf(row) + 2
+            const code = row["Mã sản phẩm"]
+              ? row["Mã sản phẩm"].toString().trim()
+              : ""
+            const quantity = row["Số lượng"] ? Number(row["Số lượng"]) : 0
+
+            if (!code) {
+              errors.push(`Dòng ${rowNumber}: Thiếu mã sản phẩm`)
+              hasItemErrors = true
+              continue
+            }
+
+            if (!quantity || quantity <= 0) {
+              errors.push(`Dòng ${rowNumber}: Số lượng không hợp lệ`)
+              hasItemErrors = true
+              continue
+            }
+
+            // Find item
+            const item = items.find((it) => it.code === code)
+            if (!item) {
+              errors.push(
+                `Dòng ${rowNumber}: Không tìm thấy sản phẩm với mã "${code}"`
+              )
+              hasItemErrors = true
+              continue
+            }
+
+            orderItems.push({
+              code: item.code,
+              name: item.name.vn,
+              price: item.price,
+              quantity
+            })
+          }
+
+          if (hasItemErrors || orderItems.length === 0) {
+            continue
+          }
+
+          // Calculate total
+          const total = orderItems.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0
+          )
+
+          // Determine returning status
+          const returning = funnel.hasBuyed || false
+
+          // Create order
+          await this.salesOrderModel.create({
+            salesFunnelId: new Types.ObjectId(funnel._id.toString()),
+            items: orderItems,
+            returning,
+            storage,
+            date,
+            total,
+            discount,
+            deposit,
+            tax,
+            shippingCost,
+            shippingCode,
+            shippingType,
+            status: "official",
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+
+          // Update hasBuyed to true if it was false
+          if (!funnel.hasBuyed) {
+            await this.salesFunnelModel.findByIdAndUpdate(funnel._id, {
+              hasBuyed: true
+            })
+          }
+
+          inserted++
+        } catch (error) {
+          errors.push(`Số điện thoại "${phoneNumber}": ${error.message}`)
+        }
+      }
+
+      // Return success with warnings if any
+      return {
+        success: true,
+        inserted,
+        ...(errors.length > 0 && {
+          warnings: errors.slice(0, 20), // Show first 20 warnings
+          totalWarnings: errors.length
+        })
+      } as any
+    } catch (error) {
+      console.error("Error in uploadSalesOrders:", error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Có lỗi khi xử lý file Excel",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * Generate Excel template for sales orders upload
+   */
+  async generateUploadTemplate(): Promise<Buffer> {
+    const workbook = XLSX.utils.book_new()
+
+    // Define headers
+    const headers = [
+      "SĐT Khách hàng",
+      "Mã sản phẩm",
+      "Số lượng",
+      "Kho",
+      "Ngày",
+      "Giảm giá",
+      "Đặt cọc",
+      "Thuế",
+      "Phí ship",
+      "Mã vận đơn",
+      "Loại vận chuyển"
+    ]
+
+    // Define sample data rows
+    const sampleData = [
+      [
+        "0123456789",
+        "SP001",
+        10,
+        "Hà Nam",
+        "2024-01-01",
+        0,
+        0,
+        0,
+        30000,
+        "VTP123456",
+        "VTP"
+      ],
+      [
+        "0123456789",
+        "SP002",
+        5,
+        "Hà Nam",
+        "2024-01-01",
+        0,
+        0,
+        0,
+        30000,
+        "VTP123456",
+        "VTP"
+      ],
+      [
+        "0987654321",
+        "SP003",
+        20,
+        "MKT",
+        "2024-01-15",
+        5000,
+        100000,
+        10000,
+        50000,
+        "CARGO789",
+        "Cargo"
+      ]
+    ]
+
+    // Combine headers and sample data
+    const data = [headers, ...sampleData]
+
+    // Create worksheet
+    const worksheet = XLSX.utils.aoa_to_sheet(data)
+
+    // Set column widths for better readability
+    worksheet["!cols"] = [
+      { wch: 18 }, // SĐT Khách hàng
+      { wch: 15 }, // Mã sản phẩm
+      { wch: 12 }, // Số lượng
+      { wch: 12 }, // Kho
+      { wch: 15 }, // Ngày
+      { wch: 12 }, // Giảm giá
+      { wch: 12 }, // Đặt cọc
+      { wch: 12 }, // Thuế
+      { wch: 12 }, // Phí ship
+      { wch: 15 }, // Mã vận đơn
+      { wch: 18 } // Loại vận chuyển
+    ]
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Orders")
+
+    // Generate buffer
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
+
+    return buffer
+  }
+
   async updateOrderItems(
     orderId: string,
     items: { code: string; quantity: number; price?: number }[],
-    storage?: SalesOrderStorage
+    storage?: SalesOrderStorage,
+    discount?: number,
+    deposit?: number
   ): Promise<SalesOrder> {
     try {
       const order = await this.salesOrderModel.findById(orderId)
@@ -142,6 +500,12 @@ export class SalesOrdersService {
       order.total = total
       if (storage !== undefined) {
         order.storage = storage
+      }
+      if (discount !== undefined) {
+        order.discount = discount
+      }
+      if (deposit !== undefined) {
+        order.deposit = deposit
       }
       order.updatedAt = new Date()
 
@@ -187,36 +551,144 @@ export class SalesOrdersService {
     }
   }
 
-  async updateShippingInfo(
+  async updateShippingAndTax(
     orderId: string,
-    shippingCode?: string,
-    shippingType?: SalesOrderShippingType
+    payload: {
+      shippingCode?: string
+      shippingType?: SalesOrderShippingType
+      tax?: number
+      shippingCost?: number
+    }
   ): Promise<SalesOrder> {
     try {
-      const updateData: any = { updatedAt: new Date() }
-
-      if (shippingCode !== undefined) {
-        updateData.shippingCode = shippingCode
-      }
-
-      if (shippingType !== undefined) {
-        updateData.shippingType = shippingType
-      }
-
-      const updated = await this.salesOrderModel.findByIdAndUpdate(
-        orderId,
-        { $set: updateData },
-        { new: true }
-      )
-      if (!updated) {
+      const order = await this.salesOrderModel.findById(orderId)
+      if (!order) {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
-      return updated
+
+      if (payload.shippingCode !== undefined) {
+        order.shippingCode = payload.shippingCode
+      }
+      if (payload.shippingType !== undefined) {
+        order.shippingType = payload.shippingType
+      }
+      if (payload.tax !== undefined) {
+        order.tax = payload.tax
+      }
+      if (payload.shippingCost !== undefined) {
+        order.shippingCost = payload.shippingCost
+      }
+
+      order.updatedAt = new Date()
+
+      return await order.save()
     } catch (error) {
       if (error instanceof HttpException) throw error
       console.error(error)
       throw new HttpException(
-        "Lỗi khi cập nhật thông tin vận chuyển",
+        "Lỗi khi cập nhật thông tin vận chuyển và thuế",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getOrdersByFunnel(
+    funnelId: string,
+    userId: string,
+    isAdmin: boolean,
+    page = 1,
+    limit = 10
+  ): Promise<{
+    data: SalesOrder[]
+    total: number
+    daysSinceLastPurchase: number | null
+  }> {
+    try {
+      // Check if funnel exists and get ownership
+      const funnel = await this.salesFunnelModel.findById(funnelId).lean()
+      if (!funnel) {
+        throw new HttpException("Funnel not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Check permission: only admin or responsible user can view
+      if (!isAdmin && funnel.user.toString() !== userId) {
+        throw new HttpException(
+          "Bạn không có quyền xem đơn hàng của funnel này",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+
+      const filter = { salesFunnelId: new Types.ObjectId(funnelId) }
+
+      // Get the most recent order to calculate days since last purchase
+      const lastOrder = await this.salesOrderModel
+        .findOne(filter)
+        .sort({ date: -1 })
+        .lean()
+
+      let daysSinceLastPurchase: number | null = null
+      if (lastOrder && lastOrder.date) {
+        const now = new Date()
+        const lastPurchaseDate = new Date(lastOrder.date)
+        const diffTime = Math.abs(now.getTime() - lastPurchaseDate.getTime())
+        daysSinceLastPurchase = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+      }
+
+      const [orders, total] = await Promise.all([
+        this.salesOrderModel
+          .find(filter)
+          .populate({
+            path: "salesFunnelId",
+            populate: [
+              { path: "channel", model: "saleschannels" },
+              { path: "user", model: "users", select: "name email role" },
+              { path: "province", model: "provinces" }
+            ]
+          })
+          .sort({ createdAt: -1 })
+          .skip((safePage - 1) * safeLimit)
+          .limit(safeLimit)
+          .lean(),
+        this.salesOrderModel.countDocuments(filter)
+      ])
+
+      // Enrich items with factory and source information
+      const enrichedOrders = await Promise.all(
+        orders.map(async (order) => {
+          const enrichedItems = await Promise.all(
+            order.items.map(async (item) => {
+              const salesItem = await this.salesItemModel
+                .findOne({ code: item.code })
+                .lean()
+
+              return {
+                ...item,
+                factory: salesItem?.factory,
+                source: salesItem?.source
+              }
+            })
+          )
+
+          return {
+            ...order,
+            items: enrichedItems
+          }
+        })
+      )
+
+      return {
+        data: enrichedOrders as SalesOrder[],
+        total,
+        daysSinceLastPurchase
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi lấy danh sách đơn hàng",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
@@ -230,6 +702,7 @@ export class SalesOrdersService {
       endDate?: Date
       searchText?: string
       shippingType?: SalesOrderShippingType
+      status?: SalesOrderStatus
     },
     page = 1,
     limit = 10
@@ -243,6 +716,7 @@ export class SalesOrdersService {
         filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
       if (filters.returning !== undefined) filter.returning = filters.returning
       if (filters.shippingType) filter.shippingType = filters.shippingType
+      if (filters.status) filter.status = filters.status
 
       if (filters.startDate || filters.endDate) {
         filter.date = {}
@@ -265,7 +739,14 @@ export class SalesOrdersService {
       const [orders, total] = await Promise.all([
         this.salesOrderModel
           .find(filter)
-          .populate("salesFunnelId")
+          .populate({
+            path: "salesFunnelId",
+            populate: [
+              { path: "channel", model: "saleschannels" },
+              { path: "user", model: "users", select: "name email role" },
+              { path: "province", model: "provinces" }
+            ]
+          })
           .sort({ createdAt: -1 })
           .skip((safePage - 1) * safeLimit)
           .limit(safeLimit)
@@ -311,7 +792,14 @@ export class SalesOrdersService {
     try {
       const order = await this.salesOrderModel
         .findById(orderId)
-        .populate("salesFunnelId")
+        .populate({
+          path: "salesFunnelId",
+          populate: [
+            { path: "channel", model: "saleschannels" },
+            { path: "user", model: "users", select: "name email role" },
+            { path: "province", model: "provinces" }
+          ]
+        })
         .lean()
 
       if (!order) {
@@ -413,6 +901,7 @@ export class SalesOrdersService {
     endDate?: Date
     searchText?: string
     shippingType?: SalesOrderShippingType
+    status?: SalesOrderStatus
   }): Promise<Buffer> {
     try {
       // Build filter (same as searchOrders but without pagination)
@@ -421,6 +910,7 @@ export class SalesOrdersService {
         filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
       if (filters.returning !== undefined) filter.returning = filters.returning
       if (filters.shippingType) filter.shippingType = filters.shippingType
+      if (filters.status) filter.status = filters.status
 
       if (filters.startDate || filters.endDate) {
         filter.date = {}
@@ -443,7 +933,14 @@ export class SalesOrdersService {
       // Get all orders matching filter
       const orders = await this.salesOrderModel
         .find(filter)
-        .populate("salesFunnelId")
+        .populate({
+          path: "salesFunnelId",
+          populate: [
+            { path: "channel", model: "saleschannels" },
+            { path: "user", model: "users", select: "name email role" },
+            { path: "province", model: "provinces" }
+          ]
+        })
         .sort({ createdAt: -1 })
         .lean()
 
@@ -587,5 +1084,39 @@ export class SalesOrdersService {
       outside: "Hàng ngoài nhà máy"
     }
     return sources[source] || source
+  }
+
+  async convertToOfficial(
+    orderId: string,
+    tax: number,
+    shippingCost: number
+  ): Promise<SalesOrder> {
+    try {
+      const order = await this.salesOrderModel.findById(orderId)
+      if (!order) {
+        throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
+      }
+
+      if (order.status === "official") {
+        throw new HttpException(
+          "Đơn hàng đã ở trạng thái chính thức",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      order.status = "official"
+      order.tax = tax
+      order.shippingCost = shippingCost
+      order.updatedAt = new Date()
+
+      return await order.save()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi chuyển đơn hàng sang chính thức",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
   }
 }

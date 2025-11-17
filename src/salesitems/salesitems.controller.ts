@@ -8,8 +8,14 @@ import {
   UseInterceptors,
   UseGuards,
   Req,
-  Query
+  Query,
+  Body,
+  Param,
+  Patch,
+  Delete,
+  Res
 } from "@nestjs/common"
+import { Response } from "express"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { SalesItemsService } from "./salesitems.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
@@ -46,7 +52,7 @@ export class SalesItemsController {
   ): Promise<{
     success: true
     inserted: number
-    updated: number
+    skipped: number
     warnings?: string[]
     totalWarnings?: number
   }> {
@@ -61,13 +67,28 @@ export class SalesItemsController {
         meta: {
           fileSize: file?.size,
           inserted: result.inserted,
-          updated: result.updated
+          skipped: result.skipped
         }
       },
       req.user.userId
     )
 
     return result
+  }
+
+  @Roles("admin", "sales-emp")
+  @Get("upload/template")
+  @HttpCode(HttpStatus.OK)
+  async downloadUploadTemplate(@Res() res: Response): Promise<void> {
+    const buffer = await this.salesItemsService.generateUploadTemplate()
+
+    const filename = `salesitems_upload_template_${new Date().getTime()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
   }
 
   @Roles("admin", "sales-emp", "system-emp")
@@ -115,5 +136,127 @@ export class SalesItemsController {
     data: Array<{ value: SalesItemSource; label: string }>
   }> {
     return this.salesItemsService.getAllSources()
+  }
+
+  @Roles("admin", "sales-emp")
+  @Post("create")
+  @HttpCode(HttpStatus.CREATED)
+  async createSalesItem(
+    @Body()
+    body: {
+      code: string
+      name: { vn: string; cn: string }
+      factory: SalesItemFactory
+      price: number
+      source: SalesItemSource
+      specification: number
+    },
+    @Req() req
+  ): Promise<SalesItem> {
+    const created = await this.salesItemsService.createSalesItem(body)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesitems",
+        action: "created",
+        entity: "salesitem",
+        entityId: created._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return created
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get(":id")
+  @HttpCode(HttpStatus.OK)
+  async getSalesItemById(@Param("id") id: string): Promise<SalesItem | null> {
+    return this.salesItemsService.getSalesItemById(id)
+  }
+
+  @Roles("admin", "sales-emp")
+  @Patch(":id")
+  @HttpCode(HttpStatus.OK)
+  async updateSalesItem(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      code?: string
+      name?: { vn: string; cn: string }
+      factory?: SalesItemFactory
+      price?: number
+      source?: SalesItemSource
+      specification?: number
+    },
+    @Req() req
+  ): Promise<SalesItem> {
+    const updated = await this.salesItemsService.updateSalesItem(id, body)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesitems",
+        action: "updated",
+        entity: "salesitem",
+        entityId: updated._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "sales-emp")
+  @Delete(":id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteSalesItem(@Param("id") id: string, @Req() req): Promise<void> {
+    await this.salesItemsService.deleteSalesItem(id)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesitems",
+        action: "deleted",
+        entity: "salesitem",
+        entityId: id,
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("stats/:code/quantity")
+  @HttpCode(HttpStatus.OK)
+  async getItemPurchaseQuantity(
+    @Param("code") code: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string
+  ): Promise<{ code: string; totalQuantity: number; orderCount: number }> {
+    return this.salesItemsService.getItemPurchaseQuantity(
+      code,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined
+    )
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("stats/:code/top-customers")
+  @HttpCode(HttpStatus.OK)
+  async getTopCustomersByItem(
+    @Param("code") code: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("limit") limit: string = "10"
+  ): Promise<{
+    code: string
+    topCustomers: Array<{
+      funnel: any
+      totalQuantity: number
+      orderCount: number
+    }>
+  }> {
+    return this.salesItemsService.getTopCustomersByItem(
+      code,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+      Number(limit)
+    )
   }
 }

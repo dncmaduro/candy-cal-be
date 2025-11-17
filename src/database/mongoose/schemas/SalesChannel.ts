@@ -1,8 +1,8 @@
-import { Schema, Document, model } from "mongoose"
+import { Schema, Document, model, Types } from "mongoose"
 
 export interface SalesChannel extends Document {
   channelName: string
-  channelId: string
+  assignedTo?: Types.ObjectId
   createdAt: Date
   updatedAt: Date
   deletedAt?: Date
@@ -10,7 +10,11 @@ export interface SalesChannel extends Document {
 
 export const SalesChannelSchema = new Schema<SalesChannel>({
   channelName: { type: String, required: true, unique: true },
-  channelId: { type: String, required: true, unique: true },
+  assignedTo: {
+    type: Schema.Types.ObjectId,
+    ref: "users",
+    required: false
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
   deletedAt: { type: Date, required: false, default: null }

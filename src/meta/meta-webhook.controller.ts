@@ -54,16 +54,15 @@ export class MetaWebhookController {
               isPage: false
             }
 
-        const channel = await this.salesChannelsService.getChannelByChannelId(
-          evt.recipient.id
-        )
+        // TODO: Determine channel ID - for now use a default or get from config
+        const defaultChannelId =
+          process.env.DEFAULT_SALES_CHANNEL_ID || "646666666666666666666666"
 
         if (!isPsidExists) {
           await this.salesFunnelService.createFunnelFromPsid(
             psid,
             user.last_name + " " + user.first_name,
-            `https://www.facebook.com/${psid}`,
-            channel?._id.toString()
+            defaultChannelId
           )
         }
 
