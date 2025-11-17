@@ -244,18 +244,35 @@ export class IncomeService {
                   ? "affiliate"
                   : "other"
             foundProduct.content = line["Loại nội dung"]
-            foundProduct.affiliateAdsPercentage = Number(
+
+            const affiliateAdsPercentage = Number(
               line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
             )
-            foundProduct.affiliateAdsAmount = Number(
+            foundProduct.affiliateAdsPercentage = isNaN(affiliateAdsPercentage)
+              ? 0
+              : affiliateAdsPercentage
+
+            const affiliateAdsAmount = Number(
               line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
             )
-            foundProduct.standardAffPercentage = Number(
+            foundProduct.affiliateAdsAmount = isNaN(affiliateAdsAmount)
+              ? 0
+              : affiliateAdsAmount
+
+            const standardAffPercentage = Number(
               line["Tỷ lệ hoa hồng tiêu chuẩn"]
             )
-            foundProduct.standardAffAmount = Number(
+            foundProduct.standardAffPercentage = isNaN(standardAffPercentage)
+              ? 0
+              : standardAffPercentage
+
+            const standardAffAmount = Number(
               line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
             )
+            foundProduct.standardAffAmount = isNaN(standardAffAmount)
+              ? 0
+              : standardAffAmount
+
             await existedOrder.save()
           }
         }
@@ -1594,18 +1611,35 @@ export class IncomeService {
                   ? "affiliate"
                   : "other"
             foundProduct.content = line["Loại nội dung"]
-            foundProduct.affiliateAdsPercentage = Number(
+
+            const affiliateAdsPercentage = Number(
               line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
             )
-            foundProduct.affiliateAdsAmount = Number(
+            foundProduct.affiliateAdsPercentage = isNaN(affiliateAdsPercentage)
+              ? 0
+              : affiliateAdsPercentage
+
+            const affiliateAdsAmount = Number(
               line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
             )
-            foundProduct.standardAffPercentage = Number(
+            foundProduct.affiliateAdsAmount = isNaN(affiliateAdsAmount)
+              ? 0
+              : affiliateAdsAmount
+
+            const standardAffPercentage = Number(
               line["Tỷ lệ hoa hồng tiêu chuẩn"]
             )
-            foundProduct.standardAffAmount = Number(
+            foundProduct.standardAffPercentage = isNaN(standardAffPercentage)
+              ? 0
+              : standardAffPercentage
+
+            const standardAffAmount = Number(
               line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
             )
+            foundProduct.standardAffAmount = isNaN(standardAffAmount)
+              ? 0
+              : standardAffAmount
+
             await existedOrder.save()
           }
         }
