@@ -326,4 +326,18 @@ export class SalesFunnelController {
       isAdmin
     )
   }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("user/:userId")
+  @HttpCode(HttpStatus.OK)
+  async getFunnelsByUser(
+    @Param("userId") userId: string,
+    @Query("limit") limit: string = "20"
+  ): Promise<{ data: SalesFunnel[] }> {
+    const data = await this.salesFunnelService.getFunnelsByUser(
+      userId,
+      Number(limit)
+    )
+    return { data }
+  }
 }
