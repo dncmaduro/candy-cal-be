@@ -1,11 +1,13 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model } from "mongoose"
+import { Model, Types } from "mongoose"
 import {
   SalesItem,
   SalesItemFactory,
   SalesItemSource
 } from "../database/mongoose/schemas/SalesItem"
+import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
+import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import * as XLSX from "xlsx"
 
 interface XlsxSalesItemData {
@@ -15,13 +17,18 @@ interface XlsxSalesItemData {
   Xưởng?: string
   "Giá shipcode"?: number
   "Nguồn gốc"?: string
+  "Quy cách"?: number
 }
 
 @Injectable()
 export class SalesItemsService {
   constructor(
     @InjectModel("salesitems")
-    private readonly salesItemModel: Model<SalesItem>
+    private readonly salesItemModel: Model<SalesItem>,
+    @InjectModel("salesorders")
+    private readonly salesOrderModel: Model<SalesOrder>,
+    @InjectModel("salesfunnel")
+    private readonly salesFunnelModel: Model<SalesFunnel>
   ) {}
 
   private mapFactory(factoryValue: string): SalesItemFactory {
@@ -54,7 +61,7 @@ export class SalesItemsService {
   async uploadSalesItems(file: Express.Multer.File): Promise<{
     success: true
     inserted: number
-    updated: number
+    skipped: number
     warnings?: string[]
     totalWarnings?: number
   }> {
@@ -73,7 +80,7 @@ export class SalesItemsService {
       }
 
       let inserted = 0
-      let updated = 0
+      let skipped = 0
       const errors: string[] = []
 
       for (let i = 0; i < data.length; i++) {
@@ -140,27 +147,26 @@ export class SalesItemsService {
           const existingItem = await this.salesItemModel.findOne({ code })
 
           if (existingItem) {
-            // Update existing item
-            existingItem.name = { vn: nameVn, cn: nameCn }
-            existingItem.factory = factory
-            existingItem.price = price
-            existingItem.source = source
-            existingItem.updatedAt = new Date()
-            await existingItem.save()
-            updated++
-          } else {
-            // Create new item
-            await this.salesItemModel.create({
-              code,
-              name: { vn: nameVn, cn: nameCn },
-              factory,
-              price,
-              source,
-              createdAt: new Date(),
-              updatedAt: new Date()
-            })
-            inserted++
+            // Skip if code already exists
+            errors.push(
+              `Dòng ${rowNumber}: Mã sản phẩm "${code}" đã tồn tại, bỏ qua`
+            )
+            skipped++
+            continue
           }
+
+          // Create new item
+          await this.salesItemModel.create({
+            code,
+            name: { vn: nameVn, cn: nameCn },
+            factory,
+            price,
+            source,
+            specification: row["Quy cách"] ? Number(row["Quy cách"]) : 1,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+          inserted++
         } catch (error) {
           errors.push(`Dòng ${rowNumber}: ${error.message}`)
         }
@@ -170,7 +176,7 @@ export class SalesItemsService {
       return {
         success: true,
         inserted,
-        updated,
+        skipped,
         ...(errors.length > 0 && {
           warnings: errors.slice(0, 20), // Show first 20 warnings
           totalWarnings: errors.length
@@ -184,6 +190,56 @@ export class SalesItemsService {
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
+  }
+
+  /**
+   * Generate Excel template for sales items upload
+   */
+  async generateUploadTemplate(): Promise<Buffer> {
+    const workbook = XLSX.utils.book_new()
+
+    // Define headers
+    const headers = [
+      "Mã",
+      "Tên",
+      "Tên Trung Quốc",
+      "Xưởng",
+      "Giá shipcode",
+      "Nguồn gốc",
+      "Quy cách"
+    ]
+
+    // Define sample data rows
+    const sampleData = [
+      ["SP001", "Kẹo dâu", "草莓糖", "Kẹo mút", 15000, "Trong nhà máy", 1],
+      ["SP002", "Kẹo chanh", "柠檬糖", "Kẹo mút", 12000, "Trong nhà máy", 12],
+      ["SP003", "Thạch nho", "葡萄果冻", "Thạch", 20000, "Ngoài nhà máy", 6]
+    ]
+
+    // Combine headers and sample data
+    const data = [headers, ...sampleData]
+
+    // Create worksheet
+    const worksheet = XLSX.utils.aoa_to_sheet(data)
+
+    // Set column widths for better readability
+    worksheet["!cols"] = [
+      { wch: 15 }, // Mã
+      { wch: 20 }, // Tên
+      { wch: 20 }, // Tên Trung Quốc
+      { wch: 15 }, // Xưởng
+      { wch: 15 }, // Giá shipcode
+      { wch: 18 }, // Nguồn gốc
+      { wch: 12 } // Quy cách
+    ]
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, "SalesItems")
+
+    // Generate buffer
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
+
+    return buffer
   }
 
   async getAllSalesItems(
@@ -262,5 +318,274 @@ export class SalesItemsService {
       { value: "outside", label: "Hàng ngoài nhà máy" }
     ]
     return { data: sources }
+  }
+
+  async createSalesItem(payload: {
+    code: string
+    name: { vn: string; cn: string }
+    factory: SalesItemFactory
+    price: number
+    source: SalesItemSource
+  }): Promise<SalesItem> {
+    try {
+      // Check if code already exists
+      const existing = await this.salesItemModel.findOne({ code: payload.code })
+      if (existing) {
+        throw new HttpException(
+          `Mã sản phẩm "${payload.code}" đã tồn tại`,
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const item = await this.salesItemModel.create({
+        code: payload.code,
+        name: payload.name,
+        factory: payload.factory,
+        price: payload.price,
+        source: payload.source,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+
+      return item
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in createSalesItem:", error)
+      throw new HttpException(
+        "Có lỗi khi tạo sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getSalesItemById(id: string): Promise<SalesItem | null> {
+    try {
+      const item = await this.salesItemModel.findById(id)
+      if (!item) {
+        throw new HttpException("Sản phẩm không tồn tại", HttpStatus.NOT_FOUND)
+      }
+      return item
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in getSalesItemById:", error)
+      throw new HttpException(
+        "Có lỗi khi lấy thông tin sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async updateSalesItem(
+    id: string,
+    payload: {
+      code?: string
+      name?: { vn: string; cn: string }
+      factory?: SalesItemFactory
+      price?: number
+      source?: SalesItemSource
+    }
+  ): Promise<SalesItem> {
+    try {
+      const item = await this.salesItemModel.findById(id)
+      if (!item) {
+        throw new HttpException("Sản phẩm không tồn tại", HttpStatus.NOT_FOUND)
+      }
+
+      // Check if code is being changed and if new code already exists
+      if (payload.code && payload.code !== item.code) {
+        const existing = await this.salesItemModel.findOne({
+          code: payload.code
+        })
+        if (existing) {
+          throw new HttpException(
+            `Mã sản phẩm "${payload.code}" đã tồn tại`,
+            HttpStatus.BAD_REQUEST
+          )
+        }
+        item.code = payload.code
+      }
+
+      if (payload.name) item.name = payload.name
+      if (payload.factory !== undefined) item.factory = payload.factory
+      if (payload.price !== undefined) item.price = payload.price
+      if (payload.source !== undefined) item.source = payload.source
+      item.updatedAt = new Date()
+
+      return await item.save()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in updateSalesItem:", error)
+      throw new HttpException(
+        "Có lỗi khi cập nhật sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async deleteSalesItem(id: string): Promise<void> {
+    try {
+      const item = await this.salesItemModel.findById(id)
+      if (!item) {
+        throw new HttpException("Sản phẩm không tồn tại", HttpStatus.NOT_FOUND)
+      }
+
+      await this.salesItemModel.findByIdAndDelete(id)
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in deleteSalesItem:", error)
+      throw new HttpException(
+        "Có lỗi khi xóa sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getItemPurchaseQuantity(
+    code: string,
+    startDate?: Date,
+    endDate?: Date
+  ): Promise<{ code: string; totalQuantity: number; orderCount: number }> {
+    try {
+      // Verify item exists
+      const item = await this.salesItemModel.findOne({ code })
+      if (!item) {
+        throw new HttpException(
+          `Sản phẩm với mã "${code}" không tồn tại`,
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      // Build date filter
+      const dateFilter: any = {}
+      if (startDate || endDate) {
+        dateFilter.date = {}
+        if (startDate) dateFilter.date.$gte = startDate
+        if (endDate) dateFilter.date.$lte = endDate
+      }
+
+      // Find all orders containing this item code
+      const orders = await this.salesOrderModel
+        .find({
+          ...dateFilter,
+          "items.code": code
+        })
+        .lean()
+
+      // Calculate total quantity
+      let totalQuantity = 0
+      orders.forEach((order) => {
+        const matchingItems = order.items.filter((item) => item.code === code)
+        matchingItems.forEach((item) => {
+          totalQuantity += item.quantity
+        })
+      })
+
+      return {
+        code,
+        totalQuantity,
+        orderCount: orders.length
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in getItemPurchaseQuantity:", error)
+      throw new HttpException(
+        "Có lỗi khi lấy thông tin số lượng đã mua",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getTopCustomersByItem(
+    code: string,
+    startDate?: Date,
+    endDate?: Date,
+    limit: number = 10
+  ): Promise<{
+    code: string
+    topCustomers: Array<{
+      funnel: SalesFunnel
+      totalQuantity: number
+      orderCount: number
+    }>
+  }> {
+    try {
+      // Verify item exists
+      const item = await this.salesItemModel.findOne({ code })
+      if (!item) {
+        throw new HttpException(
+          `Sản phẩm với mã "${code}" không tồn tại`,
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      // Build date filter
+      const dateFilter: any = {}
+      if (startDate || endDate) {
+        dateFilter.date = {}
+        if (startDate) dateFilter.date.$gte = startDate
+        if (endDate) dateFilter.date.$lte = endDate
+      }
+
+      // Find all orders containing this item code
+      const orders = await this.salesOrderModel
+        .find({
+          ...dateFilter,
+          "items.code": code
+        })
+        .populate({
+          path: "salesFunnelId",
+          populate: [
+            { path: "channel", model: "saleschannels" },
+            { path: "user", model: "users", select: "name email" },
+            { path: "province", model: "provinces" }
+          ]
+        })
+        .lean()
+
+      // Group by funnel and calculate quantities
+      const funnelStats = new Map<
+        string,
+        { funnel: any; totalQuantity: number; orderCount: number }
+      >()
+
+      orders.forEach((order) => {
+        const funnelId = order.salesFunnelId._id.toString()
+        const matchingItems = order.items.filter((item) => item.code === code)
+
+        let orderQuantity = 0
+        matchingItems.forEach((item) => {
+          orderQuantity += item.quantity
+        })
+
+        if (funnelStats.has(funnelId)) {
+          const stats = funnelStats.get(funnelId)!
+          stats.totalQuantity += orderQuantity
+          stats.orderCount += 1
+        } else {
+          funnelStats.set(funnelId, {
+            funnel: order.salesFunnelId,
+            totalQuantity: orderQuantity,
+            orderCount: 1
+          })
+        }
+      })
+
+      // Convert to array and sort by totalQuantity descending
+      const topCustomers = Array.from(funnelStats.values())
+        .sort((a, b) => b.totalQuantity - a.totalQuantity)
+        .slice(0, limit)
+
+      return {
+        code,
+        topCustomers
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in getTopCustomersByItem:", error)
+      throw new HttpException(
+        "Có lỗi khi lấy danh sách khách hàng mua nhiều nhất",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
   }
 }

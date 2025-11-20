@@ -35,8 +35,10 @@ import { SalesFunnelModule } from "./salesfunnel/salesfunnel.module"
 import { SalesOrdersModule } from "./salesorders/salesorders.module"
 import { SalesItemsModule } from "./salesitems/salesitems.module"
 import { SalesDashboardModule } from "./salesdashboard/salesdashboard.module"
+import { SalesCustomerRanksModule } from "./salescustomerranks/salescustomerranks.module"
+import { SalesActivitiesModule } from "./salesactivities/salesactivities.module"
+import { SalesTasksModule } from "./salestasks/salestasks.module"
 import { AppController } from "./app.controller"
-import { MetaModule } from "./meta/meta.module"
 
 @Module({
   imports: [
@@ -74,7 +76,9 @@ import { MetaModule } from "./meta/meta.module"
     SalesOrdersModule,
     SalesItemsModule,
     SalesDashboardModule,
-    MetaModule,
+    SalesCustomerRanksModule,
+    SalesActivitiesModule,
+    SalesTasksModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
