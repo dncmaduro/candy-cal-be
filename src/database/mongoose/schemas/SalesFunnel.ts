@@ -3,11 +3,12 @@ import { Schema, Document, model, Types } from "mongoose"
 export type SalesFunnelStage = "lead" | "contacted" | "customer" | "closed"
 
 export interface SalesFunnel extends Document {
-  psid: string
+  psid?: string
   name: string
-  facebook: string
   province?: Types.ObjectId // Reference to Province schema
-  phoneNumber?: string
+  phoneNumber?: string // Primary phone number
+  secondaryPhoneNumbers?: string[] // Optional secondary phone numbers
+  address?: string
   channel: Types.ObjectId // Reference to SalesChannel schema
   user: Types.ObjectId // Reference to User schema
   hasBuyed: boolean
@@ -22,15 +23,16 @@ export interface SalesFunnel extends Document {
 }
 
 export const SalesFunnelSchema = new Schema<SalesFunnel>({
-  psid: { type: String, required: true, unique: true },
+  psid: { type: String, required: false, unique: true, sparse: true },
   name: { type: String, required: true },
-  facebook: { type: String, required: true },
   province: {
     type: Schema.Types.ObjectId,
     ref: "provinces",
     required: false
   }, // Reference to Province schema
-  phoneNumber: { type: String, required: false },
+  phoneNumber: { type: String, required: false }, // Primary phone number
+  secondaryPhoneNumbers: { type: [String], required: false, default: [] }, // Secondary phone numbers
+  address: { type: String, required: false },
   channel: {
     type: Schema.Types.ObjectId,
     ref: "saleschannels",

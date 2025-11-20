@@ -28,6 +28,9 @@ import { ProvinceSchema } from "./mongoose/schemas/Province"
 import { SalesFunnelSchema } from "./mongoose/schemas/SalesFunnel"
 import { SalesOrderSchema } from "./mongoose/schemas/SalesOrder"
 import { SalesItemSchema } from "./mongoose/schemas/SalesItem"
+import { SalesCustomerRankSchema } from "./mongoose/schemas/SalesCustomerRank"
+import { SalesActivitySchema } from "./mongoose/schemas/SalesActivity"
+import { SalesTaskSchema } from "./mongoose/schemas/SalesTask"
 
 @Module({
   imports: [
@@ -59,7 +62,10 @@ import { SalesItemSchema } from "./mongoose/schemas/SalesItem"
       { name: "provinces", schema: ProvinceSchema },
       { name: "salesfunnel", schema: SalesFunnelSchema },
       { name: "salesorders", schema: SalesOrderSchema },
-      { name: "salesitems", schema: SalesItemSchema }
+      { name: "salesitems", schema: SalesItemSchema },
+      { name: "salescustomerranks", schema: SalesCustomerRankSchema },
+      { name: "salesactivities", schema: SalesActivitySchema },
+      { name: "salestasks", schema: SalesTaskSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

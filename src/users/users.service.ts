@@ -295,6 +295,7 @@ export class UsersService {
 
   async publicSearchUsers(
     searchText: string,
+    role?: string,
     page = 1,
     limit = 10
   ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
@@ -308,6 +309,9 @@ export class UsersService {
           $regex: `.*${String(searchText).trim()}.*`,
           $options: "i"
         }
+      }
+      if (role && String(role).trim().length > 0) {
+        filter.roles = role
       }
 
       const [users, total] = await Promise.all([
