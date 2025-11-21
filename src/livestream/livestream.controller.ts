@@ -642,7 +642,7 @@ export class LivestreamController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "order-emp")
   @Get("channels")
   @HttpCode(HttpStatus.OK)
   async searchChannels(
