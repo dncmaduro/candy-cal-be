@@ -697,6 +697,7 @@ export class SalesOrdersService {
   async searchOrders(
     filters: {
       salesFunnelId?: string
+      userId?: string
       returning?: boolean
       startDate?: Date
       endDate?: Date
@@ -717,6 +718,14 @@ export class SalesOrdersService {
       if (filters.returning !== undefined) filter.returning = filters.returning
       if (filters.shippingType) filter.shippingType = filters.shippingType
       if (filters.status) filter.status = filters.status
+
+      // Filter by user (funnel responsible)
+      if (filters.userId) {
+        const funnelIds = await this.salesFunnelModel
+          .find({ user: new Types.ObjectId(filters.userId) })
+          .distinct("_id")
+        filter.salesFunnelId = { $in: funnelIds }
+      }
 
       if (filters.startDate || filters.endDate) {
         filter.date = {}
@@ -896,6 +905,7 @@ export class SalesOrdersService {
 
   async exportOrdersToExcel(filters: {
     salesFunnelId?: string
+    userId?: string
     returning?: boolean
     startDate?: Date
     endDate?: Date
@@ -911,6 +921,14 @@ export class SalesOrdersService {
       if (filters.returning !== undefined) filter.returning = filters.returning
       if (filters.shippingType) filter.shippingType = filters.shippingType
       if (filters.status) filter.status = filters.status
+
+      // Filter by user (funnel responsible)
+      if (filters.userId) {
+        const funnelIds = await this.salesFunnelModel
+          .find({ user: new Types.ObjectId(filters.userId) })
+          .distinct("_id")
+        filter.salesFunnelId = { $in: funnelIds }
+      }
 
       if (filters.startDate || filters.endDate) {
         filter.date = {}
