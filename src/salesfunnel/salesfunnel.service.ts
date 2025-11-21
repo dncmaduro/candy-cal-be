@@ -980,4 +980,35 @@ export class SalesFunnelService {
       rank
     }
   }
+
+  async getFunnelsByUser(
+    userId: string,
+    limit: number = 20
+  ): Promise<SalesFunnel[]> {
+    try {
+      // Validate user exists
+      const user = await this.userModel.findById(userId).lean()
+      if (!user) {
+        throw new HttpException("User not found", HttpStatus.NOT_FOUND)
+      }
+
+      const funnels = await this.salesFunnelModel
+        .find({ user: new Types.ObjectId(userId) })
+        .populate("province", "name")
+        .populate("channel", "channelName")
+        .populate("user", "name username")
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean()
+
+      return funnels
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in getFunnelsByUser:", error)
+      throw new HttpException(
+        "Lỗi khi lấy danh sách funnel của nhân viên",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
 }
