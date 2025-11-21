@@ -20,8 +20,8 @@ interface XlsxFunnelData {
   Tên?: string
   SĐT?: string
   "Tỉnh tp"?: string
+  "Địa chỉ"?: string
   Kênh?: string
-  "Nhân viên"?: string
   "Giai đoạn"?: string
   "Ngày tạo"?: string
 }
@@ -127,11 +127,10 @@ export class SalesFunnelService {
       let skipped = 0
       const errors: string[] = []
 
-      // Pre-fetch all channels, provinces, and users for mapping
-      const [channels, provinces, users] = await Promise.all([
+      // Pre-fetch all channels and provinces for mapping
+      const [channels, provinces] = await Promise.all([
         this.salesChannelModel.find().lean(),
-        this.provinceModel.find().lean(),
-        this.userModel.find({ roles: "sales-emp" }).lean()
+        this.provinceModel.find().lean()
       ])
 
       for (let i = 0; i < data.length; i++) {
@@ -149,10 +148,8 @@ export class SalesFunnelService {
           const provinceName = row["Tỉnh tp"]
             ? row["Tỉnh tp"].toString().trim()
             : ""
+          const address = row["Địa chỉ"] ? row["Địa chỉ"].toString().trim() : ""
           const channelName = row["Kênh"] ? row["Kênh"].toString().trim() : ""
-          const userName = row["Nhân viên"]
-            ? row["Nhân viên"].toString().trim()
-            : ""
           const stageValue = row["Giai đoạn"]
             ? row["Giai đoạn"].toString().trim().toLowerCase()
             : "lead"
@@ -171,11 +168,6 @@ export class SalesFunnelService {
             continue
           }
 
-          if (!userName) {
-            errors.push(`Dòng ${rowNumber}: Thiếu nhân viên phụ trách`)
-            continue
-          }
-
           // Find channel
           const channel = channels.find(
             (c) =>
@@ -189,16 +181,10 @@ export class SalesFunnelService {
             continue
           }
 
-          // Find user by name or username
-          const user = users.find(
-            (u) =>
-              u.name?.toLowerCase() === userName.toLowerCase() ||
-              u.username?.toLowerCase() === userName.toLowerCase() ||
-              u.name?.toLowerCase().includes(userName.toLowerCase())
-          )
-          if (!user) {
+          // Get user from channel's assignedTo
+          if (!channel.assignedTo) {
             errors.push(
-              `Dòng ${rowNumber}: Không tìm thấy nhân viên "${userName}"`
+              `Dòng ${rowNumber}: Kênh "${channelName}" chưa có người phụ trách`
             )
             continue
           }
@@ -275,8 +261,9 @@ export class SalesFunnelService {
           await this.salesFunnelModel.create({
             name,
             phoneNumber: phoneNumber || undefined,
+            address: address || undefined,
             channel: new Types.ObjectId(channel._id.toString()),
-            user: new Types.ObjectId(user._id.toString()),
+            user: new Types.ObjectId(channel.assignedTo.toString()),
             province: province
               ? new Types.ObjectId(province._id.toString())
               : undefined,
@@ -327,8 +314,8 @@ export class SalesFunnelService {
       "Tên",
       "SĐT",
       "Tỉnh tp",
+      "Địa chỉ",
       "Kênh",
-      "Nhân viên",
       "Giai đoạn",
       "Ngày tạo"
     ]
@@ -339,8 +326,8 @@ export class SalesFunnelService {
         "Nguyễn Văn A",
         "0123456789",
         "Hà Nội",
-        "Facebook",
-        "Nguyễn B",
+        "123 Đường ABC, Quận 1",
+        "My Candy Việt Nam",
         "lead",
         "2024-01-01"
       ],
@@ -348,8 +335,8 @@ export class SalesFunnelService {
         "Trần Thị C",
         "0987654321",
         "TP.HCM",
-        "Zalo",
-        "Trần D",
+        "456 Đường XYZ, Quận 2",
+        "Tổng kho Huy Hoàng",
         "customer",
         "2024-01-15"
       ],
@@ -357,8 +344,8 @@ export class SalesFunnelService {
         "Lê Văn E",
         "0912345678",
         "Đà Nẵng",
-        "TikTok",
-        "Lê F",
+        "789 Đường DEF, Quận 3",
+        "Tổng kho Huy Hoàng",
         "contacted",
         "2024-02-01"
       ]
@@ -375,8 +362,8 @@ export class SalesFunnelService {
       { wch: 20 }, // Tên
       { wch: 15 }, // SĐT
       { wch: 15 }, // Tỉnh tp
+      { wch: 30 }, // Địa chỉ
       { wch: 15 }, // Kênh
-      { wch: 15 }, // Nhân viên
       { wch: 15 }, // Giai đoạn
       { wch: 15 } // Ngày tạo
     ]
