@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model } from "mongoose"
+import { Model, Types } from "mongoose"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import * as XLSX from "xlsx"
 import { CurrencyExchangeService } from "../common/currency-exchange.service"
@@ -284,7 +284,8 @@ export class DailyAdsService {
     date: Date,
     liveAdsCost: number,
     shopAdsCost: number,
-    currency: "vnd" | "usd" = "vnd"
+    currency: "vnd" | "usd" = "vnd",
+    channelId?: string
   ): Promise<DailyAds> {
     try {
       let finalLiveAdsCost = liveAdsCost
@@ -300,14 +301,28 @@ export class DailyAdsService {
       const target = new Date(date)
       target.setHours(0, 0, 0, 0)
 
+      // Build query filter - use both date and channel for unique identification
+      const queryFilter: any = { date: target }
+      if (channelId) {
+        queryFilter.channel = new Types.ObjectId(channelId)
+      }
+
+      // Build update object
+      const updateData: any = {
+        liveAdsCost: finalLiveAdsCost || 0,
+        shopAdsCost: finalShopAdsCost || 0,
+        updatedAt: new Date()
+      }
+
+      // Add channel if provided (for upsert case)
+      if (channelId) {
+        updateData.channel = new Types.ObjectId(channelId)
+      }
+
       const result = await this.dailyAdsModel.findOneAndUpdate(
-        { date: target },
+        queryFilter,
         {
-          $set: {
-            liveAdsCost: finalLiveAdsCost || 0,
-            shopAdsCost: finalShopAdsCost || 0,
-            updatedAt: new Date()
-          }
+          $set: updateData
         },
         { upsert: true, new: true }
       )

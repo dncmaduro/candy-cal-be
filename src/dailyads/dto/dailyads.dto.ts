@@ -10,4 +10,5 @@ export class SimpleDailyAdsDto {
   liveAdsCost: number
   shopAdsCost: number
   currency?: "vnd" | "usd"
+  channel?: string
 }

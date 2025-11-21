@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model } from "mongoose"
+import { Model, Types } from "mongoose"
 import { Income } from "../database/mongoose/schemas/Income"
 import {
   InsertIncomeFileDto,
@@ -996,9 +996,14 @@ export class IncomeService {
       end.setUTCHours(end.getUTCHours() - 7)
 
       // Sum daily ads cost in month
+      const adsFilter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) {
+        adsFilter.channel = new Types.ObjectId(channelId)
+      }
+
       const rows = await this.dailyAdsModel
         .aggregate([
-          { $match: { date: { $gte: start, $lte: end } } },
+          { $match: adsFilter },
           {
             $group: {
               _id: null,
@@ -1270,9 +1275,16 @@ export class IncomeService {
         const shippingProviders = Object.entries(shipMap)
           .map(([provider, orders]) => ({ provider, orders }))
           .sort((a, b) => b.orders - a.orders)
+
+        // Build ads filter with channel if provided
+        const adsFilter: any = { date: { $gte: s, $lte: e } }
+        if (channelId) {
+          adsFilter.channel = new Types.ObjectId(channelId)
+        }
+
         const adsAgg = await this.dailyAdsModel
           .aggregate([
-            { $match: { date: { $gte: s, $lte: e } } },
+            { $match: adsFilter },
             {
               $group: {
                 _id: null,
@@ -1282,6 +1294,7 @@ export class IncomeService {
             }
           ])
           .exec()
+        console.log("adsAgg: ", adsAgg)
         const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
         const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
         const percentages = {
