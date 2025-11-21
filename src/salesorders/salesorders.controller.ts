@@ -131,7 +131,13 @@ export class SalesOrdersController {
     @Param("id") id: string,
     @Body()
     body: {
-      items: { code: string; quantity: number; price?: number }[]
+      items: {
+        code: string
+        quantity: number
+        price?: number
+        massPerBox?: number
+        areaPerBox?: number
+      }[]
       storage?: SalesOrderStorage
       discount?: number
       deposit?: number

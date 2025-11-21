@@ -453,7 +453,13 @@ export class SalesOrdersService {
 
   async updateOrderItems(
     orderId: string,
-    items: { code: string; quantity: number; price?: number }[],
+    items: {
+      code: string
+      quantity: number
+      price?: number
+      massPerBox?: number
+      areaPerBox?: number
+    }[],
     storage?: SalesOrderStorage,
     discount?: number,
     deposit?: number
@@ -485,7 +491,9 @@ export class SalesOrdersService {
             code: item.code,
             name: salesItem.name.vn, // Use Vietnamese name
             price: finalPrice,
-            quantity: item.quantity
+            quantity: item.quantity,
+            massPerBox: item.massPerBox,
+            areaPerBox: item.areaPerBox
           }
         })
       )
@@ -659,7 +667,7 @@ export class SalesOrdersService {
       const enrichedOrders = await Promise.all(
         orders.map(async (order) => {
           const enrichedItems = await Promise.all(
-            order.items.map(async (item) => {
+            order.items.map(async (item: any) => {
               const salesItem = await this.salesItemModel
                 .findOne({ code: item.code })
                 .lean()
@@ -667,7 +675,9 @@ export class SalesOrdersService {
               return {
                 ...item,
                 factory: salesItem?.factory,
-                source: salesItem?.source
+                source: salesItem?.source,
+                massPerBox: item.massPerBox,
+                areaPerBox: item.areaPerBox
               }
             })
           )
@@ -767,7 +777,7 @@ export class SalesOrdersService {
       const enrichedOrders = await Promise.all(
         orders.map(async (order) => {
           const enrichedItems = await Promise.all(
-            order.items.map(async (item) => {
+            order.items.map(async (item: any) => {
               const salesItem = await this.salesItemModel
                 .findOne({ code: item.code })
                 .lean()
@@ -775,7 +785,9 @@ export class SalesOrdersService {
               return {
                 ...item,
                 factory: salesItem?.factory,
-                source: salesItem?.source
+                source: salesItem?.source,
+                massPerBox: item.massPerBox,
+                areaPerBox: item.areaPerBox
               }
             })
           )
@@ -817,7 +829,7 @@ export class SalesOrdersService {
 
       // Enrich items with factory and source information
       const enrichedItems = await Promise.all(
-        order.items.map(async (item) => {
+        order.items.map(async (item: any) => {
           const salesItem = await this.salesItemModel
             .findOne({ code: item.code })
             .lean()
@@ -825,7 +837,9 @@ export class SalesOrdersService {
           return {
             ...item,
             factory: salesItem?.factory,
-            source: salesItem?.source
+            source: salesItem?.source,
+            massPerBox: item.massPerBox,
+            areaPerBox: item.areaPerBox
           }
         })
       )

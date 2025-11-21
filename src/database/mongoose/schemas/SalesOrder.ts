@@ -13,6 +13,8 @@ export interface SalesOrder extends Document {
     name: string
     price: number
     quantity: number
+    massPerBox?: number
+    areaPerBox?: number
   }[]
   returning: boolean
   shippingCode?: string
@@ -46,7 +48,9 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
       code: { type: String, required: true },
       name: { type: String, required: true },
       price: { type: Number, required: true },
-      quantity: { type: Number, required: true }
+      quantity: { type: Number, required: true },
+      massPerBox: { type: Number, required: false },
+      areaPerBox: { type: Number, required: false }
     }
   ],
   returning: { type: Boolean, default: false, required: false },
