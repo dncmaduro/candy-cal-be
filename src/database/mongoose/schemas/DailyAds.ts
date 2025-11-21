@@ -7,6 +7,7 @@ export interface DailyAds extends Document {
   updatedAt: Date
   before4pmLiveAdsCost?: number
   before4pmShopAdsCost?: number
+  channel?: Types.ObjectId
 }
 
 export const DailyAdsSchema = new Schema<DailyAds>({
@@ -15,7 +16,12 @@ export const DailyAdsSchema = new Schema<DailyAds>({
   shopAdsCost: { type: Number, required: true, default: 0 },
   updatedAt: { type: Date, default: Date.now },
   before4pmLiveAdsCost: { type: Number, default: 0 },
-  before4pmShopAdsCost: { type: Number, default: 0 }
+  before4pmShopAdsCost: { type: Number, default: 0 },
+  channel: {
+    type: Schema.Types.ObjectId,
+    ref: "livestreamchannels",
+    required: false
+  }
 })
 
 export const DailyAdsModel = model<DailyAds>("DailyAds", DailyAdsSchema)

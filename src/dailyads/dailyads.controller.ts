@@ -234,7 +234,8 @@ export class DailyAdsController {
       date,
       Number(dto.liveAdsCost),
       Number(dto.shopAdsCost),
-      currency as "vnd" | "usd"
+      currency as "vnd" | "usd",
+      dto.channel
     )
 
     void this.systemLogsService.createSystemLog(
