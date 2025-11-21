@@ -48,6 +48,7 @@ export class SalesOrdersController {
       storage: SalesOrderStorage
       date: string
       discount?: number
+      deposit?: number
     },
     @Req() req
   ): Promise<SalesOrder> {
@@ -56,7 +57,8 @@ export class SalesOrdersController {
       items: body.items,
       storage: body.storage,
       date: new Date(body.date),
-      discount: body.discount
+      discount: body.discount,
+      deposit: body.deposit
     })
     void this.systemLogsService.createSystemLog(
       {

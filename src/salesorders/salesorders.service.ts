@@ -43,6 +43,7 @@ export class SalesOrdersService {
     storage: SalesOrderStorage
     date: Date
     discount?: number
+    deposit?: number
   }): Promise<SalesOrder> {
     try {
       // Get sales funnel
@@ -91,7 +92,8 @@ export class SalesOrdersService {
         storage: payload.storage,
         date: payload.date,
         total,
-        discount: payload.discount || 0
+        discount: payload.discount || 0,
+        deposit: payload.deposit || 0
       })
 
       const saved = await order.save()
