@@ -14,10 +14,11 @@ interface XlsxSalesItemData {
   Mã?: string
   Tên?: string
   "Tên Trung Quốc"?: string
-  Xưởng?: string
-  "Giá shipcode"?: number
-  "Nguồn gốc"?: string
+  "Kích thước"?: string
+  "Số khối"?: number
   "Quy cách"?: number
+  "Giá bán"?: number
+  "Cân nặng"?: number
 }
 
 @Injectable()
@@ -93,79 +94,92 @@ export class SalesItemsService {
             continue
           }
 
-          // Use default values for missing fields
-          const code = row["Mã"]
-            ? row["Mã"].toString().trim()
-            : `AUTO_${Date.now()}_${i}`
-          const nameVn = row["Tên"]
-            ? row["Tên"].toString().trim()
-            : "Chưa có tên"
+          // Extract fields from row
+          const code = row["Mã"] ? row["Mã"].toString().trim() : undefined
+          const nameVn = row["Tên"] ? row["Tên"].toString().trim() : ""
           const nameCn = row["Tên Trung Quốc"]
             ? row["Tên Trung Quốc"].toString().trim()
-            : "未命名"
-          const factoryValue = row["Xưởng"]
-            ? row["Xưởng"].toString().trim()
-            : "kẹo mút"
+            : ""
+          const size = row["Kích thước"]
+            ? row["Kích thước"].toString().trim()
+            : undefined
+          const area =
+            row["Số khối"] !== undefined && row["Số khối"] !== null
+              ? Number(row["Số khối"])
+              : undefined
+          const specification =
+            row["Quy cách"] !== undefined && row["Quy cách"] !== null
+              ? Number(row["Quy cách"])
+              : undefined
           const price =
-            row["Giá shipcode"] !== undefined && row["Giá shipcode"] !== null
-              ? Number(row["Giá shipcode"])
-              : 0
-          const sourceValue = row["Nguồn gốc"]
-            ? row["Nguồn gốc"].toString().trim()
-            : "Trong nhà máy"
+            row["Giá bán"] !== undefined && row["Giá bán"] !== null
+              ? Number(row["Giá bán"])
+              : undefined
+          const mass =
+            row["Cân nặng"] !== undefined && row["Cân nặng"] !== null
+              ? Number(row["Cân nặng"])
+              : undefined
 
-          // Validate price is a number
-          if (isNaN(price)) {
+          // Validate required fields
+          if (!nameVn || !nameCn) {
             errors.push(
-              `Dòng ${rowNumber}: Giá shipcode không hợp lệ, sử dụng giá 0`
-            )
-          }
-
-          // Map factory and source with defaults
-          let factory: SalesItemFactory
-          let source: SalesItemSource
-
-          try {
-            factory = this.mapFactory(factoryValue)
-          } catch (error) {
-            factory = "candy" // Default factory
-            errors.push(
-              `Dòng ${rowNumber}: ${error.message}, sử dụng mặc định "candy"`
-            )
-          }
-
-          try {
-            source = this.mapSource(sourceValue)
-          } catch (error) {
-            source = "inside" // Default source
-            errors.push(
-              `Dòng ${rowNumber}: ${error.message}, sử dụng mặc định "inside"`
-            )
-          }
-
-          // Check if item exists
-          const existingItem = await this.salesItemModel.findOne({ code })
-
-          if (existingItem) {
-            // Skip if code already exists
-            errors.push(
-              `Dòng ${rowNumber}: Mã sản phẩm "${code}" đã tồn tại, bỏ qua`
+              `Dòng ${rowNumber}: Thiếu tên sản phẩm (Tên hoặc Tên Trung Quốc)`
             )
             skipped++
             continue
           }
 
+          if (price === undefined || isNaN(price)) {
+            errors.push(`Dòng ${rowNumber}: Thiếu hoặc giá bán không hợp lệ`)
+            skipped++
+            continue
+          }
+
+          // Validate numeric fields
+          if (area !== undefined && isNaN(area)) {
+            errors.push(
+              `Dòng ${rowNumber}: Số khối không hợp lệ, sử dụng giá trị undefined`
+            )
+          }
+          if (specification !== undefined && isNaN(specification)) {
+            errors.push(
+              `Dòng ${rowNumber}: Quy cách không hợp lệ, sử dụng giá trị undefined`
+            )
+          }
+          if (mass !== undefined && isNaN(mass)) {
+            errors.push(
+              `Dòng ${rowNumber}: Cân nặng không hợp lệ, sử dụng giá trị undefined`
+            )
+          }
+
+          // Check if item exists by code (if code is provided)
+          if (code) {
+            const existingItem = await this.salesItemModel.findOne({ code })
+            if (existingItem) {
+              errors.push(
+                `Dòng ${rowNumber}: Mã sản phẩm "${code}" đã tồn tại, bỏ qua`
+              )
+              skipped++
+              continue
+            }
+          }
+
           // Create new item
-          await this.salesItemModel.create({
-            code,
+          const newItem: any = {
             name: { vn: nameVn, cn: nameCn },
-            factory,
             price,
-            source,
-            specification: row["Quy cách"] ? Number(row["Quy cách"]) : 1,
             createdAt: new Date(),
             updatedAt: new Date()
-          })
+          }
+
+          if (code) newItem.code = code
+          if (size) newItem.size = size
+          if (area !== undefined && !isNaN(area)) newItem.area = area
+          if (specification !== undefined && !isNaN(specification))
+            newItem.specification = specification
+          if (mass !== undefined && !isNaN(mass)) newItem.mass = mass
+
+          await this.salesItemModel.create(newItem)
           inserted++
         } catch (error) {
           errors.push(`Dòng ${rowNumber}: ${error.message}`)
@@ -198,22 +212,23 @@ export class SalesItemsService {
   async generateUploadTemplate(): Promise<Buffer> {
     const workbook = XLSX.utils.book_new()
 
-    // Define headers
+    // Define headers (Tên và Giá bán là bắt buộc)
     const headers = [
       "Mã",
-      "Tên",
-      "Tên Trung Quốc",
-      "Xưởng",
-      "Giá shipcode",
-      "Nguồn gốc",
-      "Quy cách"
+      "Tên*",
+      "Tên Trung Quốc*",
+      "Kích thước",
+      "Số khối",
+      "Quy cách",
+      "Giá bán*",
+      "Cân nặng"
     ]
 
     // Define sample data rows
     const sampleData = [
-      ["SP001", "Kẹo dâu", "草莓糖", "Kẹo mút", 15000, "Trong nhà máy", 1],
-      ["SP002", "Kẹo chanh", "柠檬糖", "Kẹo mút", 12000, "Trong nhà máy", 12],
-      ["SP003", "Thạch nho", "葡萄果冻", "Thạch", 20000, "Ngoài nhà máy", 6]
+      ["SP001", "Kẹo dâu", "草莓糖", "20x10x5", 1000, 50, 15000, 0.5],
+      ["SP002", "Kẹo chanh", "柠檬糖", "15x8x4", 480, 40, 12000, 0.4],
+      ["SP003", "Thạch nho", "葡萄果冻", "25x12x6", 1800, 60, 20000, 0.8]
     ]
 
     // Combine headers and sample data
@@ -224,13 +239,14 @@ export class SalesItemsService {
 
     // Set column widths for better readability
     worksheet["!cols"] = [
-      { wch: 15 }, // Mã
-      { wch: 20 }, // Tên
-      { wch: 20 }, // Tên Trung Quốc
-      { wch: 15 }, // Xưởng
-      { wch: 15 }, // Giá shipcode
-      { wch: 18 }, // Nguồn gốc
-      { wch: 12 } // Quy cách
+      { wch: 12 }, // Mã
+      { wch: 20 }, // Tên*
+      { wch: 20 }, // Tên Trung Quốc*
+      { wch: 15 }, // Kích thước
+      { wch: 12 }, // Số khối
+      { wch: 12 }, // Quy cách
+      { wch: 15 }, // Giá bán*
+      { wch: 12 } // Cân nặng
     ]
 
     // Add worksheet to workbook

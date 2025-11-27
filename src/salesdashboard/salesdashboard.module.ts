@@ -14,6 +14,6 @@ import { SalesFunnelSchema } from "../database/mongoose/schemas/SalesFunnel"
   ],
   controllers: [SalesDashboardController],
   providers: [SalesDashboardService],
-  exports: [SalesDashboardService]
+  exports: [SalesDashboardService, MongooseModule]
 })
 export class SalesDashboardModule {}

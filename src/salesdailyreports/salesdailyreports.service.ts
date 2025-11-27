@@ -1,0 +1,360 @@
+import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
+import { InjectModel } from "@nestjs/mongoose"
+import { Model, Types } from "mongoose"
+import { SalesDailyReport } from "../database/mongoose/schemas/SalesDailyReport"
+import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
+import { SalesDashboardService } from "../salesdashboard/salesdashboard.service"
+import { DailyAds } from "../database/mongoose/schemas/DailyAds"
+import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
+import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
+
+@Injectable()
+export class SalesDailyReportsService {
+  constructor(
+    @InjectModel("salesdailyreports")
+    private readonly salesDailyReportModel: Model<SalesDailyReport>,
+    @InjectModel("salesmonthkpis")
+    private readonly salesMonthKpiModel: Model<SalesMonthKpi>,
+    @InjectModel("dailyads")
+    private readonly dailyAdsModel: Model<DailyAds>,
+    @InjectModel("salesorders")
+    private readonly salesOrderModel: Model<SalesOrder>,
+    @InjectModel("salesfunnel")
+    private readonly salesFunnelModel: Model<SalesFunnel>,
+    private readonly salesDashboardService: SalesDashboardService
+  ) {}
+
+  /**
+   * 1. Get revenue data for a specific channel and date
+   */
+  async getRevenueForDate(
+    date: Date,
+    channelId: string
+  ): Promise<{
+    revenue: number
+    newFunnelRevenue: number
+    returningFunnelRevenue: number
+    accumulatedRevenue: number
+    accumulatedAdsCost: number
+    accumulatedNewFunnelRevenue: number
+  }> {
+    try {
+      const targetDate = new Date(date)
+      targetDate.setHours(0, 0, 0, 0)
+
+      // Get revenue stats for the specific date using salesdashboard service
+      const stats = await this.salesDashboardService.getRevenueStats(
+        targetDate,
+        targetDate
+      )
+
+      // Filter revenue by channel
+      const channelRevenue = stats.revenueByChannel.find(
+        (ch) => ch.channelId === channelId
+      )
+
+      const revenue = channelRevenue?.revenue || 0
+
+      // Calculate new/returning funnel revenue for this specific channel
+      // We need to query orders directly for this channel
+      const startOfDay = new Date(targetDate)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(targetDate)
+      endOfDay.setHours(23, 59, 59, 999)
+
+      // Get funnels for this channel
+      const funnelIds = await this.salesFunnelModel
+        .find({ channel: new Types.ObjectId(channelId) })
+        .select("_id")
+        .lean()
+
+      const funnelIdList = funnelIds.map((f) => f._id)
+
+      // Get orders for this channel's funnels
+      const channelOrders = await this.salesOrderModel
+        .find({
+          date: { $gte: startOfDay, $lte: endOfDay },
+          status: "official",
+          salesFunnelId: { $in: funnelIdList }
+        })
+        .lean()
+
+      let newFunnelRevenue = 0
+      let returningFunnelRevenue = 0
+
+      channelOrders.forEach((order) => {
+        if (order.returning) {
+          returningFunnelRevenue += order.total
+        } else {
+          newFunnelRevenue += order.total
+        }
+      })
+
+      // Calculate accumulated values for the month
+      const year = targetDate.getFullYear()
+      const month = targetDate.getMonth()
+      const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
+      const endOfPreviousDay = new Date(targetDate)
+      endOfPreviousDay.setDate(endOfPreviousDay.getDate() - 1)
+      endOfPreviousDay.setHours(23, 59, 59, 999)
+
+      // Get all reports from start of month to previous day
+      const previousReports = await this.salesDailyReportModel
+        .find({
+          channel: new Types.ObjectId(channelId),
+          date: { $gte: startOfMonth, $lte: endOfPreviousDay },
+          deletedAt: null
+        })
+        .lean()
+
+      const accumulatedRevenue = previousReports.reduce(
+        (sum, report) => sum + (report.revenue || 0),
+        0
+      )
+
+      const accumulatedNewFunnelRevenue = previousReports.reduce(
+        (sum, report) => sum + (report.newFunnelRevenue || 0),
+        0
+      )
+
+      // Get accumulated ads cost from DailyAds
+      const adsFilter: any = {
+        date: { $gte: startOfMonth, $lte: endOfPreviousDay },
+        channel: new Types.ObjectId(channelId)
+      }
+
+      const adsAgg = await this.dailyAdsModel.aggregate([
+        { $match: adsFilter },
+        {
+          $group: {
+            _id: null,
+            totalAdsCost: {
+              $sum: {
+                $add: [
+                  { $ifNull: ["$liveAdsCost", 0] },
+                  { $ifNull: ["$shopAdsCost", 0] }
+                ]
+              }
+            }
+          }
+        }
+      ])
+
+      const accumulatedAdsCost = adsAgg?.[0]?.totalAdsCost || 0
+
+      return {
+        revenue,
+        newFunnelRevenue,
+        returningFunnelRevenue,
+        accumulatedRevenue,
+        accumulatedAdsCost,
+        accumulatedNewFunnelRevenue
+      }
+    } catch (error) {
+      console.error("Error in getRevenueForDate:", error)
+      throw new HttpException(
+        "Lỗi khi lấy dữ liệu doanh thu",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 2. Create a new daily report
+   */
+  async createReport(payload: {
+    date: Date
+    channel: string
+    adsCost: number
+    dateKpi: number
+    revenue: number
+    newFunnelRevenue: number
+    returningFunnelRevenue: number
+    accumulatedRevenue: number
+    accumulatedAdsCost: number
+    accumulatedNewFunnelRevenue: number
+  }): Promise<SalesDailyReport> {
+    try {
+      const report = new this.salesDailyReportModel({
+        date: payload.date,
+        channel: new Types.ObjectId(payload.channel),
+        adsCost: payload.adsCost,
+        dateKpi: payload.dateKpi,
+        revenue: payload.revenue,
+        newFunnelRevenue: payload.newFunnelRevenue,
+        returningFunnelRevenue: payload.returningFunnelRevenue,
+        accumulatedRevenue: payload.accumulatedRevenue,
+        accumulatedAdsCost: payload.accumulatedAdsCost,
+        accumulatedNewFunnelRevenue: payload.accumulatedNewFunnelRevenue,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+
+      return await report.save()
+    } catch (error) {
+      console.error("Error in createReport:", error)
+      throw new HttpException(
+        "Lỗi khi tạo báo cáo",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 3. Soft delete a report
+   */
+  async deleteReport(reportId: string): Promise<void> {
+    try {
+      const report = await this.salesDailyReportModel.findById(reportId)
+      if (!report) {
+        throw new HttpException("Báo cáo không tồn tại", HttpStatus.NOT_FOUND)
+      }
+
+      report.deletedAt = new Date()
+      report.updatedAt = new Date()
+      await report.save()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in deleteReport:", error)
+      throw new HttpException(
+        "Lỗi khi xóa báo cáo",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 4. Get reports by month
+   */
+  async getReportsByMonth(
+    month: number,
+    year: number,
+    channelId: string,
+    includeDeleted = false
+  ): Promise<{ data: SalesDailyReport[]; total: number }> {
+    try {
+      const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
+
+      const filter: any = {
+        channel: new Types.ObjectId(channelId),
+        date: { $gte: startOfMonth, $lte: endOfMonth }
+      }
+
+      if (!includeDeleted) {
+        filter.deletedAt = null
+      }
+
+      const [reports, total] = await Promise.all([
+        this.salesDailyReportModel
+          .find(filter)
+          .populate("channel", "channelName phoneNumber")
+          .sort({ date: 1 })
+          .lean(),
+        this.salesDailyReportModel.countDocuments(filter)
+      ])
+
+      return {
+        data: reports as SalesDailyReport[],
+        total
+      }
+    } catch (error) {
+      console.error("Error in getReportsByMonth:", error)
+      throw new HttpException(
+        "Lỗi khi lấy báo cáo theo tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 5. Get report detail by ID
+   */
+  async getReportDetail(reportId: string): Promise<SalesDailyReport | null> {
+    try {
+      const report = await this.salesDailyReportModel
+        .findById(reportId)
+        .populate("channel", "channelName phoneNumber")
+        .lean()
+
+      if (!report) {
+        throw new HttpException("Báo cáo không tồn tại", HttpStatus.NOT_FOUND)
+      }
+
+      return report as SalesDailyReport
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in getReportDetail:", error)
+      throw new HttpException(
+        "Lỗi khi lấy chi tiết báo cáo",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 6. Get month KPI for a specific date
+   */
+  async getMonthKpi(
+    date: Date,
+    channelId: string
+  ): Promise<SalesMonthKpi | null> {
+    try {
+      const targetDate = new Date(date)
+      const month = targetDate.getMonth() + 1 // 1-based month
+      const year = targetDate.getFullYear()
+
+      const kpi = await this.salesMonthKpiModel
+        .findOne({
+          month,
+          year,
+          channel: new Types.ObjectId(channelId)
+        })
+        .populate("channel", "channelName phoneNumber")
+        .lean()
+
+      return kpi as SalesMonthKpi
+    } catch (error) {
+      console.error("Error in getMonthKpi:", error)
+      throw new HttpException(
+        "Lỗi khi lấy KPI tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 7. Get accumulated revenue for a month
+   */
+  async getAccumulatedRevenueForMonth(
+    month: number,
+    year: number,
+    channelId: string
+  ): Promise<number> {
+    try {
+      const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
+
+      const reports = await this.salesDailyReportModel
+        .find({
+          channel: new Types.ObjectId(channelId),
+          date: { $gte: startOfMonth, $lte: endOfMonth },
+          deletedAt: null
+        })
+        .lean()
+
+      const accumulatedRevenue = reports.reduce(
+        (sum, report) => sum + (report.revenue || 0),
+        0
+      )
+
+      return accumulatedRevenue
+    } catch (error) {
+      console.error("Error in getAccumulatedRevenueForMonth:", error)
+      throw new HttpException(
+        "Lỗi khi lấy doanh thu lũy kế tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+}

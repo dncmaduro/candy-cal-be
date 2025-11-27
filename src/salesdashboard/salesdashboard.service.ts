@@ -23,6 +23,14 @@ export interface RevenueByUser {
   userName: string
   revenue: number
   orderCount: number
+  ordersByCustomerType: {
+    new: number
+    returning: number
+  }
+  revenueByCustomerType: {
+    new: number
+    returning: number
+  }
 }
 
 export interface RevenueStatsResponse {
@@ -30,9 +38,11 @@ export interface RevenueStatsResponse {
   totalOrders: number
   revenueFromNewCustomers: number
   revenueFromReturningCustomers: number
-  itemsSold: RevenueByItem[]
+  topItemsByRevenue: Omit<RevenueByItem, "quantity">[]
+  topItemsByQuantity: Omit<RevenueByItem, "revenue">[]
   revenueByChannel: RevenueByChannel[]
   revenueByUser: RevenueByUser[]
+  otherItemsRevenue: number
 }
 
 export interface MetricsResponse {
@@ -70,10 +80,11 @@ export class SalesDashboardService {
       const end = new Date(endDate)
       end.setHours(23, 59, 59, 999)
 
-      // Get all orders in date range
+      // Get all orders in date range (only official status)
       const orders = await this.salesOrderModel
         .find({
-          date: { $gte: start, $lte: end }
+          date: { $gte: start, $lte: end },
+          status: "official"
         })
         .populate({
           path: "salesFunnelId",
@@ -120,9 +131,25 @@ export class SalesDashboardService {
           }
         })
       })
-      const itemsSold = Array.from(itemsMap.values()).sort(
-        (a, b) => b.revenue - a.revenue
+
+      // Create two separate top 10 lists
+      const allItems = Array.from(itemsMap.values())
+      const topItemsByRevenue = [...allItems]
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10)
+        .map(({ code, name, revenue }) => ({ code, name, revenue }))
+      const topItemsByQuantity = [...allItems]
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 10)
+        .map(({ code, name, quantity }) => ({ code, name, quantity }))
+
+      // Calculate other items revenue (items not in top 10 by revenue)
+      const top10RevenueCodes = new Set(
+        topItemsByRevenue.map((item) => item.code)
       )
+      const otherItemsRevenue = allItems
+        .filter((item) => !top10RevenueCodes.has(item.code))
+        .reduce((sum, item) => sum + item.revenue, 0)
 
       // Calculate revenue by channel
       const channelMap = new Map<string, RevenueByChannel>()
@@ -152,7 +179,7 @@ export class SalesDashboardService {
         (a, b) => b.revenue - a.revenue
       )
 
-      // Calculate revenue by user
+      // Calculate revenue by user (with new/returning split)
       const userMap = new Map<string, RevenueByUser>()
       for (const order of orders) {
         const funnel = order.salesFunnelId as any
@@ -166,12 +193,29 @@ export class SalesDashboardService {
           if (existing) {
             existing.revenue += order.total
             existing.orderCount += 1
+
+            // Update order count by customer type
+            if (order.returning) {
+              existing.ordersByCustomerType.returning += 1
+              existing.revenueByCustomerType.returning += order.total
+            } else {
+              existing.ordersByCustomerType.new += 1
+              existing.revenueByCustomerType.new += order.total
+            }
           } else {
             userMap.set(userId, {
               userId,
               userName,
               revenue: order.total,
-              orderCount: 1
+              orderCount: 1,
+              ordersByCustomerType: {
+                new: order.returning ? 0 : 1,
+                returning: order.returning ? 1 : 0
+              },
+              revenueByCustomerType: {
+                new: order.returning ? 0 : order.total,
+                returning: order.returning ? order.total : 0
+              }
             })
           }
         }
@@ -185,9 +229,11 @@ export class SalesDashboardService {
         totalOrders,
         revenueFromNewCustomers,
         revenueFromReturningCustomers,
-        itemsSold,
+        topItemsByRevenue,
+        topItemsByQuantity,
         revenueByChannel,
-        revenueByUser
+        revenueByUser,
+        otherItemsRevenue
       }
     } catch (error) {
       console.error("Error in getRevenueStats:", error)
@@ -207,10 +253,11 @@ export class SalesDashboardService {
       const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
       const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
 
-      // Get all orders in this month
+      // Get all orders in this month (only official status)
       const orders = await this.salesOrderModel
         .find({
-          date: { $gte: startOfMonth, $lte: endOfMonth }
+          date: { $gte: startOfMonth, $lte: endOfMonth },
+          status: "official"
         })
         .populate({
           path: "salesFunnelId",

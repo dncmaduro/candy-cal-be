@@ -31,6 +31,8 @@ import { SalesItemSchema } from "./mongoose/schemas/SalesItem"
 import { SalesCustomerRankSchema } from "./mongoose/schemas/SalesCustomerRank"
 import { SalesActivitySchema } from "./mongoose/schemas/SalesActivity"
 import { SalesTaskSchema } from "./mongoose/schemas/SalesTask"
+import { SalesMonthKpiSchema } from "./mongoose/schemas/SalesMonthKpi"
+import { SalesDailyReportSchema } from "./mongoose/schemas/SalesDailyReport"
 
 @Module({
   imports: [
@@ -65,7 +67,9 @@ import { SalesTaskSchema } from "./mongoose/schemas/SalesTask"
       { name: "salesitems", schema: SalesItemSchema },
       { name: "salescustomerranks", schema: SalesCustomerRankSchema },
       { name: "salesactivities", schema: SalesActivitySchema },
-      { name: "salestasks", schema: SalesTaskSchema }
+      { name: "salestasks", schema: SalesTaskSchema },
+      { name: "salesdailyreports", schema: SalesDailyReportSchema },
+      { name: "salesmonthkpis", schema: SalesMonthKpiSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules
