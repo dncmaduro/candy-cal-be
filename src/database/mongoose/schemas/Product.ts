@@ -17,7 +17,7 @@ const ProductItemSchema = new Schema<ProductItem>({
 })
 
 export const ProductSchema = new Schema<Product>({
-  name: { type: String, required: true },
+  name: { type: String, required: true, unique: true },
   items: { type: [ProductItemSchema], required: true },
   deletedAt: { type: Date, required: false, default: null }
 })
