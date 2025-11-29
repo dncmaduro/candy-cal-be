@@ -81,7 +81,7 @@ export class SalesDailyReportsController {
   async getReportsByMonth(
     @Query("month") month: string,
     @Query("year") year: string,
-    @Query("channelId") channelId: string,
+    @Query("channelId") channelId?: string,
     @Query("deleted") deleted?: string
   ): Promise<{ data: SalesDailyReport[]; total: number }> {
     return this.salesDailyReportsService.getReportsByMonth(
@@ -90,15 +90,6 @@ export class SalesDailyReportsController {
       channelId,
       deleted === "true"
     )
-  }
-
-  @Roles("admin", "sales-emp", "system-emp")
-  @Get(":id")
-  @HttpCode(HttpStatus.OK)
-  async getReportDetail(
-    @Param("id") id: string
-  ): Promise<SalesDailyReport | null> {
-    return this.salesDailyReportsService.getReportDetail(id)
   }
 
   @Roles("admin", "sales-emp", "system-emp")
@@ -126,5 +117,60 @@ export class SalesDailyReportsController {
         channelId
       )
     return { accumulatedRevenue }
+  }
+
+  @Roles("admin", "sales-emp")
+  @Post("month-kpi")
+  @HttpCode(HttpStatus.CREATED)
+  async createOrUpdateMonthKpi(
+    @Body()
+    body: {
+      month: number
+      year: number
+      channel: string
+      kpi: number
+    }
+  ): Promise<SalesMonthKpi> {
+    return this.salesDailyReportsService.createOrUpdateMonthKpi(body)
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("month-kpi")
+  @HttpCode(HttpStatus.OK)
+  async getMonthKpis(
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+    @Query("month") month?: string,
+    @Query("year") year?: string,
+    @Query("channelId") channelId?: string
+  ): Promise<{
+    data: SalesMonthKpi[]
+    total: number
+  }> {
+    return this.salesDailyReportsService.getMonthKpis(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 10,
+      month ? Number(month) : undefined,
+      year ? Number(year) : undefined,
+      channelId
+    )
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("month-kpi/:id")
+  @HttpCode(HttpStatus.OK)
+  async getMonthKpiDetail(
+    @Param("id") id: string
+  ): Promise<SalesMonthKpi | null> {
+    return this.salesDailyReportsService.getMonthKpiDetail(id)
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get(":id")
+  @HttpCode(HttpStatus.OK)
+  async getReportDetail(
+    @Param("id") id: string
+  ): Promise<SalesDailyReport | null> {
+    return this.salesDailyReportsService.getReportDetail(id)
   }
 }
