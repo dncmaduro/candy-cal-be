@@ -17,7 +17,7 @@ export interface SalesItem extends Document {
   }
   size?: string
   area?: number
-  specification?: number
+  specification?: string
   mass?: number
   price: number
   factory?: SalesItemFactory
@@ -34,7 +34,7 @@ export const SalesItemSchema = new Schema<SalesItem>({
   },
   size: { type: String, required: false },
   area: { type: Number, required: false },
-  specification: { type: Number, required: false },
+  specification: { type: String, required: false },
   price: { type: Number, required: true },
   mass: { type: Number, required: false },
   factory: {

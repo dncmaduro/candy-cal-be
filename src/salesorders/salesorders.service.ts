@@ -503,8 +503,7 @@ export class SalesOrdersService {
     }[],
     storage?: SalesOrderStorage,
     discount?: number,
-    deposit?: number,
-    note?: string
+    deposit?: number
   ): Promise<SalesOrder> {
     try {
       const order = await this.salesOrderModel
