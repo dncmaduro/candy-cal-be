@@ -150,8 +150,7 @@ export class SalesOrdersController {
       body.items,
       body.storage,
       body.discount,
-      body.deposit,
-      body.note
+      body.deposit
     )
     void this.systemLogsService.createSystemLog(
       {
