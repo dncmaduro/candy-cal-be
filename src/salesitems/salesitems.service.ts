@@ -16,7 +16,7 @@ interface XlsxSalesItemData {
   "Tên Trung Quốc"?: string
   "Kích thước"?: string
   "Số khối"?: number
-  "Quy cách"?: number
+  "Quy cách"?: string
   "Giá bán"?: number
   "Cân nặng"?: number
 }
@@ -109,7 +109,7 @@ export class SalesItemsService {
               : undefined
           const specification =
             row["Quy cách"] !== undefined && row["Quy cách"] !== null
-              ? Number(row["Quy cách"])
+              ? row["Quy cách"].toString().trim()
               : undefined
           const price =
             row["Giá bán"] !== undefined && row["Giá bán"] !== null
@@ -141,11 +141,6 @@ export class SalesItemsService {
               `Dòng ${rowNumber}: Số khối không hợp lệ, sử dụng giá trị undefined`
             )
           }
-          if (specification !== undefined && isNaN(specification)) {
-            errors.push(
-              `Dòng ${rowNumber}: Quy cách không hợp lệ, sử dụng giá trị undefined`
-            )
-          }
           if (mass !== undefined && isNaN(mass)) {
             errors.push(
               `Dòng ${rowNumber}: Cân nặng không hợp lệ, sử dụng giá trị undefined`
@@ -175,8 +170,7 @@ export class SalesItemsService {
           if (code) newItem.code = code
           if (size) newItem.size = size
           if (area !== undefined && !isNaN(area)) newItem.area = area
-          if (specification !== undefined && !isNaN(specification))
-            newItem.specification = specification
+          if (specification !== undefined) newItem.specification = specification
           if (mass !== undefined && !isNaN(mass)) newItem.mass = mass
 
           await this.salesItemModel.create(newItem)
@@ -342,6 +336,10 @@ export class SalesItemsService {
     factory: SalesItemFactory
     price: number
     source: SalesItemSource
+    specification?: string
+    size?: string
+    area?: number
+    mass?: number
   }): Promise<SalesItem> {
     try {
       // Check if code already exists
@@ -353,7 +351,7 @@ export class SalesItemsService {
         )
       }
 
-      const item = await this.salesItemModel.create({
+      const itemData: any = {
         code: payload.code,
         name: payload.name,
         factory: payload.factory,
@@ -361,7 +359,15 @@ export class SalesItemsService {
         source: payload.source,
         createdAt: new Date(),
         updatedAt: new Date()
-      })
+      }
+
+      if (payload.specification !== undefined)
+        itemData.specification = payload.specification
+      if (payload.size !== undefined) itemData.size = payload.size
+      if (payload.area !== undefined) itemData.area = payload.area
+      if (payload.mass !== undefined) itemData.mass = payload.mass
+
+      const item = await this.salesItemModel.create(itemData)
 
       return item
     } catch (error) {
@@ -399,6 +405,10 @@ export class SalesItemsService {
       factory?: SalesItemFactory
       price?: number
       source?: SalesItemSource
+      specification?: string
+      size?: string
+      area?: number
+      mass?: number
     }
   ): Promise<SalesItem> {
     try {
@@ -425,6 +435,11 @@ export class SalesItemsService {
       if (payload.factory !== undefined) item.factory = payload.factory
       if (payload.price !== undefined) item.price = payload.price
       if (payload.source !== undefined) item.source = payload.source
+      if (payload.specification !== undefined)
+        item.specification = payload.specification
+      if (payload.size !== undefined) item.size = payload.size
+      if (payload.area !== undefined) item.area = payload.area
+      if (payload.mass !== undefined) item.mass = payload.mass
       item.updatedAt = new Date()
 
       return await item.save()

@@ -149,7 +149,10 @@ export class SalesItemsController {
       factory: SalesItemFactory
       price: number
       source: SalesItemSource
-      specification: number
+      specification?: string
+      size?: string
+      area?: number
+      mass?: number
     },
     @Req() req
   ): Promise<SalesItem> {
@@ -186,7 +189,10 @@ export class SalesItemsController {
       factory?: SalesItemFactory
       price?: number
       source?: SalesItemSource
-      specification?: number
+      specification?: string
+      size?: string
+      area?: number
+      mass?: number
     },
     @Req() req
   ): Promise<SalesItem> {
