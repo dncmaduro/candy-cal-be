@@ -1207,7 +1207,15 @@ export class SalesOrdersService {
       order.shippingCost = shippingCost
       order.updatedAt = new Date()
 
-      return await order.save()
+      const savedOrder = await order.save()
+      await this.salesFunnelModel.findByIdAndUpdate(
+        order.salesFunnelId.toString(),
+        {
+          $set: { stage: "customer" }
+        }
+      )
+
+      return savedOrder
     } catch (error) {
       if (error instanceof HttpException) throw error
       console.error(error)
