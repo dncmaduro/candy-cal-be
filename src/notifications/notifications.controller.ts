@@ -13,20 +13,17 @@ import {
 } from "@nestjs/common"
 import { NotificationsService } from "./notifications.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
 import { Notification } from "../database/mongoose/schemas/Notification"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("notifications")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class NotificationsController {
   constructor(
     private readonly notificationsService: NotificationsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getNotifications(
@@ -36,7 +33,6 @@ export class NotificationsController {
     return this.notificationsService.getNotifications(req.user.userId, page)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
   @Patch(":id/read")
   @HttpCode(HttpStatus.OK)
   async markAsRead(@Param("id") id: string, @Req() req): Promise<Notification> {
@@ -54,7 +50,6 @@ export class NotificationsController {
     return res
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
   @Patch(":id/unread")
   @HttpCode(HttpStatus.OK)
   async markAsUnread(
@@ -75,7 +70,6 @@ export class NotificationsController {
     return res
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
   @Post("allread")
   @HttpCode(HttpStatus.OK)
   async markAllAsRead(@Req() req): Promise<void> {
@@ -92,7 +86,6 @@ export class NotificationsController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
   async deleteNotification(
@@ -113,7 +106,6 @@ export class NotificationsController {
     return { message: "Thông báo đã được xóa" }
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
   @Post("allviewed")
   @HttpCode(HttpStatus.OK)
   async markAllAsViewed(@Req() req): Promise<{ message: string }> {
@@ -131,7 +123,6 @@ export class NotificationsController {
     return { message: "Đã đánh dấu tất cả thông báo là đã xem" }
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("unviewed-count")
   @HttpCode(HttpStatus.OK)
   async getUnviewedCount(@Req() req): Promise<{ count: number }> {

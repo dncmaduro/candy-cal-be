@@ -11,6 +11,7 @@ import {
 } from "../database/mongoose/schemas/SalesOrder"
 import { SalesItem } from "../database/mongoose/schemas/SalesItem"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
+import { Province } from "../database/mongoose/schemas/Province"
 
 interface XlsxSalesOrderData {
   "SĐT Khách hàng"?: string
@@ -34,31 +35,48 @@ export class SalesOrdersService {
     @InjectModel("salesitems")
     private readonly salesItemModel: Model<SalesItem>,
     @InjectModel("salesfunnel")
-    private readonly salesFunnelModel: Model<SalesFunnel>
+    private readonly salesFunnelModel: Model<SalesFunnel>,
+    @InjectModel("provinces")
+    private readonly provinceModel: Model<Province>
   ) {}
 
   async createOrder(payload: {
     salesFunnelId: string
-    items: { code: string; quantity: number }[]
+    items: { code: string; quantity: number; note?: string }[]
     storage: SalesOrderStorage
     date: Date
     discount?: number
     deposit?: number
+    note?: string
   }): Promise<SalesOrder> {
     try {
-      // Get sales funnel
-      const funnel = await this.salesFunnelModel.findById(payload.salesFunnelId)
+      // Get sales funnel with channel populated
+      const funnel = await this.salesFunnelModel
+        .findById(payload.salesFunnelId)
+        .populate("channel")
+        .exec()
       if (!funnel) {
         throw new HttpException("Sales funnel not found", HttpStatus.NOT_FOUND)
       }
 
+      // Get phone number from channel
+      const thisFunnel = await this.salesFunnelModel
+        .findById(payload.salesFunnelId)
+        .populate("channel")
+        .lean()
+      const phoneNumber = (thisFunnel.channel as any)?.phoneNumber || ""
+
+      // Get funnel address and province
+      const address = funnel.address || ""
+      const province = await this.provinceModel.findById(funnel.province).lean()
+
       // Determine returning based on hasBuyed
       const returning = funnel.hasBuyed
 
-      // Build sales items with name and price from SalesItem
+      // Build sales items with all details from SalesItem
       const itemsWithDetails = await Promise.all(
         payload.items.map(async (item) => {
-          // Get sales item for name and price
+          // Get sales item for all details
           const salesItem = await this.salesItemModel
             .findOne({ code: item.code })
             .lean()
@@ -73,7 +91,12 @@ export class SalesOrdersService {
             code: item.code,
             name: salesItem.name.vn, // Use Vietnamese name
             price: salesItem.price,
-            quantity: item.quantity
+            quantity: item.quantity,
+            area: salesItem.area,
+            mass: salesItem.mass,
+            specification: salesItem.specification?.toString(),
+            size: salesItem.size,
+            note: item.note
           }
         })
       )
@@ -93,7 +116,12 @@ export class SalesOrdersService {
         date: payload.date,
         total,
         discount: payload.discount || 0,
-        deposit: payload.deposit || 0
+        deposit: payload.deposit || 0,
+        phoneNumber,
+        address,
+        province: province
+          ? { id: province._id.toString(), name: province.name }
+          : undefined
       })
 
       const saved = await order.save()
@@ -137,9 +165,9 @@ export class SalesOrdersService {
       let inserted = 0
       const errors: string[] = []
 
-      // Pre-fetch all funnels and items for mapping
+      // Pre-fetch all funnels (with channel) and items for mapping
       const [funnels, items] = await Promise.all([
-        this.salesFunnelModel.find().lean(),
+        this.salesFunnelModel.find().populate("channel").lean(),
         this.salesItemModel.find().lean()
       ])
 
@@ -179,6 +207,10 @@ export class SalesOrdersService {
             )
             continue
           }
+
+          // Get phone number from channel
+          const channel = funnel.channel as any
+          const channelPhoneNumber = channel?.phoneNumber || ""
 
           // Get order details from first row (assuming all rows for same phone have same order details)
           const firstRow = rows[0]
@@ -254,6 +286,10 @@ export class SalesOrdersService {
             name: string
             price: number
             quantity: number
+            area?: number
+            mass?: number
+            specification?: string
+            size?: string
           }[] = []
           let hasItemErrors = false
 
@@ -291,7 +327,11 @@ export class SalesOrdersService {
               code: item.code,
               name: item.name.vn,
               price: item.price,
-              quantity
+              quantity,
+              area: item.area,
+              mass: item.mass,
+              specification: item.specification?.toString(),
+              size: item.size
             })
           }
 
@@ -322,6 +362,7 @@ export class SalesOrdersService {
             shippingCost,
             shippingCode,
             shippingType,
+            phoneNumber: channelPhoneNumber,
             status: "official",
             createdAt: new Date(),
             updatedAt: new Date()
@@ -386,7 +427,7 @@ export class SalesOrdersService {
         "0123456789",
         "SP001",
         10,
-        "Hà Nam",
+        "Kho Hà Nội",
         "2024-01-01",
         0,
         0,
@@ -399,7 +440,7 @@ export class SalesOrdersService {
         "0123456789",
         "SP002",
         5,
-        "Hà Nam",
+        "Kho Hà Nội",
         "2024-01-01",
         0,
         0,
@@ -412,7 +453,7 @@ export class SalesOrdersService {
         "0987654321",
         "SP003",
         20,
-        "MKT",
+        "Kho MKT",
         "2024-01-15",
         5000,
         100000,
@@ -458,21 +499,41 @@ export class SalesOrdersService {
     items: {
       code: string
       quantity: number
-      price?: number
-      massPerBox?: number
-      areaPerBox?: number
+      note?: string
     }[],
     storage?: SalesOrderStorage,
     discount?: number,
-    deposit?: number
+    deposit?: number,
+    note?: string
   ): Promise<SalesOrder> {
     try {
-      const order = await this.salesOrderModel.findById(orderId)
+      const order = await this.salesOrderModel
+        .findById(orderId)
+        .populate({
+          path: "salesFunnelId",
+          populate: {
+            path: "channel",
+            model: "saleschannels"
+          }
+        })
+        .exec()
       if (!order) {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
 
-      // Build sales items with name and price from SalesItem
+      // Get phone number from channel
+      const funnel = await this.salesFunnelModel
+        .findById(order.salesFunnelId)
+        .populate("channel")
+        .lean()
+      const phoneNumber =
+        (funnel.channel as any)?.phoneNumber || order.phoneNumber || ""
+
+      // Get address and province from funnel
+      const address = funnel.address || ""
+      const province = await this.provinceModel.findById(funnel.province).lean()
+
+      // Build sales items with all details from SalesItem
       const itemsWithDetails = await Promise.all(
         items.map(async (item) => {
           const salesItem = await this.salesItemModel
@@ -485,17 +546,16 @@ export class SalesOrdersService {
             )
           }
 
-          // Use provided price or fall back to SalesItem price
-          const finalPrice =
-            item.price !== undefined ? item.price : salesItem.price
-
           return {
             code: item.code,
             name: salesItem.name.vn, // Use Vietnamese name
-            price: finalPrice,
+            price: salesItem.price,
             quantity: item.quantity,
-            massPerBox: item.massPerBox,
-            areaPerBox: item.areaPerBox
+            area: salesItem.area,
+            mass: salesItem.mass,
+            specification: salesItem.specification?.toString(),
+            size: salesItem.size,
+            note: item.note
           }
         })
       )
@@ -508,6 +568,11 @@ export class SalesOrdersService {
 
       order.items = itemsWithDetails
       order.total = total
+      order.phoneNumber = phoneNumber
+      order.address = address
+      order.province = province
+        ? { id: province._id.toString(), name: province.name }
+        : undefined
       if (storage !== undefined) {
         order.storage = storage
       }

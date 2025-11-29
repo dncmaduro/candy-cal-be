@@ -31,7 +31,8 @@ export class SalesChannelsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createChannel(
-    @Body() body: { channelName: string; assignedTo?: string },
+    @Body()
+    body: { channelName: string; assignedTo?: string; phoneNumber: string },
     @Req() req
   ): Promise<SalesChannel> {
     const created = await this.salesChannelsService.createChannel(body)
@@ -53,7 +54,8 @@ export class SalesChannelsController {
   @HttpCode(HttpStatus.OK)
   async updateChannel(
     @Param("id") id: string,
-    @Body() body: { channelName?: string; assignedTo?: string },
+    @Body()
+    body: { channelName?: string; assignedTo?: string; phoneNumber?: string },
     @Req() req
   ): Promise<SalesChannel> {
     const updated = await this.salesChannelsService.updateChannel(id, body)
@@ -129,5 +131,15 @@ export class SalesChannelsController {
       req.user.userId
     )
     return updated
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("my/channel")
+  @HttpCode(HttpStatus.OK)
+  async getMyChannel(@Req() req): Promise<{ channel: SalesChannel | null }> {
+    const channel = await this.salesChannelsService.getMyChannel(
+      req.user.userId
+    )
+    return { channel }
   }
 }

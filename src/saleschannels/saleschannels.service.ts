@@ -16,6 +16,7 @@ export class SalesChannelsService {
   async createChannel(payload: {
     channelName: string
     assignedTo?: string
+    phoneNumber: string
   }): Promise<SalesChannel> {
     try {
       // If assignedTo is provided, validate user exists and has sales-emp role
@@ -39,7 +40,8 @@ export class SalesChannelsService {
         channelName: payload.channelName,
         assignedTo: payload.assignedTo
           ? new Types.ObjectId(payload.assignedTo)
-          : undefined
+          : undefined,
+        phoneNumber: payload.phoneNumber
       })
       return await doc.save()
     } catch (error) {
@@ -54,7 +56,7 @@ export class SalesChannelsService {
 
   async updateChannel(
     id: string,
-    payload: { channelName?: string; assignedTo?: string }
+    payload: { channelName?: string; assignedTo?: string; phoneNumber?: string }
   ): Promise<SalesChannel> {
     try {
       // If assignedTo is provided, validate user exists and has sales-emp role
@@ -86,6 +88,10 @@ export class SalesChannelsService {
         updateData.assignedTo = payload.assignedTo
           ? new Types.ObjectId(payload.assignedTo)
           : null
+      }
+
+      if (payload.phoneNumber) {
+        updateData.phoneNumber = payload.phoneNumber
       }
 
       const updated = await this.salesChannelModel.findByIdAndUpdate(
@@ -233,6 +239,26 @@ export class SalesChannelsService {
       console.error("Error in assignUser:", error)
       throw new HttpException(
         "Lỗi khi gán người phụ trách kênh",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getMyChannel(userId: string): Promise<SalesChannel | null> {
+    try {
+      const channel = await this.salesChannelModel
+        .findOne({
+          assignedTo: new Types.ObjectId(userId),
+          deletedAt: null
+        })
+        .populate("assignedTo", "name username")
+        .lean()
+
+      return channel as SalesChannel | null
+    } catch (error) {
+      console.error("Error in getMyChannel:", error)
+      throw new HttpException(
+        "Lỗi khi lấy kênh bán hàng của bạn",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

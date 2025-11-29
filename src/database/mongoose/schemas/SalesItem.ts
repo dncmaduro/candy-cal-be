@@ -10,37 +10,43 @@ export type SalesItemFactory =
   | "import"
 
 export interface SalesItem extends Document {
-  code: string
+  code?: string
   name: {
     vn: string
     cn: string
   }
-  factory: SalesItemFactory
+  size?: string
+  area?: number
+  specification?: number
+  mass?: number
   price: number
-  source: SalesItemSource
-  specification: number // Quy cách: số lượng chiếc/đơn vị
+  factory?: SalesItemFactory
+  source?: SalesItemSource
   createdAt: Date
   updatedAt: Date
 }
 
 export const SalesItemSchema = new Schema<SalesItem>({
-  code: { type: String, required: true, unique: true },
+  code: { type: String, required: false, unique: false },
   name: {
     vn: { type: String, required: true },
     cn: { type: String, required: true }
   },
+  size: { type: String, required: false },
+  area: { type: Number, required: false },
+  specification: { type: Number, required: false },
+  price: { type: Number, required: true },
+  mass: { type: Number, required: false },
   factory: {
     type: String,
     enum: ["candy", "manufacturing", "position_MongCai", "jelly", "import"],
-    required: true
+    required: false
   },
-  price: { type: Number, required: true },
   source: {
     type: String,
     enum: ["inside", "outside"],
-    required: true
+    required: false
   },
-  specification: { type: Number, required: true, default: 1 }, // Quy cách: số lượng chiếc/đơn vị
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })

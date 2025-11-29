@@ -49,6 +49,7 @@ export class SalesOrdersController {
       date: string
       discount?: number
       deposit?: number
+      note?: string
     },
     @Req() req
   ): Promise<SalesOrder> {
@@ -136,13 +137,11 @@ export class SalesOrdersController {
       items: {
         code: string
         quantity: number
-        price?: number
-        massPerBox?: number
-        areaPerBox?: number
       }[]
       storage?: SalesOrderStorage
       discount?: number
       deposit?: number
+      note?: string
     },
     @Req() req
   ): Promise<SalesOrder> {
@@ -151,7 +150,8 @@ export class SalesOrdersController {
       body.items,
       body.storage,
       body.discount,
-      body.deposit
+      body.deposit,
+      body.note
     )
     void this.systemLogsService.createSystemLog(
       {

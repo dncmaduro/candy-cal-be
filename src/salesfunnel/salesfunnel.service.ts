@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import {
   SalesFunnel,
+  SalesFunnelSource,
   SalesFunnelStage
 } from "../database/mongoose/schemas/SalesFunnel"
 import { User } from "../database/mongoose/schemas/User"
@@ -48,6 +49,7 @@ export class SalesFunnelService {
   async createLead(payload: {
     name: string
     channel: string
+    funnelSource: SalesFunnelSource
   }): Promise<SalesFunnel> {
     try {
       // Get channel and its assigned user
@@ -89,7 +91,8 @@ export class SalesFunnelService {
             stage: "lead",
             updatedAt: now
           }
-        ]
+        ],
+        funnelSource: payload.funnelSource
       })
       return await doc.save()
     } catch (error) {
@@ -189,13 +192,11 @@ export class SalesFunnelService {
             continue
           }
 
-          // Find province (optional)
+          // Find province (optional) - LIKE %{cellValue}% search
           let province = null
           if (provinceName) {
-            province = provinces.find(
-              (p) =>
-                p.name.toLowerCase() === provinceName.toLowerCase() ||
-                p.name.toLowerCase().includes(provinceName.toLowerCase())
+            province = provinces.find((p) =>
+              p.name.toLowerCase().includes(provinceName.toLowerCase())
             )
             if (!province) {
               errors.push(
@@ -329,12 +330,12 @@ export class SalesFunnelService {
         "123 Đường ABC, Quận 1",
         "My Candy Việt Nam",
         "lead",
-        "2024-01-01"
+        "2024-01-01 (Format yyyy-mm-dd)"
       ],
       [
         "Trần Thị C",
         "0987654321",
-        "TP.HCM",
+        "Thành phố Hồ Chí Minh",
         "456 Đường XYZ, Quận 2",
         "Tổng kho Huy Hoàng",
         "customer",
@@ -507,6 +508,7 @@ export class SalesFunnelService {
       address?: string
       channel?: string
       hasBuyed?: boolean
+      funnelSource?: SalesFunnelSource
     },
     user: string,
     isAdmin = false
@@ -569,6 +571,8 @@ export class SalesFunnelService {
         funnel.secondaryPhoneNumbers = payload.secondaryPhoneNumbers
       if (payload.address !== undefined) funnel.address = payload.address
       if (payload.hasBuyed !== undefined) funnel.hasBuyed = payload.hasBuyed
+      if (payload.funnelSource !== undefined)
+        funnel.funnelSource = payload.funnelSource
 
       funnel.updatedAt = new Date()
 
@@ -594,6 +598,7 @@ export class SalesFunnelService {
       startDate?: Date
       endDate?: Date
       noActivityDays?: number
+      funnelSource?: SalesFunnelSource
     },
     page = 1,
     limit = 10
@@ -608,6 +613,7 @@ export class SalesFunnelService {
       if (filters.province)
         filter.province = new Types.ObjectId(filters.province)
       if (filters.user) filter.user = new Types.ObjectId(filters.user)
+      if (filters.funnelSource) filter.funnelSource = filters.funnelSource
 
       // Date range filter
       if (filters.startDate || filters.endDate) {

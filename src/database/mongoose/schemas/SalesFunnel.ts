@@ -2,6 +2,8 @@ import { Schema, Document, model, Types } from "mongoose"
 
 export type SalesFunnelStage = "lead" | "contacted" | "customer" | "closed"
 
+export type SalesFunnelSource = "ads" | "seeding" | "referral"
+
 export interface SalesFunnel extends Document {
   psid?: string
   name: string
@@ -18,6 +20,7 @@ export interface SalesFunnel extends Document {
     stage: SalesFunnelStage
     updatedAt: Date
   }[]
+  funnelSource: SalesFunnelSource
   createdAt: Date
   updatedAt: Date
 }
@@ -60,6 +63,11 @@ export const SalesFunnelSchema = new Schema<SalesFunnel>({
       updatedAt: { type: Date, required: true }
     }
   ],
+  funnelSource: {
+    type: String,
+    enum: ["ads", "seeding", "referral"],
+    default: "ads"
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })
