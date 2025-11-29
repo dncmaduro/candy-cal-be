@@ -22,6 +22,7 @@ import { Roles } from "../roles/roles.decorator"
 import { SalesFunnelService } from "./salesfunnel.service"
 import {
   SalesFunnel,
+  SalesFunnelSource,
   SalesFunnelStage
 } from "../database/mongoose/schemas/SalesFunnel"
 import { Rank } from "../database/mongoose/schemas/SalesCustomerRank"
@@ -40,7 +41,7 @@ export class SalesFunnelController {
   @HttpCode(HttpStatus.CREATED)
   async createLead(
     @Body()
-    body: { name: string; channel: string },
+    body: { name: string; channel: string; funnelSource: SalesFunnelSource },
     @Req() req
   ): Promise<SalesFunnel> {
     const created = await this.salesFunnelService.createLead({
@@ -185,6 +186,7 @@ export class SalesFunnelController {
       address?: string
       channel?: string
       hasBuyed?: boolean
+      funnelSource?: SalesFunnelSource
     },
     @Req() req
   ): Promise<SalesFunnel> {
@@ -228,6 +230,7 @@ export class SalesFunnelController {
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
     @Query("noActivityDays") noActivityDays?: string,
+    @Query("funnelSource") funnelSource?: SalesFunnelSource,
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: any[]; total: number }> {
@@ -241,7 +244,8 @@ export class SalesFunnelController {
         rank,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
-        noActivityDays: noActivityDays ? Number(noActivityDays) : undefined
+        noActivityDays: noActivityDays ? Number(noActivityDays) : undefined,
+        funnelSource
       },
       Number(page),
       Number(limit)

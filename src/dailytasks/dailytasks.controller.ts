@@ -34,7 +34,6 @@ export class DailyTasksController {
   ) {}
 
   // user: get today tasks
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
   @Get("me")
   @HttpCode(HttpStatus.OK)
   async myTasks(@Req() req): Promise<{ data: DailyTasksResponseDto }> {

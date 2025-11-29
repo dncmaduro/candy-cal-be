@@ -13,8 +13,11 @@ export interface SalesOrder extends Document {
     name: string
     price: number
     quantity: number
-    massPerBox?: number
-    areaPerBox?: number
+    area?: number
+    mass?: number
+    specification?: string
+    size?: string
+    note?: string
   }[]
   returning: boolean
   shippingCode?: string
@@ -27,6 +30,12 @@ export interface SalesOrder extends Document {
   shippingCost: number
   storage: SalesOrderStorage
   status: SalesOrderStatus
+  phoneNumber: string
+  address: string
+  province: {
+    id: string
+    name: string
+  }
   createdAt: Date
   updatedAt: Date
 }
@@ -49,8 +58,11 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
       name: { type: String, required: true },
       price: { type: Number, required: true },
       quantity: { type: Number, required: true },
-      massPerBox: { type: Number, required: false },
-      areaPerBox: { type: Number, required: false }
+      area: { type: Number, required: false },
+      mass: { type: Number, required: false },
+      specification: { type: String, required: false },
+      size: { type: String, required: false },
+      note: { type: String, required: false }
     }
   ],
   returning: { type: Boolean, default: false, required: false },
@@ -70,6 +82,12 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
     enum: ["draft", "official"],
     default: "draft",
     required: true
+  },
+  phoneNumber: { type: String, required: true },
+  address: { type: String, required: true },
+  province: {
+    id: { type: String, required: true },
+    name: { type: String, required: true }
   },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
