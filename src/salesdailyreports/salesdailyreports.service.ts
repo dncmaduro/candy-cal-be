@@ -229,7 +229,7 @@ export class SalesDailyReportsService {
   async getReportsByMonth(
     month: number,
     year: number,
-    channelId: string,
+    channelId?: string,
     includeDeleted = false
   ): Promise<{ data: SalesDailyReport[]; total: number }> {
     try {
@@ -237,8 +237,11 @@ export class SalesDailyReportsService {
       const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
 
       const filter: any = {
-        channel: new Types.ObjectId(channelId),
         date: { $gte: startOfMonth, $lte: endOfMonth }
+      }
+
+      if (channelId) {
+        filter.channel = new Types.ObjectId(channelId)
       }
 
       if (!includeDeleted) {
@@ -353,6 +356,115 @@ export class SalesDailyReportsService {
       console.error("Error in getAccumulatedRevenueForMonth:", error)
       throw new HttpException(
         "Lỗi khi lấy doanh thu lũy kế tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 8. Create or update month KPI
+   */
+  async createOrUpdateMonthKpi(payload: {
+    month: number
+    year: number
+    channel: string
+    kpi: number
+  }): Promise<SalesMonthKpi> {
+    try {
+      const existing = await this.salesMonthKpiModel.findOne({
+        month: payload.month,
+        year: payload.year,
+        channel: new Types.ObjectId(payload.channel)
+      })
+
+      if (existing) {
+        existing.kpi = payload.kpi
+        return await existing.save()
+      }
+
+      const newKpi = new this.salesMonthKpiModel({
+        month: payload.month,
+        year: payload.year,
+        channel: new Types.ObjectId(payload.channel),
+        kpi: payload.kpi
+      })
+
+      return await newKpi.save()
+    } catch (error) {
+      console.error("Error in createOrUpdateMonthKpi:", error)
+      throw new HttpException(
+        "Lỗi khi tạo/cập nhật KPI tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 9. Get month KPIs with pagination
+   */
+  async getMonthKpis(
+    page: number = 1,
+    limit: number = 10,
+    month?: number,
+    year?: number,
+    channelId?: string
+  ): Promise<{
+    data: SalesMonthKpi[]
+    total: number
+  }> {
+    try {
+      const filter: any = {}
+
+      if (month) filter.month = month
+      if (year) filter.year = year
+      if (channelId) filter.channel = new Types.ObjectId(channelId)
+
+      const skip = (page - 1) * limit
+
+      const [kpis, total] = await Promise.all([
+        this.salesMonthKpiModel
+          .find(filter)
+          .populate("channel", "channelName phoneNumber")
+          .sort({ year: -1, month: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        this.salesMonthKpiModel.countDocuments(filter)
+      ])
+
+      return {
+        data: kpis as SalesMonthKpi[],
+        total
+      }
+    } catch (error) {
+      console.error("Error in getMonthKpis:", error)
+      throw new HttpException(
+        "Lỗi khi lấy danh sách KPI tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 10. Get month KPI detail by ID
+   */
+  async getMonthKpiDetail(kpiId: string): Promise<SalesMonthKpi | null> {
+    try {
+      const kpi = await this.salesMonthKpiModel
+        .findById(kpiId)
+        .populate("channel", "channelName phoneNumber")
+        .lean()
+
+      if (!kpi) {
+        throw new HttpException("KPI không tồn tại", HttpStatus.NOT_FOUND)
+      }
+
+      return kpi as SalesMonthKpi
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in getMonthKpiDetail:", error)
+      throw new HttpException(
+        "Lỗi khi lấy chi tiết KPI",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
