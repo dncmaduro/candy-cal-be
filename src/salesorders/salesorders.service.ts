@@ -613,6 +613,7 @@ export class SalesOrdersService {
   async deleteOrder(orderId: string): Promise<void> {
     try {
       const order = await this.salesOrderModel.findById(orderId)
+      const funnel = await this.salesFunnelModel.findById(order.salesFunnelId)
       if (!order) {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
@@ -628,7 +629,7 @@ export class SalesOrdersService {
       })
 
       // If no orders left, set hasBuyed back to false
-      if (remainingCount === 0) {
+      if (remainingCount === 0 && !funnel.fromSystem) {
         await this.resetFunnelBuyStatus(salesFunnelId.toString())
       }
     } catch (error) {

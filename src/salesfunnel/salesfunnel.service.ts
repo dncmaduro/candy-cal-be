@@ -509,6 +509,7 @@ export class SalesFunnelService {
       channel?: string
       hasBuyed?: boolean
       funnelSource?: SalesFunnelSource
+      fromSystem?: boolean
     },
     user: string,
     isAdmin = false
@@ -573,6 +574,8 @@ export class SalesFunnelService {
       if (payload.hasBuyed !== undefined) funnel.hasBuyed = payload.hasBuyed
       if (payload.funnelSource !== undefined)
         funnel.funnelSource = payload.funnelSource
+      if (payload.fromSystem !== undefined)
+        funnel.fromSystem = payload.fromSystem
 
       funnel.updatedAt = new Date()
 
