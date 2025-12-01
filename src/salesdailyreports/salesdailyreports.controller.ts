@@ -32,11 +32,19 @@ export class SalesDailyReportsController {
     @Query("channelId") channelId: string
   ): Promise<{
     revenue: number
-    newFunnelRevenue: number
+    newFunnelRevenue: {
+      ads: number
+      other: number
+    }
     returningFunnelRevenue: number
+    newOrder: number
+    returningOrder: number
     accumulatedRevenue: number
     accumulatedAdsCost: number
-    accumulatedNewFunnelRevenue: number
+    accumulatedNewFunnelRevenue: {
+      ads: number
+      other: number
+    }
   }> {
     return this.salesDailyReportsService.getRevenueForDate(
       new Date(date),
@@ -55,11 +63,19 @@ export class SalesDailyReportsController {
       adsCost: number
       dateKpi: number
       revenue: number
-      newFunnelRevenue: number
+      newFunnelRevenue: {
+        ads: number
+        other: number
+      }
       returningFunnelRevenue: number
+      newOrder: number
+      returningOrder: number
       accumulatedRevenue: number
       accumulatedAdsCost: number
-      accumulatedNewFunnelRevenue: number
+      accumulatedNewFunnelRevenue: {
+        ads: number
+        other: number
+      }
     }
   ): Promise<SalesDailyReport> {
     return this.salesDailyReportsService.createReport({

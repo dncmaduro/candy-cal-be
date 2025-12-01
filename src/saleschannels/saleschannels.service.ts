@@ -17,6 +17,8 @@ export class SalesChannelsService {
     channelName: string
     assignedTo?: string
     phoneNumber: string
+    address: string
+    avatarUrl: string
   }): Promise<SalesChannel> {
     try {
       // If assignedTo is provided, validate user exists and has sales-emp role
@@ -41,7 +43,9 @@ export class SalesChannelsService {
         assignedTo: payload.assignedTo
           ? new Types.ObjectId(payload.assignedTo)
           : undefined,
-        phoneNumber: payload.phoneNumber
+        phoneNumber: payload.phoneNumber,
+        address: payload.address,
+        avatarUrl: payload.avatarUrl
       })
       return await doc.save()
     } catch (error) {
@@ -56,7 +60,13 @@ export class SalesChannelsService {
 
   async updateChannel(
     id: string,
-    payload: { channelName?: string; assignedTo?: string; phoneNumber?: string }
+    payload: {
+      channelName?: string
+      assignedTo?: string
+      phoneNumber?: string
+      address?: string
+      avatarUrl?: string
+    }
   ): Promise<SalesChannel> {
     try {
       // If assignedTo is provided, validate user exists and has sales-emp role
@@ -92,6 +102,14 @@ export class SalesChannelsService {
 
       if (payload.phoneNumber) {
         updateData.phoneNumber = payload.phoneNumber
+      }
+
+      if (payload.address) {
+        updateData.address = payload.address
+      }
+
+      if (payload.avatarUrl) {
+        updateData.avatarUrl = payload.avatarUrl
       }
 
       const updated = await this.salesChannelModel.findByIdAndUpdate(
