@@ -187,6 +187,7 @@ export class SalesFunnelController {
       channel?: string
       hasBuyed?: boolean
       funnelSource?: SalesFunnelSource
+      fromSystem?: boolean
     },
     @Req() req
   ): Promise<SalesFunnel> {
