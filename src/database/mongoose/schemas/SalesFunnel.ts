@@ -21,6 +21,7 @@ export interface SalesFunnel extends Document {
     updatedAt: Date
   }[]
   funnelSource: SalesFunnelSource
+  fromSystem?: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -46,7 +47,7 @@ export const SalesFunnelSchema = new Schema<SalesFunnel>({
     ref: "users",
     required: true
   }, // Reference to User schema
-  hasBuyed: { type: Boolean, default: false, required: false },
+  hasBuyed: { type: Boolean, required: false },
   stage: {
     type: String,
     enum: ["lead", "contacted", "customer", "closed"],
@@ -68,6 +69,7 @@ export const SalesFunnelSchema = new Schema<SalesFunnel>({
     enum: ["ads", "seeding", "referral"],
     default: "ads"
   },
+  fromSystem: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })

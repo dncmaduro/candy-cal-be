@@ -13,7 +13,7 @@ export interface SalesItem extends Document {
   code?: string
   name: {
     vn: string
-    cn: string
+    cn?: string
   }
   size?: string
   area?: number
@@ -30,7 +30,7 @@ export const SalesItemSchema = new Schema<SalesItem>({
   code: { type: String, required: false, unique: false },
   name: {
     vn: { type: String, required: true },
-    cn: { type: String, required: true }
+    cn: { type: String, required: false }
   },
   size: { type: String, required: false },
   area: { type: Number, required: false },

@@ -90,7 +90,7 @@ export class SalesItemsService {
 
         try {
           // Skip empty rows
-          if (!row["Mã"] && !row["Tên"] && !row["Tên Trung Quốc"]) {
+          if (!row["Mã"] && !row["Tên"]) {
             continue
           }
 
@@ -121,10 +121,8 @@ export class SalesItemsService {
               : undefined
 
           // Validate required fields
-          if (!nameVn || !nameCn) {
-            errors.push(
-              `Dòng ${rowNumber}: Thiếu tên sản phẩm (Tên hoặc Tên Trung Quốc)`
-            )
+          if (!nameVn) {
+            errors.push(`Dòng ${rowNumber}: Thiếu tên sản phẩm`)
             skipped++
             continue
           }
