@@ -32,11 +32,19 @@ export class SalesDailyReportsService {
     channelId: string
   ): Promise<{
     revenue: number
-    newFunnelRevenue: number
+    newFunnelRevenue: {
+      ads: number
+      other: number
+    }
     returningFunnelRevenue: number
+    newOrder: number
+    returningOrder: number
     accumulatedRevenue: number
     accumulatedAdsCost: number
-    accumulatedNewFunnelRevenue: number
+    accumulatedNewFunnelRevenue: {
+      ads: number
+      other: number
+    }
   }> {
     try {
       const targetDate = new Date(date)
@@ -63,12 +71,17 @@ export class SalesDailyReportsService {
       endOfDay.setHours(23, 59, 59, 999)
 
       // Get funnels for this channel
-      const funnelIds = await this.salesFunnelModel
+      const funnels = await this.salesFunnelModel
         .find({ channel: new Types.ObjectId(channelId) })
-        .select("_id")
+        .select("_id funnelSource")
         .lean()
 
-      const funnelIdList = funnelIds.map((f) => f._id)
+      const funnelIdList = funnels.map((f) => f._id)
+
+      // Create a map of funnel ID to funnel source for quick lookup
+      const funnelSourceMap = new Map(
+        funnels.map((f) => [f._id.toString(), f.funnelSource])
+      )
 
       // Get orders for this channel's funnels
       const channelOrders = await this.salesOrderModel
@@ -79,14 +92,27 @@ export class SalesDailyReportsService {
         })
         .lean()
 
-      let newFunnelRevenue = 0
+      let newFunnelRevenueAds = 0
+      let newFunnelRevenueOther = 0
       let returningFunnelRevenue = 0
+      let newOrder = 0
+      let returningOrder = 0
 
       channelOrders.forEach((order) => {
         if (order.returning) {
           returningFunnelRevenue += order.total
+          returningOrder++
         } else {
-          newFunnelRevenue += order.total
+          newOrder++
+          // Check funnel source
+          const funnelSource = funnelSourceMap.get(
+            order.salesFunnelId.toString()
+          )
+          if (funnelSource === "ads") {
+            newFunnelRevenueAds += order.total
+          } else {
+            newFunnelRevenueOther += order.total
+          }
         }
       })
 
@@ -112,43 +138,48 @@ export class SalesDailyReportsService {
         0
       )
 
-      const accumulatedNewFunnelRevenue = previousReports.reduce(
-        (sum, report) => sum + (report.newFunnelRevenue || 0),
+      const accumulatedNewFunnelRevenueAds = previousReports.reduce(
+        (sum, report) => {
+          const adsRevenue =
+            typeof report.newFunnelRevenue === "number"
+              ? 0 // Old format, no way to split
+              : report.newFunnelRevenue?.ads || 0
+          return sum + adsRevenue
+        },
         0
       )
 
-      // Get accumulated ads cost from DailyAds
-      const adsFilter: any = {
-        date: { $gte: startOfMonth, $lte: endOfPreviousDay },
-        channel: new Types.ObjectId(channelId)
-      }
+      const accumulatedNewFunnelRevenueOther = previousReports.reduce(
+        (sum, report) => {
+          const otherRevenue =
+            typeof report.newFunnelRevenue === "number"
+              ? report.newFunnelRevenue // Old format goes to "other"
+              : report.newFunnelRevenue?.other || 0
+          return sum + otherRevenue
+        },
+        0
+      )
 
-      const adsAgg = await this.dailyAdsModel.aggregate([
-        { $match: adsFilter },
-        {
-          $group: {
-            _id: null,
-            totalAdsCost: {
-              $sum: {
-                $add: [
-                  { $ifNull: ["$liveAdsCost", 0] },
-                  { $ifNull: ["$shopAdsCost", 0] }
-                ]
-              }
-            }
-          }
-        }
-      ])
-
-      const accumulatedAdsCost = adsAgg?.[0]?.totalAdsCost || 0
+      const accumulatedAdsCost = previousReports.reduce(
+        (sum, report) => sum + (report.adsCost || 0),
+        0
+      )
 
       return {
         revenue,
-        newFunnelRevenue,
+        newFunnelRevenue: {
+          ads: newFunnelRevenueAds,
+          other: newFunnelRevenueOther
+        },
         returningFunnelRevenue,
+        newOrder,
+        returningOrder,
         accumulatedRevenue,
         accumulatedAdsCost,
-        accumulatedNewFunnelRevenue
+        accumulatedNewFunnelRevenue: {
+          ads: accumulatedNewFunnelRevenueAds,
+          other: accumulatedNewFunnelRevenueOther
+        }
       }
     } catch (error) {
       console.error("Error in getRevenueForDate:", error)
@@ -168,11 +199,19 @@ export class SalesDailyReportsService {
     adsCost: number
     dateKpi: number
     revenue: number
-    newFunnelRevenue: number
+    newFunnelRevenue: {
+      ads: number
+      other: number
+    }
     returningFunnelRevenue: number
+    newOrder: number
+    returningOrder: number
     accumulatedRevenue: number
     accumulatedAdsCost: number
-    accumulatedNewFunnelRevenue: number
+    accumulatedNewFunnelRevenue: {
+      ads: number
+      other: number
+    }
   }): Promise<SalesDailyReport> {
     try {
       const report = new this.salesDailyReportModel({
@@ -183,6 +222,8 @@ export class SalesDailyReportsService {
         revenue: payload.revenue,
         newFunnelRevenue: payload.newFunnelRevenue,
         returningFunnelRevenue: payload.returningFunnelRevenue,
+        newOrder: payload.newOrder,
+        returningOrder: payload.returningOrder,
         accumulatedRevenue: payload.accumulatedRevenue,
         accumulatedAdsCost: payload.accumulatedAdsCost,
         accumulatedNewFunnelRevenue: payload.accumulatedNewFunnelRevenue,
