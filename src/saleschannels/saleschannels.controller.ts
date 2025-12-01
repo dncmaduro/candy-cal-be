@@ -32,7 +32,13 @@ export class SalesChannelsController {
   @HttpCode(HttpStatus.CREATED)
   async createChannel(
     @Body()
-    body: { channelName: string; assignedTo?: string; phoneNumber: string },
+    body: {
+      channelName: string
+      assignedTo?: string
+      phoneNumber: string
+      address: string
+      avatarUrl: string
+    },
     @Req() req
   ): Promise<SalesChannel> {
     const created = await this.salesChannelsService.createChannel(body)
@@ -55,7 +61,13 @@ export class SalesChannelsController {
   async updateChannel(
     @Param("id") id: string,
     @Body()
-    body: { channelName?: string; assignedTo?: string; phoneNumber?: string },
+    body: {
+      channelName?: string
+      assignedTo?: string
+      phoneNumber?: string
+      address?: string
+      avatarUrl?: string
+    },
     @Req() req
   ): Promise<SalesChannel> {
     const updated = await this.salesChannelsService.updateChannel(id, body)
