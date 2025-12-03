@@ -99,8 +99,12 @@ export class SalesDailyReportsService {
       let returningOrder = 0
 
       channelOrders.forEach((order) => {
+        const totalDiscount =
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
+        const actualRevenue = order.total - totalDiscount
+
         if (order.returning) {
-          returningFunnelRevenue += order.total
+          returningFunnelRevenue += actualRevenue
           returningOrder++
         } else {
           newOrder++
@@ -109,9 +113,9 @@ export class SalesDailyReportsService {
             order.salesFunnelId.toString()
           )
           if (funnelSource === "ads") {
-            newFunnelRevenueAds += order.total
+            newFunnelRevenueAds += actualRevenue
           } else {
-            newFunnelRevenueOther += order.total
+            newFunnelRevenueOther += actualRevenue
           }
         }
       })

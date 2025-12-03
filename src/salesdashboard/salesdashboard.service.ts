@@ -74,11 +74,11 @@ export class SalesDashboardService {
     endDate: Date
   ): Promise<RevenueStatsResponse> {
     try {
-      // Set time boundaries
+      // Set time boundaries using UTC to avoid timezone issues
       const start = new Date(startDate)
-      start.setHours(0, 0, 0, 0)
+      start.setUTCHours(0, 0, 0, 0)
       const end = new Date(endDate)
-      end.setHours(23, 59, 59, 999)
+      end.setUTCHours(23, 59, 59, 999)
 
       // Get all orders in date range (only official status)
       const orders = await this.salesOrderModel
@@ -96,7 +96,11 @@ export class SalesDashboardService {
         .lean()
 
       // Calculate total revenue and total orders
-      const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0)
+      const totalRevenue = orders.reduce((sum, order) => {
+        const totalDiscount =
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
+        return sum + order.total - totalDiscount
+      }, 0)
       const totalOrders = orders.length
 
       // Calculate revenue from new vs returning customers
@@ -104,10 +108,14 @@ export class SalesDashboardService {
       let revenueFromReturningCustomers = 0
 
       orders.forEach((order) => {
+        const totalDiscount =
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
+        const actualRevenue = order.total - totalDiscount
+
         if (order.returning) {
-          revenueFromReturningCustomers += order.total
+          revenueFromReturningCustomers += actualRevenue
         } else {
-          revenueFromNewCustomers += order.total
+          revenueFromNewCustomers += actualRevenue
         }
       })
 
@@ -161,15 +169,19 @@ export class SalesDashboardService {
             : funnel.channel.toString()
           const channelName = funnel.channel.channelName || "Unknown"
 
+          const totalDiscount =
+            (order.orderDiscount || 0) + (order.otherDiscount || 0)
+          const actualRevenue = order.total - totalDiscount
+
           const existing = channelMap.get(channelId)
           if (existing) {
-            existing.revenue += order.total
+            existing.revenue += actualRevenue
             existing.orderCount += 1
           } else {
             channelMap.set(channelId, {
               channelId,
               channelName,
-              revenue: order.total,
+              revenue: actualRevenue,
               orderCount: 1
             })
           }
@@ -189,32 +201,36 @@ export class SalesDashboardService {
             : funnel.user.toString()
           const userName = funnel.user.name || "Unknown"
 
+          const totalDiscount =
+            (order.orderDiscount || 0) + (order.otherDiscount || 0)
+          const actualRevenue = order.total - totalDiscount
+
           const existing = userMap.get(userId)
           if (existing) {
-            existing.revenue += order.total
+            existing.revenue += actualRevenue
             existing.orderCount += 1
 
             // Update order count by customer type
             if (order.returning) {
               existing.ordersByCustomerType.returning += 1
-              existing.revenueByCustomerType.returning += order.total
+              existing.revenueByCustomerType.returning += actualRevenue
             } else {
               existing.ordersByCustomerType.new += 1
-              existing.revenueByCustomerType.new += order.total
+              existing.revenueByCustomerType.new += actualRevenue
             }
           } else {
             userMap.set(userId, {
               userId,
               userName,
-              revenue: order.total,
+              revenue: actualRevenue,
               orderCount: 1,
               ordersByCustomerType: {
                 new: order.returning ? 0 : 1,
                 returning: order.returning ? 1 : 0
               },
               revenueByCustomerType: {
-                new: order.returning ? 0 : order.total,
-                returning: order.returning ? order.total : 0
+                new: order.returning ? 0 : actualRevenue,
+                returning: order.returning ? actualRevenue : 0
               }
             })
           }
@@ -249,9 +265,9 @@ export class SalesDashboardService {
     month: number
   ): Promise<MetricsResponse> {
     try {
-      // Month boundaries
-      const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
-      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
+      // Month boundaries using UTC to avoid timezone issues
+      const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0))
+      const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
 
       // Get all orders in this month (only official status)
       const orders = await this.salesOrderModel
