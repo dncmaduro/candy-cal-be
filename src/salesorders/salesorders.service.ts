@@ -19,7 +19,8 @@ interface XlsxSalesOrderData {
   "Số lượng"?: number
   Kho?: string
   Ngày?: string
-  "Giảm giá"?: number
+  "Giảm giá đơn hàng"?: number
+  "Giảm giá khác"?: number
   "Đặt cọc"?: number
   Thuế?: number
   "Phí ship"?: number
@@ -45,7 +46,8 @@ export class SalesOrdersService {
     items: { code: string; quantity: number; note?: string }[]
     storage: SalesOrderStorage
     date: Date
-    discount?: number
+    orderDiscount?: number
+    otherDiscount?: number
     deposit?: number
     note?: string
   }): Promise<SalesOrder> {
@@ -115,7 +117,8 @@ export class SalesOrdersService {
         storage: payload.storage,
         date: payload.date,
         total,
-        discount: payload.discount || 0,
+        orderDiscount: payload.orderDiscount || 0,
+        otherDiscount: payload.otherDiscount || 0,
         deposit: payload.deposit || 0,
         phoneNumber,
         address,
@@ -220,8 +223,11 @@ export class SalesOrdersService {
           const dateValue = firstRow["Ngày"]
             ? firstRow["Ngày"].toString().trim()
             : ""
-          const discount = firstRow["Giảm giá"]
-            ? Number(firstRow["Giảm giá"])
+          const orderDiscount = firstRow["Giảm giá đơn hàng"]
+            ? Number(firstRow["Giảm giá đơn hàng"])
+            : 0
+          const otherDiscount = firstRow["Giảm giá khác"]
+            ? Number(firstRow["Giảm giá khác"])
             : 0
           const deposit = firstRow["Đặt cọc"] ? Number(firstRow["Đặt cọc"]) : 0
           const tax = firstRow["Thuế"] ? Number(firstRow["Thuế"]) : 0
@@ -356,7 +362,8 @@ export class SalesOrdersService {
             storage,
             date,
             total,
-            discount,
+            orderDiscount,
+            otherDiscount,
             deposit,
             tax,
             shippingCost,
@@ -413,7 +420,8 @@ export class SalesOrdersService {
       "Số lượng",
       "Kho",
       "Ngày",
-      "Giảm giá",
+      "Giảm giá đơn hàng",
+      "Giảm giá khác",
       "Đặt cọc",
       "Thuế",
       "Phí ship",
@@ -432,6 +440,7 @@ export class SalesOrdersService {
         0,
         0,
         0,
+        0,
         30000,
         "VTP123456",
         "VTP"
@@ -442,6 +451,7 @@ export class SalesOrdersService {
         5,
         "Kho Hà Nội",
         "2024-01-01",
+        0,
         0,
         0,
         0,
@@ -456,6 +466,7 @@ export class SalesOrdersService {
         "Kho MKT",
         "2024-01-15",
         5000,
+        2000,
         100000,
         10000,
         50000,
@@ -477,7 +488,8 @@ export class SalesOrdersService {
       { wch: 12 }, // Số lượng
       { wch: 12 }, // Kho
       { wch: 15 }, // Ngày
-      { wch: 12 }, // Giảm giá
+      { wch: 18 }, // Giảm giá đơn hàng
+      { wch: 15 }, // Giảm giá khác
       { wch: 12 }, // Đặt cọc
       { wch: 12 }, // Thuế
       { wch: 12 }, // Phí ship
@@ -502,7 +514,8 @@ export class SalesOrdersService {
       note?: string
     }[],
     storage?: SalesOrderStorage,
-    discount?: number,
+    orderDiscount?: number,
+    otherDiscount?: number,
     deposit?: number
   ): Promise<SalesOrder> {
     try {
@@ -575,8 +588,11 @@ export class SalesOrdersService {
       if (storage !== undefined) {
         order.storage = storage
       }
-      if (discount !== undefined) {
-        order.discount = discount
+      if (orderDiscount !== undefined) {
+        order.orderDiscount = orderDiscount
+      }
+      if (otherDiscount !== undefined) {
+        order.otherDiscount = otherDiscount
       }
       if (deposit !== undefined) {
         order.deposit = deposit

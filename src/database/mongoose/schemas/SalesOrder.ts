@@ -24,7 +24,8 @@ export interface SalesOrder extends Document {
   shippingType?: SalesOrderShippingType
   date: Date
   total: number
-  discount: number
+  orderDiscount: number
+  otherDiscount: number
   deposit: number
   tax: number
   shippingCost: number
@@ -68,7 +69,8 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   returning: { type: Boolean, default: false, required: false },
   date: { type: Date, required: true },
   total: { type: Number, required: true },
-  discount: { type: Number, required: true, default: 0 },
+  orderDiscount: { type: Number, required: true, default: 0 },
+  otherDiscount: { type: Number, required: true, default: 0 },
   deposit: { type: Number, required: true, default: 0 },
   tax: { type: Number, required: true, default: 0 },
   shippingCost: { type: Number, required: true, default: 0 },

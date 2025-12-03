@@ -47,7 +47,8 @@ export class SalesOrdersController {
       items: { code: string; quantity: number }[]
       storage: SalesOrderStorage
       date: string
-      discount?: number
+      orderDiscount?: number
+      otherDiscount?: number
       deposit?: number
       note?: string
     },
@@ -58,7 +59,8 @@ export class SalesOrdersController {
       items: body.items,
       storage: body.storage,
       date: new Date(body.date),
-      discount: body.discount,
+      orderDiscount: body.orderDiscount,
+      otherDiscount: body.otherDiscount,
       deposit: body.deposit
     })
     void this.systemLogsService.createSystemLog(
@@ -139,7 +141,8 @@ export class SalesOrdersController {
         quantity: number
       }[]
       storage?: SalesOrderStorage
-      discount?: number
+      orderDiscount?: number
+      otherDiscount?: number
       deposit?: number
       note?: string
     },
@@ -149,7 +152,8 @@ export class SalesOrdersController {
       id,
       body.items,
       body.storage,
-      body.discount,
+      body.orderDiscount,
+      body.otherDiscount,
       body.deposit
     )
     void this.systemLogsService.createSystemLog(
