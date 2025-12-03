@@ -923,11 +923,12 @@ export class SalesFunnelService {
 
       let totalIncome = 0
       orders.forEach((order) => {
-        // Calculate final amount: total - discount + tax + shippingCost
+        // Calculate final amount: total - orderDiscount - otherDiscount + tax + shippingCost
+        const totalDiscount =
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
         const orderAmount =
           order.total -
-          (order.discount || 0) *
-            order.items.reduce((sum, item) => sum + item.quantity, 0) +
+          totalDiscount +
           (order.tax || 0) +
           (order.shippingCost || 0) -
           (order.deposit || 0)
