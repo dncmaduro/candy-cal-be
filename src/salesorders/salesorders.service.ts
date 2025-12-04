@@ -843,15 +843,36 @@ export class SalesOrdersService {
         }
       }
 
+      // Handle search text - search by funnel name, phone number, shipping code, item code, item name
       if (filters.searchText && filters.searchText.trim().length > 0) {
+        const searchText = filters.searchText.trim()
+
+        // First, find funnels matching name or phone number
+        const matchingFunnels = await this.salesFunnelModel
+          .find({
+            $or: [
+              { name: { $regex: `.*${searchText}.*`, $options: "i" } },
+              { phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" } },
+              {
+                secondaryPhoneNumbers: {
+                  $regex: `.*${searchText}.*`,
+                  $options: "i"
+                }
+              }
+            ]
+          })
+          .distinct("_id")
+
         const searchRegex = {
-          $regex: `.*${filters.searchText.trim()}.*`,
+          $regex: `.*${searchText}.*`,
           $options: "i"
         }
+
         filter.$or = [
           { shippingCode: searchRegex },
           { "items.code": searchRegex },
-          { "items.name": searchRegex }
+          { "items.name": searchRegex },
+          { salesFunnelId: { $in: matchingFunnels } }
         ]
       }
 
@@ -1070,14 +1091,34 @@ export class SalesOrdersService {
       }
 
       if (filters.searchText && filters.searchText.trim().length > 0) {
+        const searchText = filters.searchText.trim()
+
+        // First, find funnels matching name or phone number
+        const matchingFunnels = await this.salesFunnelModel
+          .find({
+            $or: [
+              { name: { $regex: `.*${searchText}.*`, $options: "i" } },
+              { phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" } },
+              {
+                secondaryPhoneNumbers: {
+                  $regex: `.*${searchText}.*`,
+                  $options: "i"
+                }
+              }
+            ]
+          })
+          .distinct("_id")
+
         const searchRegex = {
-          $regex: `.*${filters.searchText.trim()}.*`,
+          $regex: `.*${searchText}.*`,
           $options: "i"
         }
+
         filter.$or = [
           { shippingCode: searchRegex },
           { "items.code": searchRegex },
-          { "items.name": searchRegex }
+          { "items.name": searchRegex },
+          { salesFunnelId: { $in: matchingFunnels } }
         ]
       }
 
