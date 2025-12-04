@@ -48,8 +48,6 @@ export class SalesDailyReportsService {
   }> {
     try {
       const targetDate = new Date(date)
-      targetDate.setUTCHours(0, 0, 0, 0)
-      targetDate.setDate(targetDate.getDate() + 1)
 
       // Get revenue stats for the specific date using salesdashboard service
       const stats = await this.salesDashboardService.getRevenueStats(
