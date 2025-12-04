@@ -734,7 +734,7 @@ export class SalesFunnelService {
         .findById(id)
         .populate("province", "name")
         .populate("channel", "channelName")
-        .populate("user", "username")
+        .populate("user", "username name")
         .lean()
 
       if (!funnel) {
