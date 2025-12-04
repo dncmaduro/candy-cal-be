@@ -249,7 +249,7 @@ export class SalesDailyReportsService {
   }
 
   /**
-   * 3. Soft delete a report
+   * 3. Hard delete a report
    */
   async deleteReport(reportId: string): Promise<void> {
     try {
@@ -258,9 +258,7 @@ export class SalesDailyReportsService {
         throw new HttpException("Báo cáo không tồn tại", HttpStatus.NOT_FOUND)
       }
 
-      report.deletedAt = new Date()
-      report.updatedAt = new Date()
-      await report.save()
+      await this.salesDailyReportModel.findByIdAndDelete(reportId)
     } catch (error) {
       if (error instanceof HttpException) throw error
       console.error("Error in deleteReport:", error)

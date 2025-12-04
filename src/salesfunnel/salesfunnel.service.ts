@@ -587,6 +587,7 @@ export class SalesFunnelService {
       endDate?: Date
       noActivityDays?: number
       funnelSource?: SalesFunnelSource
+      deleted?: boolean
     },
     page = 1,
     limit = 10
@@ -602,6 +603,14 @@ export class SalesFunnelService {
         filter.province = new Types.ObjectId(filters.province)
       if (filters.user) filter.user = new Types.ObjectId(filters.user)
       if (filters.funnelSource) filter.funnelSource = filters.funnelSource
+
+      // Filter by deleted status
+      if (filters.deleted === true) {
+        filter.deletedAt = { $ne: null }
+      } else if (filters.deleted === false) {
+        filter.deletedAt = null
+      }
+      // If deleted is undefined, show all (both deleted and not deleted)
 
       // Date range filter
       if (filters.startDate || filters.endDate) {
@@ -989,6 +998,85 @@ export class SalesFunnelService {
       console.error("Error in getFunnelsByUser:", error)
       throw new HttpException(
         "Lỗi khi lấy danh sách funnel của nhân viên",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async softDelete(
+    id: string,
+    userId: string,
+    isAdmin = false
+  ): Promise<SalesFunnel> {
+    try {
+      const funnel = await this.salesFunnelModel.findById(id)
+      if (!funnel) {
+        throw new HttpException("Funnel not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Check if already deleted
+      if (funnel.deletedAt) {
+        throw new HttpException(
+          "Funnel đã bị xóa trước đó",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      // Check permission: only admin or responsible user can delete
+      if (!isAdmin && funnel.user.toString() !== userId) {
+        throw new HttpException(
+          "Bạn không có quyền xóa funnel này",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
+      funnel.deletedAt = new Date()
+      funnel.updatedAt = new Date()
+
+      return await funnel.save()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in softDelete:", error)
+      throw new HttpException(
+        "Lỗi khi xóa funnel",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async restoreFunnel(
+    id: string,
+    userId: string,
+    isAdmin = false
+  ): Promise<SalesFunnel> {
+    try {
+      const funnel = await this.salesFunnelModel.findById(id)
+      if (!funnel) {
+        throw new HttpException("Funnel not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Check if not deleted
+      if (!funnel.deletedAt) {
+        throw new HttpException("Funnel chưa bị xóa", HttpStatus.BAD_REQUEST)
+      }
+
+      // Check permission: only admin or responsible user can restore
+      if (!isAdmin && funnel.user.toString() !== userId) {
+        throw new HttpException(
+          "Bạn không có quyền khôi phục funnel này",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
+      funnel.deletedAt = undefined
+      funnel.updatedAt = new Date()
+
+      return await funnel.save()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in restoreFunnel:", error)
+      throw new HttpException(
+        "Lỗi khi khôi phục funnel",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
