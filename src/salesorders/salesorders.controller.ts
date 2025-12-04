@@ -250,6 +250,7 @@ export class SalesOrdersController {
   async searchOrders(
     @Query("salesFunnelId") salesFunnelId?: string,
     @Query("userId") userId?: string,
+    @Query("channelId") channelId?: string,
     @Query("returning") returning?: string,
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
@@ -263,6 +264,7 @@ export class SalesOrdersController {
       {
         salesFunnelId,
         userId,
+        channelId,
         returning:
           returning === "true"
             ? true
@@ -329,6 +331,7 @@ export class SalesOrdersController {
   async exportOrdersToExcel(
     @Query("salesFunnelId") salesFunnelId?: string,
     @Query("userId") userId?: string,
+    @Query("channelId") channelId?: string,
     @Query("returning") returning?: string,
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
@@ -340,6 +343,7 @@ export class SalesOrdersController {
     const buffer = await this.salesOrdersService.exportOrdersToExcel({
       salesFunnelId,
       userId,
+      channelId,
       returning:
         returning === "true" ? true : returning === "false" ? false : undefined,
       startDate: startDate ? new Date(startDate) : undefined,
