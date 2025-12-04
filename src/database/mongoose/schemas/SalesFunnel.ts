@@ -24,6 +24,7 @@ export interface SalesFunnel extends Document {
   fromSystem?: boolean
   createdAt: Date
   updatedAt: Date
+  deletedAt?: Date
 }
 
 export const SalesFunnelSchema = new Schema<SalesFunnel>({
@@ -71,7 +72,8 @@ export const SalesFunnelSchema = new Schema<SalesFunnel>({
   },
   fromSystem: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  deletedAt: { type: Date, required: false }
 })
 
 export const SalesFunnelModel = model<SalesFunnel>(
