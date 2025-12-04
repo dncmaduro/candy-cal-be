@@ -99,7 +99,9 @@ export class SalesDashboardService {
       const totalRevenue = orders.reduce((sum, order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
-        return sum + order.total - totalDiscount
+        const tax = order.tax || 0
+        const shippingCost = order.shippingCost || 0
+        return sum + order.total - totalDiscount + tax + shippingCost
       }, 0)
       const totalOrders = orders.length
 
@@ -110,7 +112,9 @@ export class SalesDashboardService {
       orders.forEach((order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
-        const actualRevenue = order.total - totalDiscount
+        const tax = order.tax || 0
+        const shippingCost = order.shippingCost || 0
+        const actualRevenue = order.total - totalDiscount + tax + shippingCost
 
         if (order.returning) {
           revenueFromReturningCustomers += actualRevenue
@@ -171,7 +175,9 @@ export class SalesDashboardService {
 
           const totalDiscount =
             (order.orderDiscount || 0) + (order.otherDiscount || 0)
-          const actualRevenue = order.total - totalDiscount
+          const tax = order.tax || 0
+          const shippingCost = order.shippingCost || 0
+          const actualRevenue = order.total - totalDiscount + tax + shippingCost
 
           const existing = channelMap.get(channelId)
           if (existing) {
@@ -203,7 +209,9 @@ export class SalesDashboardService {
 
           const totalDiscount =
             (order.orderDiscount || 0) + (order.otherDiscount || 0)
-          const actualRevenue = order.total - totalDiscount
+          const tax = order.tax || 0
+          const shippingCost = order.shippingCost || 0
+          const actualRevenue = order.total - totalDiscount + tax + shippingCost
 
           const existing = userMap.get(userId)
           if (existing) {
