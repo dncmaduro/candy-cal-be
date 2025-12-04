@@ -48,7 +48,8 @@ export class SalesDailyReportsService {
   }> {
     try {
       const targetDate = new Date(date)
-      targetDate.setHours(0, 0, 0, 0)
+      targetDate.setUTCHours(0, 0, 0, 0)
+      targetDate.setDate(targetDate.getDate() + 1)
 
       // Get revenue stats for the specific date using salesdashboard service
       const stats = await this.salesDashboardService.getRevenueStats(
@@ -66,9 +67,9 @@ export class SalesDailyReportsService {
       // Calculate new/returning funnel revenue for this specific channel
       // We need to query orders directly for this channel
       const startOfDay = new Date(targetDate)
-      startOfDay.setHours(0, 0, 0, 0)
+      startOfDay.setUTCHours(0, 0, 0, 0)
       const endOfDay = new Date(targetDate)
-      endOfDay.setHours(23, 59, 59, 999)
+      endOfDay.setUTCHours(23, 59, 59, 999)
 
       // Get funnels for this channel
       const funnels = await this.salesFunnelModel
@@ -101,7 +102,9 @@ export class SalesDailyReportsService {
       channelOrders.forEach((order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
-        const actualRevenue = order.total - totalDiscount
+        const tax = order.tax || 0
+        const shippingCost = order.shippingCost || 0
+        const actualRevenue = order.total - totalDiscount + tax + shippingCost
 
         if (order.returning) {
           returningFunnelRevenue += actualRevenue
@@ -124,9 +127,11 @@ export class SalesDailyReportsService {
       const year = targetDate.getFullYear()
       const month = targetDate.getMonth()
       const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
+      startOfMonth.setUTCHours(0, 0, 0, 0)
+      startOfMonth.setDate(startOfMonth.getDate() + 1)
       const endOfPreviousDay = new Date(targetDate)
       endOfPreviousDay.setDate(endOfPreviousDay.getDate() - 1)
-      endOfPreviousDay.setHours(23, 59, 59, 999)
+      endOfPreviousDay.setUTCHours(23, 59, 59, 999)
 
       // Get all reports from start of month to previous day
       const previousReports = await this.salesDailyReportModel
