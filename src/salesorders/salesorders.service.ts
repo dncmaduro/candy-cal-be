@@ -831,8 +831,16 @@ export class SalesOrdersService {
 
       if (filters.startDate || filters.endDate) {
         filter.date = {}
-        if (filters.startDate) filter.date.$gte = filters.startDate
-        if (filters.endDate) filter.date.$lte = filters.endDate
+        if (filters.startDate) {
+          const startDate = new Date(filters.startDate)
+          startDate.setUTCHours(startDate.getUTCHours() - 7)
+          filter.date.$gte = startDate
+        }
+        if (filters.endDate) {
+          const endDate = new Date(filters.endDate)
+          endDate.setUTCHours(endDate.getUTCHours() - 7)
+          filter.date.$lte = endDate
+        }
       }
 
       if (filters.searchText && filters.searchText.trim().length > 0) {
@@ -1047,8 +1055,18 @@ export class SalesOrdersService {
 
       if (filters.startDate || filters.endDate) {
         filter.date = {}
-        if (filters.startDate) filter.date.$gte = filters.startDate
-        if (filters.endDate) filter.date.$lte = filters.endDate
+        // minus startDate 7 hours
+        if (filters.startDate) {
+          const startDate = new Date(filters.startDate)
+          startDate.setUTCHours(startDate.getUTCHours() - 7)
+          filter.date.$gte = startDate
+        }
+        // minus endDate 7 hours
+        if (filters.endDate) {
+          const endDate = new Date(filters.endDate)
+          endDate.setUTCHours(endDate.getUTCHours() - 7)
+          filter.date.$lte = endDate
+        }
       }
 
       if (filters.searchText && filters.searchText.trim().length > 0) {
