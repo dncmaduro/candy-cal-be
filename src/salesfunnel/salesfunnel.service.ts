@@ -458,21 +458,6 @@ export class SalesFunnelService {
 
       const currentStage = funnel.stage
 
-      // Validate stage transitions
-      if (newStage === "contacted" && currentStage !== "lead") {
-        throw new HttpException(
-          "Contacted chỉ có thể chuyển từ lead",
-          HttpStatus.BAD_REQUEST
-        )
-      }
-
-      if (newStage === "customer" && currentStage !== "contacted") {
-        throw new HttpException(
-          "Customer chỉ có thể chuyển từ contacted",
-          HttpStatus.BAD_REQUEST
-        )
-      }
-
       // closed can be from any stage, no validation needed
 
       funnel.stage = newStage
