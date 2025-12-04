@@ -232,6 +232,7 @@ export class SalesFunnelController {
     @Query("endDate") endDate?: string,
     @Query("noActivityDays") noActivityDays?: string,
     @Query("funnelSource") funnelSource?: SalesFunnelSource,
+    @Query("deleted") deleted?: string,
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: any[]; total: number }> {
@@ -246,7 +247,9 @@ export class SalesFunnelController {
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
         noActivityDays: noActivityDays ? Number(noActivityDays) : undefined,
-        funnelSource
+        funnelSource,
+        deleted:
+          deleted === "true" ? true : deleted === "false" ? false : undefined
       },
       Number(page),
       Number(limit)
@@ -344,5 +347,54 @@ export class SalesFunnelController {
       Number(limit)
     )
     return { data }
+  }
+
+  @Roles("admin", "sales-emp")
+  @Patch(":id/delete")
+  @HttpCode(HttpStatus.OK)
+  async softDelete(@Param("id") id: string, @Req() req): Promise<SalesFunnel> {
+    const isAdmin = req.user.roles?.includes("admin") || false
+    const deleted = await this.salesFunnelService.softDelete(
+      id,
+      req.user.userId,
+      isAdmin
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesfunnel",
+        action: "soft_deleted",
+        entity: "salesfunnel",
+        entityId: deleted._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return deleted
+  }
+
+  @Roles("admin", "sales-emp")
+  @Patch(":id/restore")
+  @HttpCode(HttpStatus.OK)
+  async restoreFunnel(
+    @Param("id") id: string,
+    @Req() req
+  ): Promise<SalesFunnel> {
+    const isAdmin = req.user.roles?.includes("admin") || false
+    const restored = await this.salesFunnelService.restoreFunnel(
+      id,
+      req.user.userId,
+      isAdmin
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesfunnel",
+        action: "restored",
+        entity: "salesfunnel",
+        entityId: restored._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return restored
   }
 }
