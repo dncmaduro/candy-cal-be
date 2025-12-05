@@ -1280,6 +1280,8 @@ export class SalesOrdersService {
 
   async convertToOfficial(
     orderId: string,
+    shippingCode: string,
+    shippingType: SalesOrderShippingType,
     tax: number,
     shippingCost: number
   ): Promise<SalesOrder> {
@@ -1297,6 +1299,8 @@ export class SalesOrdersService {
       }
 
       order.status = "official"
+      order.shippingCode = shippingCode
+      order.shippingType = shippingType
       order.tax = tax
       order.shippingCost = shippingCost
       order.updatedAt = new Date()

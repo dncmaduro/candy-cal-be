@@ -367,11 +367,19 @@ export class SalesOrdersController {
   @HttpCode(HttpStatus.OK)
   async convertToOfficial(
     @Param("id") id: string,
-    @Body() body: { tax: number; shippingCost: number },
+    @Body()
+    body: {
+      shippingCode: string
+      shippingType: SalesOrderShippingType
+      tax: number
+      shippingCost: number
+    },
     @Req() req
   ): Promise<SalesOrder> {
     const updated = await this.salesOrdersService.convertToOfficial(
       id,
+      body.shippingCode,
+      body.shippingType,
       body.tax,
       body.shippingCost
     )
