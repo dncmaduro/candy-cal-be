@@ -180,10 +180,14 @@ export class SalesOrdersController {
       shippingType?: SalesOrderShippingType
       tax?: number
       shippingCost?: number
+      receivedDate?: string
     },
     @Req() req
   ): Promise<SalesOrder> {
-    const updated = await this.salesOrdersService.updateShippingAndTax(id, body)
+    const updated = await this.salesOrdersService.updateShippingAndTax(id, {
+      ...body,
+      receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined
+    })
     void this.systemLogsService.createSystemLog(
       {
         type: "salesorders",
@@ -373,6 +377,7 @@ export class SalesOrdersController {
       shippingType: SalesOrderShippingType
       tax: number
       shippingCost: number
+      receivedDate?: string
     },
     @Req() req
   ): Promise<SalesOrder> {
@@ -381,7 +386,8 @@ export class SalesOrdersController {
       body.shippingCode,
       body.shippingType,
       body.tax,
-      body.shippingCost
+      body.shippingCost,
+      body.receivedDate ? new Date(body.receivedDate) : undefined
     )
     void this.systemLogsService.createSystemLog(
       {
