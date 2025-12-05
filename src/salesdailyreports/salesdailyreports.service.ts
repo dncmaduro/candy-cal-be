@@ -280,7 +280,9 @@ export class SalesDailyReportsService {
   ): Promise<{ data: SalesDailyReport[]; total: number }> {
     try {
       const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
+      startOfMonth.setUTCHours(startOfMonth.getUTCHours() - 7)
       const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
+      endOfMonth.setUTCHours(endOfMonth.getUTCHours() - 7)
 
       const filter: any = {
         date: { $gte: startOfMonth, $lte: endOfMonth }
