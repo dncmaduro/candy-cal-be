@@ -352,6 +352,7 @@ export class SalesDailyReportsService {
   ): Promise<SalesMonthKpi | null> {
     try {
       const targetDate = new Date(date)
+      targetDate.setUTCHours(targetDate.getUTCHours() + 7)
       const month = targetDate.getMonth() + 1 // 1-based month
       const year = targetDate.getFullYear()
 
