@@ -124,12 +124,12 @@ export class SalesDailyReportsService {
       // Calculate accumulated values for the month
       const year = targetDate.getFullYear()
       const month = targetDate.getMonth()
+      // minus 7 hours
       const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
-      startOfMonth.setUTCHours(0, 0, 0, 0)
-      startOfMonth.setDate(startOfMonth.getDate() + 1)
+      startOfMonth.setUTCHours(startOfMonth.getUTCHours() - 7)
       const endOfPreviousDay = new Date(targetDate)
-      endOfPreviousDay.setDate(endOfPreviousDay.getDate() - 1)
       endOfPreviousDay.setUTCHours(23, 59, 59, 999)
+      endOfPreviousDay.setUTCHours(endOfPreviousDay.getUTCHours() - 7)
 
       // Get all reports from start of month to previous day
       const previousReports = await this.salesDailyReportModel
@@ -173,19 +173,19 @@ export class SalesDailyReportsService {
       )
 
       return {
-        revenue,
+        revenue: Math.round(revenue),
         newFunnelRevenue: {
-          ads: newFunnelRevenueAds,
-          other: newFunnelRevenueOther
+          ads: Math.round(newFunnelRevenueAds),
+          other: Math.round(newFunnelRevenueOther)
         },
-        returningFunnelRevenue,
+        returningFunnelRevenue: Math.round(returningFunnelRevenue),
         newOrder,
         returningOrder,
-        accumulatedRevenue,
-        accumulatedAdsCost,
+        accumulatedRevenue: Math.round(accumulatedRevenue),
+        accumulatedAdsCost: Math.round(accumulatedAdsCost),
         accumulatedNewFunnelRevenue: {
-          ads: accumulatedNewFunnelRevenueAds,
-          other: accumulatedNewFunnelRevenueOther
+          ads: Math.round(accumulatedNewFunnelRevenueAds),
+          other: Math.round(accumulatedNewFunnelRevenueOther)
         }
       }
     } catch (error) {
