@@ -37,6 +37,7 @@ export interface SalesOrder extends Document {
     id: string
     name: string
   }
+  receivedDate?: Date
   createdAt: Date
   updatedAt: Date
 }
@@ -91,6 +92,7 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
     id: { type: String, required: true },
     name: { type: String, required: true }
   },
+  receivedDate: { type: Date, required: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })
