@@ -1056,14 +1056,11 @@ export class SalesOrdersService {
     try {
       // Build filter (same as searchOrders but without pagination)
       const filter: any = {}
-
-      // Only export official orders
-      filter.status = "official"
-
       if (filters.salesFunnelId)
         filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
       if (filters.returning !== undefined) filter.returning = filters.returning
       if (filters.shippingType) filter.shippingType = filters.shippingType
+      if (filters.status) filter.status = filters.status
 
       // Filter by channel (funnel channel)
       if (filters.channelId) {
@@ -1149,6 +1146,14 @@ export class SalesOrdersService {
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       const vtpOrders = orders
         .filter((o) => o.shippingType === "shipping_vtp")
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      const otherOrders = orders
+        .filter(
+          (o) =>
+            !o.shippingType ||
+            (o.shippingType !== "shipping_cargo" &&
+              o.shippingType !== "shipping_vtp")
+        )
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
       // Create workbook using ExcelJS
@@ -1255,6 +1260,15 @@ export class SalesOrdersService {
         collected: 0
       }
 
+      let otherTotals = {
+        quantity: 0,
+        thanhTien: 0,
+        tax: 0,
+        shipping: 0,
+        prepaid: 0,
+        collected: 0
+      }
+
       // Helper function to add order rows
       const addOrderRows = (
         order: any,
@@ -1274,13 +1288,17 @@ export class SalesOrdersService {
           customerInfo = `Shipcod (${funnelName} - ${provinceName})`
         } else if (order.shippingType === "shipping_cargo") {
           customerInfo = `Chành (${funnelName} - ${provinceName})`
+        } else {
+          customerInfo = `${funnelName} - ${provinceName}`
         }
 
         // Shipping type label
         const shippingTypeLabel =
           order.shippingType === "shipping_vtp"
             ? "VIETTEL POST"
-            : "SHIPCOD LÊN CHÀNH"
+            : order.shippingType === "shipping_cargo"
+              ? "SHIPCOD LÊN CHÀNH"
+              : "KHÁC"
 
         // Calculate tax (only for VTP)
         const taxValue =
@@ -1765,19 +1783,87 @@ export class SalesOrdersService {
         currentRow++
       }
 
+      // Add OTHER orders (always separate each order, similar to cargo)
+      otherOrders.forEach((order) => addOrderRows(order, otherTotals, false))
+
+      // Add summary row for OTHER immediately after other orders
+      if (otherOrders.length > 0) {
+        const otherSummaryRow = worksheet.addRow([
+          "Ngày",
+          "",
+          "",
+          "",
+          otherTotals.quantity, // Number format
+          "",
+          otherTotals.thanhTien, // Number format
+          Math.round(otherTotals.tax), // Number format
+          otherTotals.shipping, // Number format
+          otherTotals.prepaid, // Number format
+          Math.round(otherTotals.collected), // Number format
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ])
+
+        otherSummaryRow.height = 42
+
+        // Merge cells for "TỔNG CỘNG KHÁC"
+        worksheet.mergeCells(currentRow, 2, currentRow, 4)
+        worksheet.getCell(currentRow, 2).value = "TỔNG CỘNG KHÁC"
+
+        otherSummaryRow.font = {
+          name: "Times New Roman",
+          size: 12,
+          bold: true,
+          color: { argb: "FFFF0000" }
+        }
+        otherSummaryRow.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFA8E9E3" }
+        }
+        otherSummaryRow.alignment = { vertical: "middle", horizontal: "center" }
+
+        // Apply number format to summary cells
+        otherSummaryRow.getCell(5).numFmt = "#,##0"
+        otherSummaryRow.getCell(7).numFmt = "#,##0"
+        otherSummaryRow.getCell(8).numFmt = "#,##0"
+        otherSummaryRow.getCell(9).numFmt = "#,##0"
+        otherSummaryRow.getCell(10).numFmt = "#,##0"
+        otherSummaryRow.getCell(11).numFmt = "#,##0"
+
+        // Add borders to summary row (only columns 1-17)
+        for (let colNum = 1; colNum <= 17; colNum++) {
+          otherSummaryRow.getCell(colNum).border = {
+            top: { style: "thin", color: { argb: "FF000000" } },
+            left: { style: "thin", color: { argb: "FF000000" } },
+            bottom: { style: "thin", color: { argb: "FF000000" } },
+            right: { style: "thin", color: { argb: "FF000000" } }
+          }
+        }
+
+        currentRow++
+      }
+
       // Add grand total row
       const grandTotalRow = worksheet.addRow([
         "",
         "",
         "",
         "",
-        cargoTotals.quantity + vtpTotals.quantity, // Number format
+        cargoTotals.quantity + vtpTotals.quantity + otherTotals.quantity, // Number format
         "",
-        cargoTotals.thanhTien + vtpTotals.thanhTien, // Number format
-        Math.round(cargoTotals.tax + vtpTotals.tax), // Number format
-        cargoTotals.shipping + vtpTotals.shipping, // Number format
-        cargoTotals.prepaid + vtpTotals.prepaid, // Number format
-        Math.round(cargoTotals.collected + vtpTotals.collected), // Number format
+        cargoTotals.thanhTien + vtpTotals.thanhTien + otherTotals.thanhTien, // Number format
+        Math.round(cargoTotals.tax + vtpTotals.tax + otherTotals.tax), // Number format
+        cargoTotals.shipping + vtpTotals.shipping + otherTotals.shipping, // Number format
+        cargoTotals.prepaid + vtpTotals.prepaid + otherTotals.prepaid, // Number format
+        Math.round(
+          cargoTotals.collected + vtpTotals.collected + otherTotals.collected
+        ), // Number format
         "",
         "",
         "",
