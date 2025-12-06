@@ -1306,39 +1306,53 @@ export class SalesOrdersService {
             ? Math.round(order.total * 0.0075)
             : 0
 
-        for (let i = 0; i < order.items.length; i++) {
-          const item = order.items[i]
-          const thanhTien = item.price * item.quantity
+        // Build array of prepaid values (only non-zero values)
+        const prepaidValues: number[] = []
+        if (order.orderDiscount && order.orderDiscount > 0) {
+          prepaidValues.push(order.orderDiscount)
+        }
+        if (order.otherDiscount && order.otherDiscount > 0) {
+          prepaidValues.push(order.otherDiscount)
+        }
+        if (order.deposit && order.deposit > 0) {
+          prepaidValues.push(order.deposit)
+        }
+
+        // Calculate total rows needed (max of items count and prepaid values count)
+        const totalRowsNeeded = Math.max(
+          order.items.length,
+          prepaidValues.length
+        )
+
+        for (let i = 0; i < totalRowsNeeded; i++) {
+          const item = i < order.items.length ? order.items[i] : null
+          const thanhTien = item ? item.price * item.quantity : 0
 
           // Calculate "Thu tiền" for this item
           const taxForRow = i === 0 ? taxValue : 0
           const shippingForRow = i === 0 ? order.shippingCost || 0 : 0
-          const prepaidForRow =
-            i === 0
-              ? order.orderDiscount || 0
-              : i === 1
-                ? order.otherDiscount || 0
-                : 0
-          const thuTien = Math.round(
-            thanhTien + taxForRow + shippingForRow - prepaidForRow
-          )
+          const prepaidForRow = i < prepaidValues.length ? prepaidValues[i] : 0
+
+          // If there's an item, calculate normally
+          // If no item but has prepaid value, show negative prepaid value
+          const thuTien = item
+            ? Math.round(thanhTien + taxForRow + shippingForRow - prepaidForRow)
+            : prepaidForRow > 0
+              ? -prepaidForRow
+              : 0
 
           const row = worksheet.addRow([
             formatDateExtended(order.date), // Always show date
             customerInfo, // Always show NPP
-            item.code,
-            item.name,
-            item.quantity,
-            item.price, // Number format
-            thanhTien, // Number format
+            item ? item.code : "",
+            item ? item.name : "",
+            item ? item.quantity : "",
+            item ? item.price : "", // Number format
+            item ? thanhTien : "", // Number format
             i === 0 && order.shippingType === "shipping_vtp" ? taxValue : "",
             i === 0 ? order.shippingCost || 0 : "",
-            i === 0
-              ? order.orderDiscount || 0
-              : i === 1
-                ? order.otherDiscount || 0
-                : "",
-            thuTien, // Number format
+            prepaidForRow || "",
+            thuTien || "", // Number format (can be negative)
             "",
             shippingTypeLabel, // Always show shipping type label
             i === 0 ? formatDateExtended(order.receivedDate) : "",
@@ -1394,20 +1408,24 @@ export class SalesOrdersService {
           }
 
           // Giá bán - right align, number format
-          row.getCell(6).alignment = {
-            vertical: "middle",
-            horizontal: "right",
-            wrapText: true
+          if (item) {
+            row.getCell(6).alignment = {
+              vertical: "middle",
+              horizontal: "right",
+              wrapText: true
+            }
+            row.getCell(6).numFmt = "#,##0"
           }
-          row.getCell(6).numFmt = "#,##0"
 
           // Thành tiền - right align, number format
-          row.getCell(7).alignment = {
-            vertical: "middle",
-            horizontal: "right",
-            wrapText: true
+          if (item) {
+            row.getCell(7).alignment = {
+              vertical: "middle",
+              horizontal: "right",
+              wrapText: true
+            }
+            row.getCell(7).numFmt = "#,##0"
           }
-          row.getCell(7).numFmt = "#,##0"
 
           // Thuế - number format
           if (i === 0 && order.shippingType === "shipping_vtp") {
@@ -1420,12 +1438,14 @@ export class SalesOrdersService {
           }
 
           // Khách trả tiền xe trước - number format
-          if (i === 0 || i === 1) {
+          if (prepaidForRow > 0) {
             row.getCell(10).numFmt = "#,##0"
           }
 
           // Thu tiền - number format
-          row.getCell(11).numFmt = "#,##0"
+          if (item || prepaidForRow > 0) {
+            row.getCell(11).numFmt = "#,##0"
+          }
 
           // 备注 NPP (shippingType) - beige background
           row.getCell(13).fill = {
@@ -1456,13 +1476,16 @@ export class SalesOrdersService {
         totals.tax += taxValue
         totals.shipping += order.shippingCost || 0
         totals.prepaid +=
-          (order.orderDiscount || 0) + (order.otherDiscount || 0)
+          (order.orderDiscount || 0) +
+          (order.otherDiscount || 0) +
+          (order.deposit || 0)
         totals.collected +=
           order.total +
           taxValue +
           (order.shippingCost || 0) -
           (order.orderDiscount || 0) -
-          (order.otherDiscount || 0)
+          (order.otherDiscount || 0) -
+          (order.deposit || 0)
 
         // Add separator row (beige) - always for cargo, only between dates for VTP
         const separatorRow = worksheet.addRow(Array(18).fill(""))
@@ -1578,37 +1601,54 @@ export class SalesOrdersService {
           const shippingTypeLabel = "VIETTEL POST"
           const taxValue = Math.round(order.total * 0.0075)
 
-          for (let i = 0; i < order.items.length; i++) {
-            const item = order.items[i]
-            const thanhTien = item.price * item.quantity
+          // Build array of prepaid values (only non-zero values)
+          const prepaidValues: number[] = []
+          if (order.orderDiscount && order.orderDiscount > 0) {
+            prepaidValues.push(order.orderDiscount)
+          }
+          if (order.otherDiscount && order.otherDiscount > 0) {
+            prepaidValues.push(order.otherDiscount)
+          }
+          if (order.deposit && order.deposit > 0) {
+            prepaidValues.push(order.deposit)
+          }
+
+          // Calculate total rows needed (max of items count and prepaid values count)
+          const totalRowsNeeded = Math.max(
+            order.items.length,
+            prepaidValues.length
+          )
+
+          for (let i = 0; i < totalRowsNeeded; i++) {
+            const item = i < order.items.length ? order.items[i] : null
+            const thanhTien = item ? item.price * item.quantity : 0
             const taxForRow = i === 0 ? taxValue : 0
             const shippingForRow = i === 0 ? order.shippingCost || 0 : 0
             const prepaidForRow =
-              i === 0
-                ? order.orderDiscount || 0
-                : i === 1
-                  ? order.otherDiscount || 0
-                  : 0
-            const thuTien = Math.round(
-              thanhTien + taxForRow + shippingForRow - prepaidForRow
-            )
+              i < prepaidValues.length ? prepaidValues[i] : 0
+
+            // If there's an item, calculate normally
+            // If no item but has prepaid value, show negative prepaid value
+            const thuTien = item
+              ? Math.round(
+                  thanhTien + taxForRow + shippingForRow - prepaidForRow
+                )
+              : prepaidForRow > 0
+                ? -prepaidForRow
+                : 0
 
             const row = worksheet.addRow([
               formatDateExtended(order.date),
               customerInfo,
-              item.code,
-              item.name,
-              item.quantity,
-              item.price, // Number format
-              thanhTien, // Number format
+              item ? item.code : "",
+              item ? item.name : "",
+              item ? item.quantity : "",
+              item ? item.price : "", // Number format
+              item ? thanhTien : "", // Number format
               i === 0 ? taxValue : "",
               i === 0 ? order.shippingCost || 0 : "",
-              i === 0
-                ? order.orderDiscount || 0
-                : i === 1
-                  ? order.otherDiscount || 0
-                  : "",
-              thuTien, // Number format
+              prepaidForRow || "",
+              thuTien || "", // Number format (can be negative)
               "",
               shippingTypeLabel,
               i === 0 ? formatDateExtended(order.receivedDate) : "",
@@ -1651,18 +1691,26 @@ export class SalesOrdersService {
               horizontal: "left",
               wrapText: true
             }
-            row.getCell(6).alignment = {
-              vertical: "middle",
-              horizontal: "right",
-              wrapText: true
+
+            // Giá bán - right align, number format
+            if (item) {
+              row.getCell(6).alignment = {
+                vertical: "middle",
+                horizontal: "right",
+                wrapText: true
+              }
+              row.getCell(6).numFmt = "#,##0"
             }
-            row.getCell(6).numFmt = "#,##0"
-            row.getCell(7).alignment = {
-              vertical: "middle",
-              horizontal: "right",
-              wrapText: true
+
+            // Thành tiền - right align, number format
+            if (item) {
+              row.getCell(7).alignment = {
+                vertical: "middle",
+                horizontal: "right",
+                wrapText: true
+              }
+              row.getCell(7).numFmt = "#,##0"
             }
-            row.getCell(7).numFmt = "#,##0"
 
             // Thuế - number format
             if (i === 0) {
@@ -1675,12 +1723,14 @@ export class SalesOrdersService {
             }
 
             // Khách trả tiền xe trước - number format
-            if (i === 0 || i === 1) {
+            if (prepaidForRow > 0) {
               row.getCell(10).numFmt = "#,##0"
             }
 
             // Thu tiền - number format
-            row.getCell(11).numFmt = "#,##0"
+            if (item || prepaidForRow > 0) {
+              row.getCell(11).numFmt = "#,##0"
+            }
 
             row.getCell(13).fill = {
               type: "pattern",
@@ -1708,13 +1758,16 @@ export class SalesOrdersService {
           vtpTotals.tax += taxValue
           vtpTotals.shipping += order.shippingCost || 0
           vtpTotals.prepaid +=
-            (order.orderDiscount || 0) + (order.otherDiscount || 0)
+            (order.orderDiscount || 0) +
+            (order.otherDiscount || 0) +
+            (order.deposit || 0)
           vtpTotals.collected +=
             order.total +
             taxValue +
             (order.shippingCost || 0) -
             (order.orderDiscount || 0) -
-            (order.otherDiscount || 0)
+            (order.otherDiscount || 0) -
+            (order.deposit || 0)
         }
 
         lastVtpDate = currentDate
