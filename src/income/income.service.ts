@@ -990,10 +990,10 @@ export class IncomeService {
     try {
       // Adjust for GMT+7 timezone (Vietnam time)
       const start = new Date(Date.UTC(year, month, 1))
-      start.setUTCHours(start.getUTCHours() - 7)
+      start.setDate(start.getDate() - 1)
 
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
-      end.setUTCHours(end.getUTCHours() - 7)
+      end.setDate(end.getDate() - 1)
 
       // Sum daily ads cost in month
       const adsFilter: any = { date: { $gte: start, $lte: end } }
