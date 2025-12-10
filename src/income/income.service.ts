@@ -1101,6 +1101,9 @@ export class IncomeService {
         avgDiscountPerOrder: number
         discountPercentage: number
       }
+      productsQuantity: {
+        [code: string]: number
+      }
     }
     changes?: {
       beforeDiscount: {
@@ -1201,6 +1204,9 @@ export class IncomeService {
           0
         )
 
+        // Products quantity tracking
+        const productsQuantityMap: Record<string, number> = {}
+
         for (const income of incomes) {
           const provider = income.shippingProvider || "(unknown)"
           shipMap[provider] = (shipMap[provider] || 0) + 1
@@ -1256,6 +1262,11 @@ export class IncomeService {
             }
 
             if (p.box) boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
+
+            // Track products quantity
+            const productCode = p.code || "(unknown)"
+            productsQuantityMap[productCode] =
+              (productsQuantityMap[productCode] || 0) + (p.quantity || 0)
           }
         }
 
@@ -1298,7 +1309,6 @@ export class IncomeService {
             }
           ])
           .exec()
-        console.log("adsAgg: ", adsAgg)
         const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
         const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
         const percentages = {
@@ -1321,6 +1331,11 @@ export class IncomeService {
           totalOriginalPrice > 0
             ? (totalSellerDiscount / totalOriginalPrice) * 100
             : 0
+
+        // Sort products by quantity descending
+        const productsQuantity = Object.fromEntries(
+          Object.entries(productsQuantityMap).sort(([, a], [, b]) => b - a)
+        )
 
         return {
           beforeDiscount: {
@@ -1350,7 +1365,8 @@ export class IncomeService {
             totalDiscount,
             avgDiscountPerOrder,
             discountPercentage: Math.round(discountPercentage * 100) / 100
-          }
+          },
+          productsQuantity
         }
       }
 
@@ -1358,7 +1374,7 @@ export class IncomeService {
       if (!comparePrevious)
         return { period: { startDate: start, endDate: end, days }, current }
 
-      const prevEnd = new Date(start.getTime() - 86400000)
+      const prevEnd = new Date(start.getTime() - 1)
       const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86400000)
       const previous = await buildStats(prevStart, prevEnd)
       const pct = (cur: number, prev: number) =>
