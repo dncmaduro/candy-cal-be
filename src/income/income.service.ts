@@ -1051,8 +1051,8 @@ export class IncomeService {
   async getRangeStats(
     startDate: Date,
     endDate: Date,
-    comparePrevious = true,
-    channelId?: string
+    channelId: string,
+    comparePrevious = true
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -1145,6 +1145,10 @@ export class IncomeService {
     }
   }> {
     try {
+      if (!channelId) {
+        throw new HttpException("channelId là bắt buộc", HttpStatus.BAD_REQUEST)
+      }
+
       const start = new Date(startDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(endDate)
