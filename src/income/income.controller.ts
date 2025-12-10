@@ -341,8 +341,8 @@ export class IncomeController {
   async getRangeStats(
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
-    @Query("comparePrevious") comparePrevious?: string,
-    @Query("channelId") channelId?: string
+    @Query("channelId") channelId: string,
+    @Query("comparePrevious") comparePrevious?: string
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -437,8 +437,8 @@ export class IncomeController {
     return this.incomeService.getRangeStats(
       new Date(startDate),
       new Date(endDate),
-      comparePrevious !== "false",
-      channelId
+      channelId,
+      comparePrevious !== "false"
     )
   }
 
