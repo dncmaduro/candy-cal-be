@@ -1,7 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types, HydratedDocument } from "mongoose"
-import { LivestreamEmployee } from "../database/mongoose/schemas/LivestreamEmployee"
 import { LivestreamPeriod } from "../database/mongoose/schemas/LivestreamPeriod"
 import {
   Livestream,
@@ -9,14 +8,13 @@ import {
 } from "../database/mongoose/schemas/Livestream"
 import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
+import { User } from "../database/mongoose/schemas/User"
 
 type LivestreamDoc = HydratedDocument<Livestream>
 
 @Injectable()
 export class LivestreamService {
   constructor(
-    @InjectModel("livestreamemployees")
-    private readonly livestreamEmployeeModel: Model<LivestreamEmployee>,
     @InjectModel("livestreamperiods")
     private readonly livestreamPeriodModel: Model<LivestreamPeriod>,
     @InjectModel("livestreammonthgoals")
@@ -24,7 +22,9 @@ export class LivestreamService {
     @InjectModel("livestreams")
     private readonly livestreamModel: Model<Livestream>,
     @InjectModel("livestreamchannels")
-    private readonly livestreamChannelModel: Model<LivestreamChannel>
+    private readonly livestreamChannelModel: Model<LivestreamChannel>,
+    @InjectModel("users")
+    private readonly userModel: Model<User>
   ) {}
 
   // helper: convert time to minutes since midnight
@@ -52,111 +52,22 @@ export class LivestreamService {
     return snapshots.reduce((sum, s) => sum + (s.income ?? 0), 0)
   }
 
-  // Create a new livestream employee
-  async createLivestreamEmployee(payload: {
-    name: string
-    active?: boolean
-  }): Promise<LivestreamEmployee> {
-    try {
-      const created = new this.livestreamEmployeeModel({
-        name: payload.name,
-        active: payload.active ?? true
-      })
-      return await created.save()
-    } catch (error) {
-      console.error(error)
-      throw new HttpException(
-        "Internal server error",
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
+  // helper: validate user exists
+  private async validateUserExists(userId: string): Promise<void> {
+    const user = await this.userModel.findById(userId).exec()
+    if (!user) {
+      throw new HttpException("User not found", HttpStatus.NOT_FOUND)
     }
   }
 
-  // Retrieve all employees, supports searchText, pagination, and optional active filter
-  async getAllLivestreamEmployees(
-    searchText?: string,
-    page = 1,
-    limit = 10,
-    active?: boolean
-  ): Promise<{ data: LivestreamEmployee[]; total: number }> {
+  // Get all period IDs for a specific channel
+  async getPeriodIdsByChannel(channelId: string): Promise<string[]> {
     try {
-      const safePage = Math.max(1, Number(page) || 1)
-      const safeLimit = Math.max(1, Number(limit) || 10)
-
-      const filter: any = {}
-      if (typeof active === "boolean") filter.active = active
-      if (typeof searchText === "string" && searchText.trim() !== "") {
-        filter.name = { $regex: searchText.trim(), $options: "i" }
-      }
-
-      const [data, total] = await Promise.all([
-        this.livestreamEmployeeModel
-          .find(filter)
-          .skip((safePage - 1) * safeLimit)
-          .limit(safeLimit)
-          .exec(),
-        this.livestreamEmployeeModel.countDocuments(filter).exec()
-      ])
-      return { data, total }
-    } catch (error) {
-      console.error(error)
-      throw new HttpException(
-        "Internal server error",
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
-    }
-  }
-
-  // Retrieve a single employee by id
-  async getLivestreamEmployeeById(id: string): Promise<LivestreamEmployee> {
-    try {
-      const doc = await this.livestreamEmployeeModel.findById(id).exec()
-      if (!doc)
-        throw new HttpException(
-          "Livestream employee not found",
-          HttpStatus.NOT_FOUND
-        )
-      return doc
-    } catch (error) {
-      console.error(error)
-      throw new HttpException(
-        "Internal server error",
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
-    }
-  }
-
-  // Update an employee's fields
-  async updateLivestreamEmployee(
-    id: string,
-    payload: { name?: string; active?: boolean }
-  ): Promise<LivestreamEmployee> {
-    try {
-      const updated = await this.livestreamEmployeeModel
-        .findByIdAndUpdate(id, { $set: payload }, { new: true })
+      const periods = await this.livestreamPeriodModel
+        .find({ channel: channelId })
+        .select("_id")
         .exec()
-      if (!updated)
-        throw new HttpException(
-          "Livestream employee not found",
-          HttpStatus.NOT_FOUND
-        )
-      return updated
-    } catch (error) {
-      console.error(error)
-      throw new HttpException(
-        "Internal server error",
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
-    }
-  }
-
-  // Soft delete: mark employee as inactive
-  async deleteLivestreamEmployee(id: string): Promise<void> {
-    try {
-      await this.livestreamEmployeeModel
-        .findByIdAndUpdate(id, { $set: { active: false } }, { new: true })
-        .exec()
-      return
+      return periods.map((p) => p._id.toString())
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -171,7 +82,7 @@ export class LivestreamService {
     startTime: { hour: number; minute: number }
     endTime: { hour: number; minute: number }
     channel: string
-    noon?: boolean
+    for: "host" | "assistant"
   }): Promise<LivestreamPeriod> {
     try {
       // validate interval
@@ -184,25 +95,12 @@ export class LivestreamService {
         )
       }
 
-      // check overlap within same channel
-      const sameChannel = await this.livestreamPeriodModel
-        .find({ channel: payload.channel })
+      // check overlap within same channel and same role (host/assistant)
+      const sameChannelAndRole = await this.livestreamPeriodModel
+        .find({ channel: payload.channel, for: payload.for })
         .exec()
-      // if new period is noon, ensure no other noon exists on same channel
-      if (payload.noon) {
-        const hasNoon = (sameChannel as LivestreamPeriod[]).some((p) =>
-          Boolean(p.noon)
-        )
-        if (hasNoon) {
-          throw new HttpException(
-            "Only one noon period is allowed per channel",
-            HttpStatus.BAD_REQUEST
-          )
-        }
-      }
-      for (const p of sameChannel as LivestreamPeriod[]) {
-        // skip time-overlap check if either existing or new period is a 'noon' period
-        if (Boolean(p.noon) || Boolean(payload.noon)) continue
+
+      for (const p of sameChannelAndRole as LivestreamPeriod[]) {
         if (
           this.intervalsOverlap(
             payload.startTime,
@@ -212,7 +110,7 @@ export class LivestreamService {
           )
         ) {
           throw new HttpException(
-            "Period overlaps with existing period on the same channel",
+            `Period overlaps with existing ${payload.for} period on the same channel`,
             HttpStatus.BAD_REQUEST
           )
         }
@@ -221,10 +119,13 @@ export class LivestreamService {
       const created = new this.livestreamPeriodModel({
         startTime: payload.startTime,
         endTime: payload.endTime,
-        channel: payload.channel,
-        noon: payload.noon
+        channel: new Types.ObjectId(payload.channel),
+        for: payload.for
       })
-      return await created.save()
+      const saved = await created.save()
+      // Populate channel before returning
+      await saved.populate("channel", "_id name username link")
+      return saved
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error
@@ -238,7 +139,10 @@ export class LivestreamService {
   // Retrieve all livestream periods
   async getAllLivestreamPeriods(): Promise<{ periods: LivestreamPeriod[] }> {
     try {
-      const periods = await this.livestreamPeriodModel.find().exec()
+      const periods = await this.livestreamPeriodModel
+        .find()
+        .populate("channel", "_id name username link")
+        .exec()
       return { periods }
     } catch (error) {
       console.error(error)
@@ -252,7 +156,10 @@ export class LivestreamService {
   // Retrieve a single period by id
   async getLivestreamPeriodById(id: string): Promise<LivestreamPeriod> {
     try {
-      const doc = await this.livestreamPeriodModel.findById(id).exec()
+      const doc = await this.livestreamPeriodModel
+        .findById(id)
+        .populate("channel", "_id name username link")
+        .exec()
       if (!doc)
         throw new HttpException(
           "Livestream period not found",
@@ -275,7 +182,7 @@ export class LivestreamService {
       startTime?: { hour: number; minute: number }
       endTime?: { hour: number; minute: number }
       channel?: string
-      noon?: boolean
+      for?: "host" | "assistant"
     }
   ): Promise<LivestreamPeriod> {
     try {
@@ -295,28 +202,19 @@ export class LivestreamService {
         )
       }
 
-      const channelToCheck = payload.channel ?? (existing as any).channel
+      const channelToCheck =
+        payload.channel ?? (existing as any).channel.toString()
+      const forRoleToCheck = payload.for ?? (existing as any).for
 
-      // check overlap with other periods on same channel
+      // check overlap with other periods on same channel and same role
       const others = await this.livestreamPeriodModel
-        .find({ channel: channelToCheck, _id: { $ne: id } })
+        .find({
+          channel: channelToCheck,
+          for: forRoleToCheck,
+          _id: { $ne: id }
+        })
         .exec()
-      const newIsNoon = Boolean(payload.noon ?? (existing as any).noon)
-      // if new period is noon, ensure no other noon exists on same channel (excluding itself)
-      if (newIsNoon) {
-        const hasOtherNoon = (others as LivestreamPeriod[]).some((p) =>
-          Boolean(p.noon)
-        )
-        if (hasOtherNoon) {
-          throw new HttpException(
-            "Only one noon period is allowed per channel",
-            HttpStatus.BAD_REQUEST
-          )
-        }
-      }
       for (const p of others as LivestreamPeriod[]) {
-        // skip overlap check if either existing or new is noon
-        if (Boolean(p.noon) || newIsNoon) continue
         if (
           this.intervalsOverlap(
             newStart,
@@ -326,7 +224,7 @@ export class LivestreamService {
           )
         ) {
           throw new HttpException(
-            "Updated period overlaps with existing period on the same channel",
+            `Updated period overlaps with existing ${forRoleToCheck} period on the same channel`,
             HttpStatus.BAD_REQUEST
           )
         }
@@ -339,10 +237,11 @@ export class LivestreamService {
         updateObj.endTime = payload.endTime
       if (typeof payload.channel !== "undefined")
         updateObj.channel = payload.channel
-      if (typeof payload.noon !== "undefined") updateObj.noon = payload.noon
+      if (typeof payload.for !== "undefined") updateObj.for = payload.for
 
       const updated = await this.livestreamPeriodModel
         .findByIdAndUpdate(id, { $set: updateObj }, { new: true })
+        .populate("channel", "_id name username link")
         .exec()
       return updated as LivestreamPeriod
     } catch (error) {
@@ -402,31 +301,23 @@ export class LivestreamService {
         ads: payload.ads ?? 0
       }
 
-      // if snapshots (period ids) provided, create embedded snapshots without host/assistant
+      // if snapshots (period ids) provided, create embedded snapshots without assignee
       if (Array.isArray(payload.snapshots) && payload.snapshots.length > 0) {
         const periods = await this.livestreamPeriodModel
           .find({ _id: { $in: payload.snapshots } })
           .exec()
-        // map and push snapshots (no host/assistant)
+        // map and push snapshots (no assignee)
         createdObj.snapshots = periods.map((p) => {
-          const isNoon = Boolean((p as any).noon)
           return {
             period: {
               _id: p._id as Types.ObjectId,
-              startTime: (p as any).startTime,
-              endTime: (p as any).endTime,
-              channel: (p as any).channel,
-              noon: (p as any).noon
+              startTime: p.startTime,
+              endTime: p.endTime,
+              channel: (p.channel as Types.ObjectId).toString(),
+              for: p.for
             },
-            // noon snapshots must not have goal or income
-            ...(isNoon
-              ? {}
-              : {
-                  goal: 0,
-                  income: 0
-                }),
-            // keep noon flag explicit when needed
-            noon: isNoon
+            goal: 0,
+            income: 0
           }
         })
         createdObj.totalIncome = this.computeTotalIncome(createdObj.snapshots)
@@ -449,14 +340,17 @@ export class LivestreamService {
     livestreamId: string,
     payload: {
       period: string
-      host: string
-      assistant: string
+      assignee?: string
       goal: number
       income?: number
-      noon?: boolean
     }
   ): Promise<Livestream> {
     try {
+      // Validate user exists
+      if (payload.assignee) {
+        await this.validateUserExists(payload.assignee)
+      }
+
       const livestreamDoc = await this.livestreamModel
         .findById(livestreamId)
         .exec()
@@ -473,39 +367,6 @@ export class LivestreamService {
       const newStart = newPeriodTyped.startTime
       const newEnd = newPeriodTyped.endTime
 
-      // Check noon uniqueness (snapshot-level noon)
-      // determine if this snapshot will be a noon snapshot (period.noon OR payload.noon)
-      const snapshotWillBeNoon =
-        Boolean(payload.noon) || Boolean(newPeriodTyped.noon)
-      const existingNoon = (
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      ).some((s) => Boolean(s.noon))
-      if (snapshotWillBeNoon && existingNoon) {
-        throw new HttpException(
-          "Only one noon snapshot is allowed per livestream",
-          HttpStatus.BAD_REQUEST
-        )
-      }
-
-      // If this will be a noon snapshot, disallow host/goal/income in the payload
-      if (snapshotWillBeNoon) {
-        if (payload.host)
-          throw new HttpException(
-            "Noon snapshots must not have a host",
-            HttpStatus.BAD_REQUEST
-          )
-        if (typeof payload.goal !== "undefined" && payload.goal !== null)
-          throw new HttpException(
-            "Noon snapshots must not have a goal",
-            HttpStatus.BAD_REQUEST
-          )
-        if (typeof payload.income !== "undefined" && payload.income !== null)
-          throw new HttpException(
-            "Noon snapshots must not have income",
-            HttpStatus.BAD_REQUEST
-          )
-      }
-
       // Check channel consistency: all snapshots must be from same channel
       const existingChannels = new Set<string>()
       for (const s of livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]) {
@@ -513,7 +374,10 @@ export class LivestreamService {
       }
       if (existingChannels.size > 0) {
         const only = Array.from(existingChannels)[0]
-        if (only !== newPeriodTyped.channel) {
+        const newChannelId = (
+          newPeriodTyped.channel as Types.ObjectId
+        ).toString()
+        if (only !== newChannelId) {
           throw new HttpException(
             "Snapshots in one livestream must belong to the same channel",
             HttpStatus.BAD_REQUEST
@@ -521,17 +385,18 @@ export class LivestreamService {
         }
       }
 
-      // Check time overlap with existing embedded periods (end exclusive)
+      // Check time overlap with existing embedded periods (same role only)
       for (const s of livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]) {
         const p = s.period as LivestreamSnapshotEmbedded["period"]
         if (!p || !p.startTime || !p.endTime) continue
-        // skip overlap check if either embedded period is noon or new period is noon
-        if (Boolean(p.noon) || snapshotWillBeNoon) continue
-        if (this.intervalsOverlap(p.startTime, p.endTime, newStart, newEnd)) {
-          throw new HttpException(
-            "Snapshot period overlaps with existing snapshot period",
-            HttpStatus.BAD_REQUEST
-          )
+        // Only check overlap if same role (host/assistant)
+        if (p.for === newPeriodTyped.for) {
+          if (this.intervalsOverlap(p.startTime, p.endTime, newStart, newEnd)) {
+            throw new HttpException(
+              `Snapshot period overlaps with existing ${newPeriodTyped.for} snapshot period`,
+              HttpStatus.BAD_REQUEST
+            )
+          }
         }
       }
 
@@ -541,24 +406,13 @@ export class LivestreamService {
           _id: newPeriodTyped._id as Types.ObjectId,
           startTime: newPeriodTyped.startTime,
           endTime: newPeriodTyped.endTime,
-          channel: newPeriodTyped.channel,
-          noon: newPeriodTyped.noon
+          channel: (newPeriodTyped.channel as Types.ObjectId).toString(),
+          for: newPeriodTyped.for
         },
-        // host is only allowed for non-noon snapshots
-        ...(snapshotWillBeNoon
-          ? {}
-          : {
-              host: payload.host ? new Types.ObjectId(payload.host) : undefined
-            }),
-        // assistant may be present for both
-        ...(payload.assistant
-          ? { assistant: new Types.ObjectId(payload.assistant) }
-          : {}),
-        // goal and income only for non-noon snapshots
-        ...(snapshotWillBeNoon
-          ? {}
-          : { goal: payload.goal ?? 0, income: payload.income ?? 0 }),
-        noon: snapshotWillBeNoon
+        assignee: payload.assignee
+          ? new Types.ObjectId(payload.assignee)
+          : undefined,
+        income: payload.income ?? 0
       }
       livestreamDoc.snapshots.push(newSnapshot as LivestreamSnapshotEmbedded)
 
@@ -571,6 +425,11 @@ export class LivestreamService {
       )
 
       await livestreamDoc.save()
+      // Populate user info before returning
+      await livestreamDoc.populate(
+        "snapshots.assignee",
+        "_id name username avatarUrl"
+      )
       return livestreamDoc
     } catch (error) {
       console.error(error)
@@ -588,11 +447,137 @@ export class LivestreamService {
     snapshotId: string,
     payload: {
       period?: string
-      host?: string
-      assistant?: string
+      assignee?: string
       goal?: number
       income?: number
-      noon?: boolean
+    }
+  ): Promise<Livestream> {
+    try {
+      // Validate user exists if provided
+      if (payload.assignee) {
+        await this.validateUserExists(payload.assignee)
+      }
+
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      // Access subdocument
+      const snapshotsArray =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      const snapshot = snapshotsArray.find(
+        (s) => s._id?.toString() === snapshotId
+      )
+      if (!snapshot)
+        throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
+
+      // If period changed, re-run conflict checks
+      const newPeriodId = payload.period
+        ? payload.period
+        : (
+            snapshot.period as LivestreamSnapshotEmbedded["period"]
+          )?._id?.toString()
+
+      const newPeriodDoc = await this.livestreamPeriodModel
+        .findById(newPeriodId)
+        .exec()
+      if (!newPeriodDoc)
+        throw new HttpException("Period not found", HttpStatus.BAD_REQUEST)
+      const newPeriodTyped = newPeriodDoc as LivestreamPeriod
+      const newStart = newPeriodTyped.startTime
+      const newEnd = newPeriodTyped.endTime
+
+      // Load other snapshots (embedded periods available)
+      const otherSnapshots = (
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      ).filter((s) => s._id?.toString() !== snapshotId)
+
+      // Check channel consistency
+      const existingChannels = new Set<string>()
+      for (const s of otherSnapshots) {
+        if (s.period && s.period.channel) existingChannels.add(s.period.channel)
+      }
+      if (existingChannels.size > 0) {
+        const only = Array.from(existingChannels)[0]
+        const newChannelId = (
+          newPeriodTyped.channel as Types.ObjectId
+        ).toString()
+        if (only !== newChannelId) {
+          throw new HttpException(
+            "Snapshots in one livestream must belong to the same channel",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+      }
+
+      // Check overlap with other snapshots (same role only)
+      for (const s of otherSnapshots) {
+        const p = s.period as LivestreamSnapshotEmbedded["period"]
+        if (!p || !p.startTime || !p.endTime) continue
+        // Only check overlap if same role (host/assistant)
+        if (p.for === newPeriodTyped.for) {
+          if (this.intervalsOverlap(p.startTime, p.endTime, newStart, newEnd)) {
+            throw new HttpException(
+              `Snapshot period overlaps with existing ${newPeriodTyped.for} snapshot period`,
+              HttpStatus.BAD_REQUEST
+            )
+          }
+        }
+      }
+
+      // apply updates
+      if (payload.period)
+        snapshot.period = {
+          _id: newPeriodTyped._id as Types.ObjectId,
+          startTime: newPeriodTyped.startTime,
+          endTime: newPeriodTyped.endTime,
+          channel: (newPeriodTyped.channel as Types.ObjectId).toString(),
+          for: newPeriodTyped.for
+        }
+      if (payload.assignee)
+        snapshot.assignee = new Types.ObjectId(payload.assignee)
+      else {
+        snapshot.assignee = null
+      }
+      if (typeof payload.income !== "undefined")
+        snapshot.income = payload.income
+
+      // recompute totalIncome from snapshots
+      livestreamDoc.totalIncome = this.computeTotalIncome(
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      )
+
+      await livestreamDoc.save()
+      // Populate user info before returning
+      await livestreamDoc.populate(
+        "snapshots.assignee",
+        "_id name username avatarUrl"
+      )
+      return livestreamDoc
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Report snapshot metrics (income, clickRate, etc.)
+  async reportSnapshot(
+    livestreamId: string,
+    snapshotId: string,
+    payload: {
+      income: number
+      adsCost: number
+      clickRate: number
+      avgViewingDuration: number
+      comments: number
+      ordersNote: string
+      rating?: string
     }
   ): Promise<Livestream> {
     try {
@@ -611,120 +596,28 @@ export class LivestreamService {
       if (!snapshot)
         throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
 
-      // If period or noon changed, re-run conflict checks
-      const newPeriodId = payload.period
-        ? payload.period
-        : (
-            snapshot.period as LivestreamSnapshotEmbedded["period"]
-          )?._id?.toString()
-      const newNoon =
-        typeof payload.noon !== "undefined"
-          ? payload.noon
-          : Boolean(snapshot.noon)
-
-      const newPeriodDoc = await this.livestreamPeriodModel
-        .findById(newPeriodId)
-        .exec()
-      if (!newPeriodDoc)
-        throw new HttpException("Period not found", HttpStatus.BAD_REQUEST)
-      const newPeriodTyped = newPeriodDoc as LivestreamPeriod
-      const newStart = newPeriodTyped.startTime
-      const newEnd = newPeriodTyped.endTime
-
-      // Load other snapshots (embedded periods available)
-      const otherSnapshots = (
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      ).filter((s) => s._id?.toString() !== snapshotId)
-
-      // determine if resulting snapshot will be noon (period.noon OR requested noon)
-      const snapshotWillBeNoon =
-        Boolean(newNoon) || Boolean(newPeriodTyped.noon)
-      // noon uniqueness
-      const hasOtherNoon = otherSnapshots.some((s) => Boolean(s.noon))
-      if (snapshotWillBeNoon && hasOtherNoon) {
-        throw new HttpException(
-          "Only one noon snapshot is allowed per livestream",
-          HttpStatus.BAD_REQUEST
-        )
+      // Update metrics
+      snapshot.income = payload.income
+      snapshot.adsCost = payload.adsCost
+      snapshot.clickRate = payload.clickRate
+      snapshot.avgViewingDuration = payload.avgViewingDuration
+      snapshot.comments = payload.comments
+      snapshot.ordersNote = payload.ordersNote
+      if (typeof payload.rating !== "undefined") {
+        snapshot.rating = payload.rating
       }
 
-      // If resulting snapshot is noon, disallow host/goal/income in payload
-      if (snapshotWillBeNoon) {
-        if (payload.host)
-          throw new HttpException(
-            "Noon snapshots must not have a host",
-            HttpStatus.BAD_REQUEST
-          )
-        if (typeof payload.goal !== "undefined" && payload.goal !== null)
-          throw new HttpException(
-            "Noon snapshots must not have a goal",
-            HttpStatus.BAD_REQUEST
-          )
-        if (typeof payload.income !== "undefined" && payload.income !== null)
-          throw new HttpException(
-            "Noon snapshots must not have income",
-            HttpStatus.BAD_REQUEST
-          )
-      }
-
-      // Check channel consistency
-      const existingChannels = new Set<string>()
-      for (const s of otherSnapshots) {
-        if (s.period && s.period.channel) existingChannels.add(s.period.channel)
-      }
-      if (existingChannels.size > 0) {
-        const only = Array.from(existingChannels)[0]
-        if (only !== newPeriodTyped.channel) {
-          throw new HttpException(
-            "Snapshots in one livestream must belong to the same channel",
-            HttpStatus.BAD_REQUEST
-          )
-        }
-      }
-
-      // Check overlap with other snapshots
-      for (const s of otherSnapshots) {
-        const p = s.period as LivestreamSnapshotEmbedded["period"]
-        if (!p || !p.startTime || !p.endTime) continue
-        // skip overlap check if either side is noon
-        if (Boolean(p.noon) || snapshotWillBeNoon) continue
-        if (this.intervalsOverlap(p.startTime, p.endTime, newStart, newEnd)) {
-          throw new HttpException(
-            "Snapshot period overlaps with existing snapshot period",
-            HttpStatus.BAD_REQUEST
-          )
-        }
-      }
-
-      // apply updates
-      if (payload.period)
-        snapshot.period = {
-          _id: newPeriodTyped._id as Types.ObjectId,
-          startTime: newPeriodTyped.startTime,
-          endTime: newPeriodTyped.endTime,
-          channel: newPeriodTyped.channel,
-          noon: newPeriodTyped.noon
-        }
-      // host only allowed for non-noon snapshots
-      if (!snapshotWillBeNoon && payload.host)
-        snapshot.host = new Types.ObjectId(payload.host)
-      // assistant may be updated independently
-      if (payload.assistant)
-        snapshot.assistant = new Types.ObjectId(payload.assistant)
-      // goal/income only allowed for non-noon snapshots
-      if (!snapshotWillBeNoon && typeof payload.goal !== "undefined")
-        snapshot.goal = payload.goal
-      if (!snapshotWillBeNoon && typeof payload.income !== "undefined")
-        snapshot.income = payload.income
-      // set noon flag according to resulting state
-      snapshot.noon = snapshotWillBeNoon
-
-      // recompute totalIncome from snapshots
+      // Recompute totalIncome from snapshots
       livestreamDoc.totalIncome = this.computeTotalIncome(
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
       )
 
       await livestreamDoc.save()
+      // Populate user info before returning
+      await livestreamDoc.populate(
+        "snapshots.assignee",
+        "_id name username avatarUrl"
+      )
       return livestreamDoc
     } catch (error) {
       console.error(error)
@@ -815,23 +708,197 @@ export class LivestreamService {
     return this.setLivestreamMetrics(livestreamId, payload)
   }
 
-  // Get livestreams in a date range (inclusive)
+  // Get livestreams in a date range (inclusive), optionally filter by channel, role, and assignee
   async getLivestreamsByDateRange(
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    channelId?: string,
+    forRole?: "host" | "assistant",
+    assigneeId?: string
   ): Promise<{ livestreams: Livestream[] }> {
     try {
       const start = new Date(startDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(endDate)
       end.setHours(23, 59, 59, 999)
+
+      // Find all livestreams in date range
+      const livestreams = await this.livestreamModel
+        .find({ date: { $gte: start, $lte: end } })
+        .populate("snapshots.assignee", "_id name username avatarUrl")
+        .exec()
+
+      // Apply filters if provided
+      let filtered = livestreams
+
+      if (channelId || forRole || assigneeId) {
+        filtered = livestreams.filter((ls) => {
+          const snapshots = ls.snapshots as LivestreamSnapshotEmbedded[]
+          return snapshots.some((s) => {
+            if (!s.period) return false
+
+            const channelMatch = channelId
+              ? s.period.channel === channelId
+              : true
+            const roleMatch = forRole ? s.period.for === forRole : true
+            const assigneeMatch = assigneeId
+              ? s.assignee?.toString() === assigneeId
+              : true
+
+            return channelMatch && roleMatch && assigneeMatch
+          })
+        })
+      }
+
+      return { livestreams: filtered }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Sync snapshots of livestreams in a date range with current channel periods
+  async syncSnapshots(
+    startDate: Date,
+    endDate: Date,
+    channelId: string
+  ): Promise<{ updated: number; message: string }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      // Get all current periods for this channel
+      const currentPeriods = await this.livestreamPeriodModel
+        .find({ channel: channelId })
+        .exec()
+
+      // Get all livestreams in date range
       const livestreams = await this.livestreamModel
         .find({ date: { $gte: start, $lte: end } })
         .exec()
 
-      return { livestreams }
+      let updatedCount = 0
+
+      for (const livestream of livestreams) {
+        const livestreamDoc = livestream as LivestreamDoc
+        const snapshots =
+          livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+
+        // Filter to only snapshots of this channel
+        const channelSnapshots = snapshots.filter(
+          (s) => s.period && s.period.channel === channelId
+        )
+
+        // Create a map of existing snapshots by period._id
+        const existingSnapshotsMap = new Map<
+          string,
+          LivestreamSnapshotEmbedded
+        >()
+        for (const snapshot of channelSnapshots) {
+          if (snapshot.period?._id) {
+            existingSnapshotsMap.set(snapshot.period._id.toString(), snapshot)
+          }
+        }
+
+        // Create set of current period IDs
+        const currentPeriodIds = new Set(
+          currentPeriods.map((p) => p._id.toString())
+        )
+
+        // New snapshots array
+        const newSnapshots: LivestreamSnapshotEmbedded[] = []
+
+        // Keep snapshots from other channels
+        for (const snapshot of snapshots) {
+          if (snapshot.period && snapshot.period.channel !== channelId) {
+            newSnapshots.push(snapshot)
+          }
+        }
+
+        // Process current periods
+        for (const period of currentPeriods as LivestreamPeriod[]) {
+          const periodId = period._id.toString()
+          const existingSnapshot = existingSnapshotsMap.get(periodId)
+
+          if (existingSnapshot) {
+            // Period exists: Update period info but keep assignee, goal, income
+            newSnapshots.push({
+              _id: existingSnapshot._id,
+              period: {
+                _id: period._id as Types.ObjectId,
+                startTime: period.startTime,
+                endTime: period.endTime,
+                channel: (period.channel as Types.ObjectId).toString(),
+                for: period.for
+              },
+              assignee: existingSnapshot.assignee, // Keep existing assignee
+              income: existingSnapshot.income ?? 0
+            })
+          } else {
+            // New period: Create new snapshot without assignee
+            newSnapshots.push({
+              period: {
+                _id: period._id as Types.ObjectId,
+                startTime: period.startTime,
+                endTime: period.endTime,
+                channel: (period.channel as Types.ObjectId).toString(),
+                for: period.for
+              },
+              assignee: undefined,
+              income: 0
+            })
+          }
+        }
+
+        // Check if snapshots changed (number, IDs, roles, or times)
+        let snapshotsChanged = newSnapshots.length !== snapshots.length
+
+        if (!snapshotsChanged) {
+          // Check if any snapshot has different data
+          for (let i = 0; i < newSnapshots.length; i++) {
+            const newSnap = newSnapshots[i]
+            const oldSnap = snapshots[i]
+
+            // Compare period _id, for, and times
+            if (
+              newSnap.period?._id?.toString() !==
+                oldSnap.period?._id?.toString() ||
+              newSnap.period?.for !== oldSnap.period?.for ||
+              newSnap.period?.startTime?.hour !==
+                oldSnap.period?.startTime?.hour ||
+              newSnap.period?.startTime?.minute !==
+                oldSnap.period?.startTime?.minute ||
+              newSnap.period?.endTime?.hour !== oldSnap.period?.endTime?.hour ||
+              newSnap.period?.endTime?.minute !==
+                oldSnap.period?.endTime?.minute
+            ) {
+              snapshotsChanged = true
+              break
+            }
+          }
+        }
+
+        if (snapshotsChanged) {
+          // Update snapshots and recompute totalIncome
+          livestreamDoc.snapshots = newSnapshots
+          livestreamDoc.totalIncome = this.computeTotalIncome(newSnapshots)
+          await livestreamDoc.save()
+          updatedCount++
+        }
+      }
+
+      return {
+        updated: updatedCount,
+        message: `Successfully synced ${updatedCount} livestream(s)`
+      }
     } catch (error) {
       console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -885,7 +952,7 @@ export class LivestreamService {
     totalIncome: number
     totalExpenses: number
     totalOrders: number
-    incomeByHost: { hostId: string; income: number }[]
+    incomeByAssignee: { assigneeId: string; income: number }[]
   }> {
     try {
       const start = new Date(startDate)
@@ -904,7 +971,7 @@ export class LivestreamService {
       let totalIncome = 0
       let totalExpenses = 0
       let totalOrders = 0
-      const byHost = new Map<string, number>()
+      const byAssignee = new Map<string, number>()
 
       for (const ls of livestreams) {
         totalIncome += (ls.totalIncome ?? 0) as number
@@ -915,21 +982,24 @@ export class LivestreamService {
         for (const s of snapshots) {
           if (!s) continue
           const income = s.income ?? 0
-          if (s.host) {
-            const hostId = (s.host as Types.ObjectId).toString()
-            byHost.set(hostId, (byHost.get(hostId) ?? 0) + income)
+          if (s.assignee) {
+            const assigneeId = (s.assignee as Types.ObjectId).toString()
+            byAssignee.set(
+              assigneeId,
+              (byAssignee.get(assigneeId) ?? 0) + income
+            )
           }
         }
       }
 
-      const incomeByHost = Array.from(byHost.entries()).map(
-        ([hostId, income]) => ({
-          hostId,
+      const incomeByAssignee = Array.from(byAssignee.entries()).map(
+        ([assigneeId, income]) => ({
+          assigneeId,
           income
         })
       )
 
-      return { totalIncome, totalExpenses, totalOrders, incomeByHost }
+      return { totalIncome, totalExpenses, totalOrders, incomeByAssignee }
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error
@@ -1201,6 +1271,63 @@ export class LivestreamService {
       return
     } catch (error) {
       console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Get aggregated metrics for livestreams in a date range
+  async getAggregatedMetrics(
+    startDate: Date,
+    endDate: Date,
+    channelId?: string,
+    forRole?: "host" | "assistant",
+    assigneeId?: string
+  ): Promise<{
+    totalIncome: number
+    totalAdsCost: number
+    totalComments: number
+  }> {
+    try {
+      // Reuse getLivestreamsByDateRange to get filtered livestreams
+      const { livestreams } = await this.getLivestreamsByDateRange(
+        startDate,
+        endDate,
+        channelId,
+        forRole,
+        assigneeId
+      )
+
+      let totalIncome = 0
+      let totalAdsCost = 0
+      let totalComments = 0
+
+      for (const livestream of livestreams) {
+        const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+
+        for (const snapshot of snapshots) {
+          // Apply filters to snapshots
+          if (channelId && snapshot.period?.channel !== channelId) continue
+          if (forRole && snapshot.period?.for !== forRole) continue
+          if (assigneeId && snapshot.assignee?.toString() !== assigneeId)
+            continue
+
+          totalIncome += snapshot.income ?? 0
+          totalAdsCost += snapshot.adsCost ?? 0
+          totalComments += snapshot.comments ?? 0
+        }
+      }
+
+      return {
+        totalIncome,
+        totalAdsCost,
+        totalComments
+      }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR

@@ -528,11 +528,10 @@ export class IncomeService {
   async exportIncomesToXlsx(
     startDate: Date,
     endDate: Date,
-    res: Response,
     orderId?: string,
     productCode?: string,
     productSource?: string
-  ): Promise<void> {
+  ): Promise<Buffer> {
     try {
       const start = new Date(startDate)
       start.setUTCHours(0, 0, 0, 0)
@@ -545,16 +544,15 @@ export class IncomeService {
         long: "Hộp dài",
         "big-35": "Hộp to 35",
         square: "Hộp vuông"
-      }
+      } as const
 
       const sourcesMap = {
         ads: "ADS",
         affiliate: "AFFILIATE",
         "affiliate-ads": "AFFILIATE ADS",
         other: "KHÁC"
-      }
+      } as const
 
-      // Build filter
       const filter: Record<string, any> = {
         date: { $gte: start, $lte: end }
       }
@@ -562,18 +560,15 @@ export class IncomeService {
       if (productCode) filter["products.code"] = productCode
       if (productSource) filter["products.source"] = productSource
 
-      // Lấy toàn bộ incomes
       const incomes = await this.incomeModel
         .find(filter)
         .populate("channel", "_id name")
         .sort({ date: 1, _id: 1 })
         .lean()
 
-      // Create workbook using ExcelJS
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet("DoanhThu")
 
-      // Define columns with headers
       worksheet.columns = [
         { header: "Ngày xuất đơn", key: "date", width: 15 },
         { header: "Mã đơn hàng", key: "orderId", width: 20 },
@@ -619,17 +614,18 @@ export class IncomeService {
         }
       ]
 
-      // Flatten dữ liệu thành từng dòng sản phẩm và track merges
       const mergeCells: Array<{
         startRow: number
         endRow: number
         colIndex: number
       }> = []
-      let currentRow = 2 // Row 1 is header
+
+      let currentRow = 2
 
       incomes.forEach((income) => {
         const startRow = currentRow
         const channelName = (income.channel as any)?.name || ""
+
         income.products.forEach((product, idx) => {
           worksheet.addRow([
             idx === 0 ? this.formatDate(income.date as Date) : "",
@@ -658,19 +654,17 @@ export class IncomeService {
           currentRow++
         })
 
-        // Track cells to merge (first 6 columns now including channel)
         if (income.products.length > 1) {
           for (let colIdx = 0; colIdx < 6; colIdx++) {
             mergeCells.push({
               startRow,
               endRow: currentRow - 1,
-              colIndex: colIdx + 1 // ExcelJS columns are 1-based
+              colIndex: colIdx + 1
             })
           }
         }
       })
 
-      // Apply merges
       mergeCells.forEach((merge) => {
         worksheet.mergeCells(
           merge.startRow,
@@ -680,7 +674,6 @@ export class IncomeService {
         )
       })
 
-      // Apply Times New Roman font to all cells
       worksheet.eachRow((row) => {
         row.eachCell((cell) => {
           cell.font = { name: "Times New Roman", size: 11 }
@@ -688,19 +681,8 @@ export class IncomeService {
         })
       })
 
-      // Generate buffer
       const buffer = await workbook.xlsx.writeBuffer()
-
-      // Xuất file về FE (dùng @Res())
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=DoanhThu_${startDate.toISOString().slice(0, 10)}_${endDate.toISOString().slice(0, 10)}.xlsx`
-      )
-      res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      )
-      res.send(Buffer.from(buffer))
+      return Buffer.from(buffer)
     } catch (error) {
       console.error(error)
       throw new HttpException(
