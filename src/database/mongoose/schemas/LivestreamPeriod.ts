@@ -8,8 +8,8 @@ interface Time {
 export interface LivestreamPeriod extends Document {
   startTime: Time
   endTime: Time
-  channel: string
-  noon?: boolean
+  channel: Types.ObjectId
+  for: "host" | "assistant"
 }
 
 export const LivestreamPeriodSchema = new Schema<LivestreamPeriod>({
@@ -21,8 +21,16 @@ export const LivestreamPeriodSchema = new Schema<LivestreamPeriod>({
     hour: { type: Number, required: true },
     minute: { type: Number, required: true }
   },
-  channel: { type: String, required: true },
-  noon: { type: Boolean, required: false }
+  channel: {
+    type: Schema.Types.ObjectId,
+    ref: "livestreamchannels",
+    required: true
+  },
+  for: {
+    type: String,
+    enum: ["host", "assistant"],
+    required: true
+  }
 })
 
 export const LivestreamPeriodModel = model<LivestreamPeriod>(

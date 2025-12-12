@@ -161,14 +161,24 @@ export class IncomeController {
     @Query("orderId") orderId?: string,
     @Req() req?
   ): Promise<void> {
-    await this.incomeService.exportIncomesToXlsx(
+    const buffer = await this.incomeService.exportIncomesToXlsx(
       new Date(startDate),
       new Date(endDate),
-      res,
       orderId,
       productCode,
       productSource
     )
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=DoanhThu_${startDate}_${endDate}.xlsx`
+    )
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    res.send(buffer)
     // best-effort log (no await)
     void this.systemLogsService.createSystemLog(
       {
