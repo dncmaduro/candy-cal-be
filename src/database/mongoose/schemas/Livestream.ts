@@ -8,13 +8,16 @@ export interface LivestreamSnapshotEmbedded {
     startTime: { hour: number; minute: number }
     endTime: { hour: number; minute: number }
     channel: string
-    noon?: boolean
+    for: "host" | "assistant"
   }
-  host?: Types.ObjectId
-  assistant?: Types.ObjectId
-  goal?: number
+  assignee?: Types.ObjectId
   income?: number
-  noon?: boolean
+  adsCost?: number
+  clickRate?: number
+  avgViewingDuration?: number
+  comments?: number
+  ordersNote?: string
+  rating?: string
 }
 
 export interface Livestream extends Document {
@@ -38,21 +41,24 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
         minute: { type: Number, required: true }
       },
       channel: { type: String, required: true },
-      noon: { type: Boolean, required: false }
+      for: {
+        type: String,
+        enum: ["host", "assistant"],
+        required: true
+      }
     },
-    host: {
+    assignee: {
       type: Schema.Types.ObjectId,
-      ref: "LivestreamEmployee",
+      ref: "users",
       required: false
     },
-    assistant: {
-      type: Schema.Types.ObjectId,
-      ref: "LivestreamEmployee",
-      required: false
-    },
-    goal: { type: Number, required: false },
     income: { type: Number, required: false },
-    noon: { type: Boolean }
+    adsCost: { type: Number, required: false },
+    clickRate: { type: Number, required: false },
+    avgViewingDuration: { type: Number, required: false },
+    comments: { type: Number, required: false },
+    ordersNote: { type: String, required: false },
+    rating: { type: String, required: false }
   },
   { _id: true }
 )

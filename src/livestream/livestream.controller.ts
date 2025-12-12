@@ -19,7 +19,6 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { Livestream } from "../database/mongoose/schemas/Livestream"
-import { LivestreamEmployee } from "../database/mongoose/schemas/LivestreamEmployee"
 import { LivestreamPeriod } from "../database/mongoose/schemas/LivestreamPeriod"
 import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
 import { Roles } from "../roles/roles.decorator"
@@ -76,11 +75,9 @@ export class LivestreamController {
     @Body()
     body: {
       period: string
-      host: string
-      assistant: string
+      assignee?: string
       goal: number
       income?: number
-      noon?: boolean
     },
     @Req() req
   ): Promise<Livestream> {
@@ -95,7 +92,7 @@ export class LivestreamController {
         entity: "livestream",
         entityId: id,
         result: "success",
-        meta: { period: body.period, host: body.host }
+        meta: { period: body.period, assignee: body.assignee }
       },
       req.user.userId
     )
@@ -111,11 +108,9 @@ export class LivestreamController {
     @Body()
     body: {
       period?: string
-      host?: string
-      assistant?: string
+      assignee?: string
       goal?: number
       income?: number
-      noon?: boolean
     },
     @Req() req
   ): Promise<Livestream> {
@@ -128,6 +123,43 @@ export class LivestreamController {
       {
         type: "livestream",
         action: "updated_snapshot",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: { snapshotId }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Patch(":livestreamId/snapshots/:snapshotId/report")
+  @HttpCode(HttpStatus.OK)
+  async reportSnapshot(
+    @Param("livestreamId") livestreamId: string,
+    @Param("snapshotId") snapshotId: string,
+    @Body()
+    body: {
+      income: number
+      adsCost: number
+      clickRate: number
+      avgViewingDuration: number
+      comments: number
+      ordersNote: string
+      rating?: string
+    },
+    @Req() req
+  ): Promise<Livestream> {
+    const updated = await this.livestreamService.reportSnapshot(
+      livestreamId,
+      snapshotId,
+      body
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "reported_snapshot",
         entity: "livestream",
         entityId: livestreamId,
         result: "success",
@@ -214,12 +246,77 @@ export class LivestreamController {
   @HttpCode(HttpStatus.OK)
   async getLivestreamsByRange(
     @Query("startDate") startDate: string,
-    @Query("endDate") endDate: string
+    @Query("endDate") endDate: string,
+    @Query("channel") channel?: string,
+    @Query("for") forRole?: "host" | "assistant",
+    @Query("assignee") assignee?: string
   ): Promise<{ livestreams: Livestream[] }> {
     return this.livestreamService.getLivestreamsByDateRange(
       new Date(startDate),
-      new Date(endDate)
+      new Date(endDate),
+      channel,
+      forRole,
+      assignee
     )
+  }
+
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("aggregated-metrics")
+  @HttpCode(HttpStatus.OK)
+  async getAggregatedMetrics(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @Query("channel") channel?: string,
+    @Query("for") forRole?: "host" | "assistant",
+    @Query("assignee") assignee?: string
+  ): Promise<{
+    totalIncome: number
+    totalAdsCost: number
+    totalComments: number
+  }> {
+    return this.livestreamService.getAggregatedMetrics(
+      new Date(startDate),
+      new Date(endDate),
+      channel,
+      forRole,
+      assignee
+    )
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Post("sync-snapshots")
+  @HttpCode(HttpStatus.OK)
+  async syncSnapshots(
+    @Body()
+    body: {
+      startDate: string
+      endDate: string
+      channel: string
+    },
+    @Req() req
+  ): Promise<{ updated: number; message: string }> {
+    const result = await this.livestreamService.syncSnapshots(
+      new Date(body.startDate),
+      new Date(body.endDate),
+      body.channel
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "sync_snapshots",
+        entity: "livestream",
+        entityId: "bulk",
+        result: "success",
+        meta: {
+          startDate: body.startDate,
+          endDate: body.endDate,
+          channel: body.channel,
+          updated: result.updated
+        }
+      },
+      req.user.userId
+    )
+    return result
   }
 
   @Roles("admin", "livestream-leader", "livestream-emp")
@@ -250,101 +347,6 @@ export class LivestreamController {
   }
 
   @Roles("admin", "livestream-leader")
-  @Post("employees")
-  @HttpCode(HttpStatus.CREATED)
-  async createLivestreamEmployee(
-    @Body() body: { name: string; active?: boolean },
-    @Req() req
-  ): Promise<LivestreamEmployee> {
-    const created = await this.livestreamService.createLivestreamEmployee(body)
-    void this.systemLogsService.createSystemLog(
-      {
-        type: "livestream_employee",
-        action: "created",
-        entity: "livestream_employee",
-        entityId: created._id?.toString?.() ?? "unknown",
-        result: "success",
-        meta: { name: created.name }
-      },
-      req.user.userId
-    )
-    return created
-  }
-
-  @Roles("admin", "livestream-leader")
-  @Put("employees/:id")
-  @HttpCode(HttpStatus.OK)
-  async updateLivestreamEmployee(
-    @Param("id") id: string,
-    @Body() body: { name?: string; active?: boolean },
-    @Req() req
-  ): Promise<LivestreamEmployee> {
-    const updated = await this.livestreamService.updateLivestreamEmployee(
-      id,
-      body
-    )
-    void this.systemLogsService.createSystemLog(
-      {
-        type: "livestream_employee",
-        action: "updated",
-        entity: "livestream_employee",
-        entityId: updated._id?.toString?.() ?? id,
-        result: "success"
-      },
-      req.user.userId
-    )
-    return updated
-  }
-
-  @Roles("admin", "livestream-leader", "livestream-emp")
-  @Get("employees")
-  @HttpCode(HttpStatus.OK)
-  async getAllLivestreamEmployees(
-    @Query("searchText") searchText?: string,
-    @Query("page") page = 1,
-    @Query("limit") limit = 10,
-    @Query("active") active?: string
-  ): Promise<{ data: LivestreamEmployee[]; total: number }> {
-    const activeBool =
-      typeof active === "string" ? active === "true" : undefined
-    return this.livestreamService.getAllLivestreamEmployees(
-      searchText,
-      page,
-      limit,
-      activeBool
-    )
-  }
-
-  @Roles("admin", "livestream-leader", "livestream-emp")
-  @Get("employees/employee")
-  @HttpCode(HttpStatus.OK)
-  async getLivestreamEmployee(
-    @Query("id") id: string
-  ): Promise<LivestreamEmployee> {
-    return this.livestreamService.getLivestreamEmployeeById(id)
-  }
-
-  @Roles("admin", "livestream-leader")
-  @Delete("employees/:id")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteLivestreamEmployee(
-    @Param("id") id: string,
-    @Req() req
-  ): Promise<void> {
-    await this.livestreamService.deleteLivestreamEmployee(id)
-    void this.systemLogsService.createSystemLog(
-      {
-        type: "livestream_employee",
-        action: "deleted",
-        entity: "livestream_employee",
-        entityId: id,
-        result: "success"
-      },
-      req.user.userId
-    )
-  }
-
-  @Roles("admin", "livestream-leader")
   @Post("periods")
   @HttpCode(HttpStatus.CREATED)
   async createLivestreamPeriod(
@@ -353,7 +355,7 @@ export class LivestreamController {
       startTime: { hour: number; minute: number }
       endTime: { hour: number; minute: number }
       channel: string
-      noon?: boolean
+      for: "host" | "assistant"
     },
     @Req() req
   ): Promise<LivestreamPeriod> {
@@ -365,7 +367,7 @@ export class LivestreamController {
         entity: "livestream_period",
         entityId: created._id?.toString?.() ?? "unknown",
         result: "success",
-        meta: { channel: created.channel }
+        meta: { channel: created.channel, for: created.for }
       },
       req.user.userId
     )
@@ -398,7 +400,7 @@ export class LivestreamController {
       startTime?: { hour: number; minute: number }
       endTime?: { hour: number; minute: number }
       channel?: string
-      noon?: boolean
+      for?: "host" | "assistant"
     },
     @Req() req
   ): Promise<LivestreamPeriod> {
@@ -447,10 +449,10 @@ export class LivestreamController {
     body: {
       startDate: string
       endDate: string
+      channel: string
       totalOrders?: number
       totalIncome?: number
       ads?: number
-      snapshots?: string[]
     },
     @Req() req
   ): Promise<Livestream[]> {
@@ -462,6 +464,11 @@ export class LivestreamController {
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
       throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
     }
+
+    // Get all period IDs for this channel
+    const periodIds = await this.livestreamService.getPeriodIdsByChannel(
+      body.channel
+    )
 
     const created: Livestream[] = []
     // iterate inclusive
@@ -476,7 +483,7 @@ export class LivestreamController {
           totalOrders: body.totalOrders,
           totalIncome: body.totalIncome,
           ads: body.ads,
-          snapshots: body.snapshots
+          snapshots: periodIds
         })
         created.push(doc)
       } catch (err) {
@@ -642,7 +649,13 @@ export class LivestreamController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "order-emp")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "order-emp",
+    "accounting-emp"
+  )
   @Get("channels")
   @HttpCode(HttpStatus.OK)
   async searchChannels(
