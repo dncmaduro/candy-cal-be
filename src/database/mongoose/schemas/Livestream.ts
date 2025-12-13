@@ -18,6 +18,9 @@ export interface LivestreamSnapshotEmbedded {
   comments?: number
   ordersNote?: string
   rating?: string
+  altAssignee?: Types.ObjectId
+  altNote?: string
+  altRequest?: Types.ObjectId
 }
 
 export interface Livestream extends Document {
@@ -26,6 +29,7 @@ export interface Livestream extends Document {
   totalOrders: number
   totalIncome: number
   ads: number
+  fixed: boolean
 }
 
 export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
@@ -58,7 +62,13 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
     avgViewingDuration: { type: Number, required: false },
     comments: { type: Number, required: false },
     ordersNote: { type: String, required: false },
-    rating: { type: String, required: false }
+    rating: { type: String, required: false },
+    altAssignee: {
+      type: Schema.Types.ObjectId,
+      ref: "users",
+      required: false
+    },
+    altNote: { type: String, required: false }
   },
   { _id: true }
 )
@@ -72,7 +82,8 @@ export const LivestreamSchema = new Schema<Livestream>({
   },
   totalOrders: { type: Number, required: true, default: 0 },
   totalIncome: { type: Number, required: true, default: 0 },
-  ads: { type: Number, required: true, default: 0 }
+  ads: { type: Number, required: true, default: 0 },
+  fixed: { type: Boolean, required: true, default: false }
 })
 
 export const LivestreamModel = model<Livestream>("Livestream", LivestreamSchema)
