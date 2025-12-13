@@ -21,6 +21,7 @@ import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { Livestream } from "../database/mongoose/schemas/Livestream"
 import { LivestreamPeriod } from "../database/mongoose/schemas/LivestreamPeriod"
 import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
+import { LivestreamAltRequest } from "../database/mongoose/schemas/LivestreamAltRequest"
 import { Roles } from "../roles/roles.decorator"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 
@@ -171,6 +172,38 @@ export class LivestreamController {
   }
 
   @Roles("admin", "livestream-leader")
+  @Patch(":livestreamId/snapshots/:snapshotId/alt")
+  @HttpCode(HttpStatus.OK)
+  async updateSnapshotAlt(
+    @Param("livestreamId") livestreamId: string,
+    @Param("snapshotId") snapshotId: string,
+    @Body()
+    body: {
+      altAssignee?: string
+      altNote?: string
+    },
+    @Req() req
+  ): Promise<Livestream> {
+    const updated = await this.livestreamService.updateSnapshotAlt(
+      livestreamId,
+      snapshotId,
+      body
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "updated_snapshot_alt",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: { snapshotId }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
   @Delete(":livestreamId/snapshots/:snapshotId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSnapshot(
@@ -241,7 +274,7 @@ export class LivestreamController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader", "order-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "order-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLivestreamsByRange(
@@ -317,6 +350,71 @@ export class LivestreamController {
       req.user.userId
     )
     return result
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Patch("fix")
+  @HttpCode(HttpStatus.OK)
+  async fixLivestream(
+    @Body() body: { startDate: string; endDate: string; channel: string },
+    @Req() req
+  ): Promise<{ updated: number; message: string }> {
+    const start = new Date(body.startDate)
+    const end = new Date(body.endDate)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(0, 0, 0, 0)
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+      throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
+    }
+
+    let totalUpdated = 0
+    const fixedDates: string[] = []
+
+    // Loop through each day in the range
+    for (
+      let cur = new Date(start);
+      cur.getTime() <= end.getTime();
+      cur.setDate(cur.getDate() + 1)
+    ) {
+      const updated = await this.livestreamService.fixLivestreamByDate(
+        new Date(cur),
+        body.channel
+      )
+      if (updated > 0) {
+        totalUpdated += updated
+        fixedDates.push(new Date(cur).toISOString().split("T")[0])
+      }
+    }
+
+    if (totalUpdated === 0) {
+      throw new HttpException(
+        "No livestreams found for this channel or all are already fixed in the date range",
+        HttpStatus.NOT_FOUND
+      )
+    }
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "fixed",
+        entity: "livestream",
+        entityId: "bulk",
+        result: "success",
+        meta: {
+          startDate: body.startDate,
+          endDate: body.endDate,
+          channel: body.channel,
+          updated: totalUpdated
+        }
+      },
+      req.user.userId
+    )
+
+    return {
+      updated: totalUpdated,
+      message: `Successfully fixed ${totalUpdated} livestream(s) for channel across ${fixedDates.length} day(s)`
+    }
   }
 
   @Roles("admin", "livestream-leader", "livestream-emp")
@@ -712,6 +810,160 @@ export class LivestreamController {
         type: "livestream_channel",
         action: "deleted",
         entity: "livestream_channel",
+        entityId: id,
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  // === ALT REQUEST ENDPOINTS ===
+
+  // 0. Search alt requests
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("alt-requests/search")
+  @HttpCode(HttpStatus.OK)
+  async searchAltRequests(
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+    @Query("status") status?: "pending" | "accepted" | "rejected",
+    @Query("channel") channel?: string,
+    @Query("requestBy") requestBy?: string
+  ): Promise<{ data: LivestreamAltRequest[]; total: number }> {
+    return this.livestreamService.searchAltRequests(
+      Number(page) || 1,
+      Number(limit) || 10,
+      status,
+      channel,
+      requestBy
+    )
+  }
+
+  // 1. Create alt request
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Post("alt-requests")
+  @HttpCode(HttpStatus.CREATED)
+  async createAltRequest(
+    @Body()
+    body: {
+      livestreamId: string
+      snapshotId: string
+      altNote: string
+    },
+    @Req() req
+  ): Promise<LivestreamAltRequest> {
+    const created = await this.livestreamService.createAltRequest({
+      livestreamId: body.livestreamId,
+      snapshotId: body.snapshotId,
+      altNote: body.altNote,
+      createdBy: req.user.userId
+    })
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_alt_request",
+        action: "created",
+        entity: "livestream_alt_request",
+        entityId: created._id?.toString?.() ?? "unknown",
+        result: "success",
+        meta: {
+          livestreamId: body.livestreamId,
+          snapshotId: body.snapshotId
+        }
+      },
+      req.user.userId
+    )
+    return created
+  }
+
+  // 2. Update alt request (only creator)
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Put("alt-requests/:id")
+  @HttpCode(HttpStatus.OK)
+  async updateAltRequest(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      altNote: string
+    },
+    @Req() req
+  ): Promise<LivestreamAltRequest> {
+    const updated = await this.livestreamService.updateAltRequest(
+      id,
+      req.user.userId,
+      body
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_alt_request",
+        action: "updated",
+        entity: "livestream_alt_request",
+        entityId: id,
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  // 3. Get request by livestream and snapshot
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("alt-requests")
+  @HttpCode(HttpStatus.OK)
+  async getRequestBySnapshot(
+    @Query("livestreamId") livestreamId: string,
+    @Query("snapshotId") snapshotId: string,
+    @Req() req
+  ): Promise<LivestreamAltRequest | null> {
+    return this.livestreamService.getRequestBySnapshot(
+      livestreamId,
+      snapshotId,
+      req.user.userId,
+      req.user.roles
+    )
+  }
+
+  // 4. Update request status (only leader/admin)
+  @Roles("admin", "livestream-leader")
+  @Patch("alt-requests/:id/status")
+  @HttpCode(HttpStatus.OK)
+  async updateRequestStatus(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      status: "accepted" | "rejected"
+      altAssignee?: string
+    },
+    @Req() req
+  ): Promise<LivestreamAltRequest> {
+    const updated = await this.livestreamService.updateRequestStatus(id, body)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_alt_request",
+        action: "status_updated",
+        entity: "livestream_alt_request",
+        entityId: id,
+        result: "success",
+        meta: {
+          status: body.status,
+          altAssignee: body.altAssignee
+        }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  // 5. Delete alt request (only creator, only if pending)
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Delete("alt-requests/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteAltRequest(@Param("id") id: string, @Req() req): Promise<void> {
+    await this.livestreamService.deleteAltRequest(id, req.user.userId)
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream_alt_request",
+        action: "deleted",
+        entity: "livestream_alt_request",
         entityId: id,
         result: "success"
       },

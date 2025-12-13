@@ -8,6 +8,7 @@ import {
 } from "../database/mongoose/schemas/Livestream"
 import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
+import { LivestreamAltRequest } from "../database/mongoose/schemas/LivestreamAltRequest"
 import { User } from "../database/mongoose/schemas/User"
 
 type LivestreamDoc = HydratedDocument<Livestream>
@@ -23,6 +24,8 @@ export class LivestreamService {
     private readonly livestreamModel: Model<Livestream>,
     @InjectModel("livestreamchannels")
     private readonly livestreamChannelModel: Model<LivestreamChannel>,
+    @InjectModel("livestreamaltrequest")
+    private readonly livestreamAltRequestModel: Model<LivestreamAltRequest>,
     @InjectModel("users")
     private readonly userModel: Model<User>
   ) {}
@@ -464,6 +467,14 @@ export class LivestreamService {
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
 
+      // Check if livestream is fixed
+      if (livestreamDoc.fixed) {
+        throw new HttpException(
+          "Cannot update snapshot: Livestream is fixed",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
       // Access subdocument
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -786,6 +797,12 @@ export class LivestreamService {
 
       for (const livestream of livestreams) {
         const livestreamDoc = livestream as LivestreamDoc
+
+        // Skip fixed livestreams
+        if (livestreamDoc.fixed) {
+          continue
+        }
+
         const snapshots =
           livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
 
@@ -1325,6 +1342,470 @@ export class LivestreamService {
         totalAdsCost,
         totalComments
       }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Fix livestreams on a specific date for a specific channel (set fixed = true)
+  async fixLivestreamByDate(date: Date, channelId: string): Promise<number> {
+    try {
+      const dayStart = new Date(date)
+      dayStart.setHours(0, 0, 0, 0)
+      const dayEnd = new Date(dayStart)
+      dayEnd.setDate(dayEnd.getDate() + 1)
+
+      // Find all livestreams on this date
+      const livestreams = await this.livestreamModel
+        .find({ date: { $gte: dayStart, $lt: dayEnd } })
+        .exec()
+
+      let updated = 0
+
+      // Fix livestreams that belong to the specified channel and are not already fixed
+      for (const livestream of livestreams) {
+        if (livestream.fixed) {
+          continue
+        }
+
+        // Check if any snapshot belongs to the specified channel
+        const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+        const hasChannelSnapshot = snapshots.some(
+          (s) => s.period && s.period.channel === channelId
+        )
+
+        if (hasChannelSnapshot) {
+          livestream.fixed = true
+          await livestream.save()
+          updated++
+        }
+      }
+
+      return updated
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Update altAssignee and altNote for a snapshot
+  async updateSnapshotAlt(
+    livestreamId: string,
+    snapshotId: string,
+    payload: {
+      altAssignee?: string
+      altNote?: string
+    }
+  ): Promise<Livestream> {
+    try {
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      // Access subdocument
+      const snapshotsArray =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      const snapshot = snapshotsArray.find(
+        (s) => s._id?.toString() === snapshotId
+      )
+      if (!snapshot)
+        throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
+
+      // Case 1: altAssignee is undefined - remove both altAssignee and altNote
+      if (payload.altAssignee === undefined) {
+        snapshot.altAssignee = undefined
+        snapshot.altNote = undefined
+      } else {
+        // Case 2: altAssignee is provided - validate and update
+
+        // Validate user exists
+        await this.validateUserExists(payload.altAssignee)
+
+        // Check that altNote is provided
+        if (!payload.altNote || payload.altNote.trim() === "") {
+          throw new HttpException(
+            "altNote is required when altAssignee is provided",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        // Check that altAssignee is different from assignee
+        const assigneeId = snapshot.assignee?.toString()
+        if (assigneeId === payload.altAssignee) {
+          throw new HttpException(
+            "altAssignee must be different from assignee",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        snapshot.altAssignee = new Types.ObjectId(payload.altAssignee)
+        snapshot.altNote = payload.altNote
+      }
+
+      await livestreamDoc.save()
+      // Populate user info before returning
+      await livestreamDoc.populate(
+        "snapshots.assignee snapshots.altAssignee",
+        "_id name username avatarUrl"
+      )
+      return livestreamDoc
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // === ALT REQUEST METHODS ===
+
+  // 0. Search alt requests
+  async searchAltRequests(
+    page = 1,
+    limit = 10,
+    status?: "pending" | "accepted" | "rejected",
+    channel?: string,
+    requestBy?: string
+  ): Promise<{ data: LivestreamAltRequest[]; total: number }> {
+    try {
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+      const filter: any = {}
+
+      // Filter by status
+      if (status) {
+        filter.status = status
+      }
+
+      // Filter by requestBy (createdBy)
+      if (requestBy) {
+        filter.createdBy = requestBy
+      }
+
+      // Get requests matching initial filters
+      let query = this.livestreamAltRequestModel
+        .find(filter)
+        .populate("createdBy", "_id name username avatarUrl")
+
+      const requests = await query.exec()
+
+      // Filter by channel if provided (need to check livestream snapshots)
+      let filteredRequests = requests
+      if (channel) {
+        const filteredByChannel = []
+        for (const request of requests) {
+          const livestream = await this.livestreamModel
+            .findById(request.livestreamId)
+            .exec()
+          if (livestream) {
+            const snapshot = livestream.snapshots.find(
+              (s: any) => s._id?.toString() === request.snapshotId.toString()
+            )
+            if (snapshot && (snapshot as any).period?.channel === channel) {
+              filteredByChannel.push(request)
+            }
+          }
+        }
+        filteredRequests = filteredByChannel
+      }
+
+      // Apply pagination
+      const total = filteredRequests.length
+      const paginatedData = filteredRequests.slice(
+        (safePage - 1) * safeLimit,
+        safePage * safeLimit
+      )
+
+      return { data: paginatedData, total }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // 1. Create alt request
+  async createAltRequest(payload: {
+    livestreamId: string
+    snapshotId: string
+    altNote: string
+    createdBy: string
+  }): Promise<LivestreamAltRequest> {
+    try {
+      // Validate user exists
+      await this.validateUserExists(payload.createdBy)
+
+      // Validate livestream exists
+      const livestream = await this.livestreamModel
+        .findById(payload.livestreamId)
+        .exec()
+      if (!livestream) {
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Validate snapshot exists in livestream
+      const snapshot = livestream.snapshots.find(
+        (s: any) => s._id?.toString() === payload.snapshotId
+      )
+      if (!snapshot) {
+        throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Check if there's already a pending request for this snapshot
+      const existingRequest = await this.livestreamAltRequestModel
+        .findOne({
+          livestreamId: payload.livestreamId,
+          snapshotId: payload.snapshotId,
+          status: "pending"
+        })
+        .exec()
+
+      if (existingRequest) {
+        throw new HttpException(
+          "A pending request already exists for this snapshot",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const created = new this.livestreamAltRequestModel({
+        createdBy: new Types.ObjectId(payload.createdBy),
+        livestreamId: new Types.ObjectId(payload.livestreamId),
+        snapshotId: new Types.ObjectId(payload.snapshotId),
+        altNote: payload.altNote,
+        status: "pending"
+      })
+
+      const saved = await created.save()
+      await saved.populate("createdBy", "_id name username avatarUrl")
+      return saved
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // 2. Update alt request (only creator can update)
+  async updateAltRequest(
+    requestId: string,
+    userId: string,
+    payload: {
+      altNote: string
+    }
+  ): Promise<LivestreamAltRequest> {
+    try {
+      const request = await this.livestreamAltRequestModel
+        .findById(requestId)
+        .exec()
+      if (!request) {
+        throw new HttpException("Request not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Check if user is the creator
+      if (request.createdBy.toString() !== userId) {
+        throw new HttpException(
+          "Only the creator can update this request",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
+      // Only allow update if status is pending
+      if (request.status !== "pending") {
+        throw new HttpException(
+          "Cannot update request that is not pending",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      request.altNote = payload.altNote
+      request.updatedAt = new Date()
+
+      const saved = await request.save()
+      await saved.populate("createdBy", "_id name username avatarUrl")
+      return saved
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // 3. Get request by livestream id and snapshot id
+  async getRequestBySnapshot(
+    livestreamId: string,
+    snapshotId: string,
+    userId: string,
+    userRoles: string[]
+  ): Promise<LivestreamAltRequest | null> {
+    try {
+      const request = await this.livestreamAltRequestModel
+        .findOne({
+          livestreamId: livestreamId,
+          snapshotId: snapshotId
+        })
+        .populate("createdBy", "_id name username avatarUrl")
+        .exec()
+
+      if (!request) {
+        return null
+      }
+
+      // Check permissions: creator, livestream-leader, or admin
+      const isCreator = request.createdBy._id.toString() === userId
+      const isLeaderOrAdmin =
+        userRoles.includes("admin") || userRoles.includes("livestream-leader")
+
+      if (!isCreator && !isLeaderOrAdmin) {
+        throw new HttpException(
+          "You don't have permission to view this request",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
+      return request
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // 4. Update request status (only leader/admin can update)
+  async updateRequestStatus(
+    requestId: string,
+    payload: {
+      status: "accepted" | "rejected"
+      altAssignee?: string
+    }
+  ): Promise<LivestreamAltRequest> {
+    try {
+      const request = await this.livestreamAltRequestModel
+        .findById(requestId)
+        .exec()
+      if (!request) {
+        throw new HttpException("Request not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Only allow update if current status is pending
+      if (request.status !== "pending") {
+        throw new HttpException(
+          "Cannot update request that is not pending",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      // If accepting, altAssignee is required
+      if (payload.status === "accepted") {
+        if (!payload.altAssignee) {
+          throw new HttpException(
+            "altAssignee is required when accepting request",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        // Validate altAssignee exists
+        await this.validateUserExists(payload.altAssignee)
+
+        // Update the snapshot with altAssignee and altNote
+        const livestream = await this.livestreamModel
+          .findById(request.livestreamId)
+          .exec()
+        if (!livestream) {
+          throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+        }
+
+        const snapshot = livestream.snapshots.find(
+          (s: any) => s._id?.toString() === request.snapshotId.toString()
+        )
+        if (!snapshot) {
+          throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
+        }
+
+        // Check that altAssignee is different from assignee
+        const assigneeId = (snapshot as any).assignee?.toString()
+        if (assigneeId === payload.altAssignee) {
+          throw new HttpException(
+            "altAssignee must be different from assignee",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        // Update snapshot with alt info
+        ;(snapshot as any).altAssignee = new Types.ObjectId(payload.altAssignee)
+        ;(snapshot as any).altNote = request.altNote
+
+        await livestream.save()
+      }
+
+      // Update request status
+      request.status = payload.status
+      request.updatedAt = new Date()
+
+      const saved = await request.save()
+      await saved.populate("createdBy", "_id name username avatarUrl")
+      return saved
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // 5. Delete request (only creator can delete, only if pending)
+  async deleteAltRequest(requestId: string, userId: string): Promise<void> {
+    try {
+      const request = await this.livestreamAltRequestModel
+        .findById(requestId)
+        .exec()
+      if (!request) {
+        throw new HttpException("Request not found", HttpStatus.NOT_FOUND)
+      }
+
+      // Check if user is the creator
+      if (request.createdBy.toString() !== userId) {
+        throw new HttpException(
+          "Only the creator can delete this request",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
+      // Only allow delete if status is pending
+      if (request.status !== "pending") {
+        throw new HttpException(
+          "Cannot delete request that is not pending",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      await this.livestreamAltRequestModel.findByIdAndDelete(requestId).exec()
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error

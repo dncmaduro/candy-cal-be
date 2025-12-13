@@ -33,6 +33,7 @@ import { SalesActivitySchema } from "./mongoose/schemas/SalesActivity"
 import { SalesTaskSchema } from "./mongoose/schemas/SalesTask"
 import { SalesMonthKpiSchema } from "./mongoose/schemas/SalesMonthKpi"
 import { SalesDailyReportSchema } from "./mongoose/schemas/SalesDailyReport"
+import { LivestreamAltRequestSchema } from "./mongoose/schemas/LivestreamAltRequest"
 
 @Module({
   imports: [
@@ -69,7 +70,8 @@ import { SalesDailyReportSchema } from "./mongoose/schemas/SalesDailyReport"
       { name: "salesactivities", schema: SalesActivitySchema },
       { name: "salestasks", schema: SalesTaskSchema },
       { name: "salesdailyreports", schema: SalesDailyReportSchema },
-      { name: "salesmonthkpis", schema: SalesMonthKpiSchema }
+      { name: "salesmonthkpis", schema: SalesMonthKpiSchema },
+      { name: "livestreamaltrequests", schema: LivestreamAltRequestSchema }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules
