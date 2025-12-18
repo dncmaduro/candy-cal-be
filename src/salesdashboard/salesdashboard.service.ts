@@ -45,6 +45,14 @@ export interface RevenueStatsResponse {
   otherItemsRevenue: number
 }
 
+export interface TopCustomerByRevenue {
+  funnelId: string
+  customerName: string
+  customerPhone: string
+  revenue: number
+  orderCount: number
+}
+
 export interface MetricsResponse {
   cac: number // Customer Acquisition Cost
   crr: number // Customer Retention Rate
@@ -58,6 +66,7 @@ export interface MetricsResponse {
     customer: number
     closed: number
   }
+  topCustomersByRevenue: TopCustomerByRevenue[]
 }
 
 @Injectable()
@@ -437,6 +446,52 @@ export class SalesDashboardService {
         })
       })
 
+      // Calculate top 10 customers by revenue
+      const customerRevenueMap = new Map<
+        string,
+        {
+          funnelId: string
+          customerName: string
+          customerPhone: string
+          revenue: number
+          orderCount: number
+        }
+      >()
+
+      orders.forEach((order) => {
+        const funnel = order.salesFunnelId as any
+        console.log(order)
+        if (funnel && funnel._id) {
+          const funnelId = funnel._id.toString()
+          const customerName = funnel.name || "Unknown"
+          const customerPhone = funnel.phoneNumber || ""
+
+          const totalDiscount =
+            (order.orderDiscount || 0) + (order.otherDiscount || 0)
+          const tax = order.tax || 0
+          const shippingCost = order.shippingCost || 0
+          const actualRevenue = order.total - totalDiscount + tax + shippingCost
+
+          const existing = customerRevenueMap.get(funnelId)
+          if (existing) {
+            existing.revenue += actualRevenue
+            existing.orderCount += 1
+          } else {
+            customerRevenueMap.set(funnelId, {
+              funnelId,
+              customerName,
+              customerPhone,
+              revenue: actualRevenue,
+              orderCount: 1
+            })
+          }
+        }
+      })
+
+      const topCustomersByRevenue = Array.from(customerRevenueMap.values())
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10)
+
       return {
         cac: Math.round(cac),
         crr: Math.round(crr * 100) / 100,
@@ -444,7 +499,8 @@ export class SalesDashboardService {
         conversionRate: Math.round(conversionRate * 100) / 100,
         avgDealSize: Math.round(avgDealSize),
         salesCycleLength: Math.round(salesCycleLength * 100) / 100,
-        stageTransitions
+        stageTransitions,
+        topCustomersByRevenue
       }
     } catch (error) {
       console.error("Error in getMonthlyMetrics:", error)
