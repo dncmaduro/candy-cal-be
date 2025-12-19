@@ -1516,7 +1516,13 @@ export class IncomeService {
     channel: string
   }): Promise<void> {
     try {
-      // 1. Xử lý file tổng doanh thu: insert với source trống
+      // ====== 0) Date range ======
+      const start = new Date(dto.date)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(dto.date)
+      end.setHours(23, 59, 59, 999)
+
+      // ====== 1) Xử lý file tổng doanh thu: insert với source mặc định "other" + sourceChecked=false ======
       const totalWorkbook = XLSX.read(dto.totalIncomeFile.buffer, {
         type: "buffer"
       })
@@ -1529,21 +1535,17 @@ export class IncomeService {
         .slice(1)
         .filter((line) => line["Cancelation/Return Type"] !== "Cancel")
 
-      const start = new Date(dto.date)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(dto.date)
-      end.setHours(23, 59, 59, 999)
-
       // Xóa incomes trong ngày nhưng chỉ cho channel này
       await this.incomeModel.deleteMany({
         date: { $gte: start, $lte: end },
         channel: dto.channel
       })
 
-      // Group data
+      // Group theo orderId
       const newIncomesMap = totalData.reduce(
         (acc, line) => {
-          const orderId = line["Order ID"]
+          const orderId = String(line["Order ID"] || "").trim()
+          if (!orderId) return acc
           if (!acc[orderId]) acc[orderId] = []
           acc[orderId].push(line)
           return acc
@@ -1552,21 +1554,23 @@ export class IncomeService {
       )
 
       const inserts: any[] = []
-      for (const orderId in newIncomesMap) {
+      for (const orderId of Object.keys(newIncomesMap)) {
         const lines = newIncomesMap[orderId]
         const shippingProvider = this.getShippingProviderName(lines[0] as any)
+
         const products = lines.map((line) => ({
-          code: line["Seller SKU"],
-          name: line["Product Name"],
+          code: String(line["Seller SKU"] || "").trim(),
+          name: String(line["Product Name"] || "").trim(),
           source: "other",
-          quantity: line["Quantity"],
-          quotation: line["SKU Unit Original Price"],
-          price: line["SKU Subtotal Before Discount"],
-          platformDiscount: line["SKU Platform Discount"] || 0,
-          sellerDiscount: line["SKU Seller Discount"] || 0,
-          priceAfterDiscount: line["SKU Subtotal After Discount"] || 0,
+          quantity: Number(line["Quantity"]) || 0,
+          quotation: Number(line["SKU Unit Original Price"]) || 0,
+          price: Number(line["SKU Subtotal Before Discount"]) || 0,
+          platformDiscount: Number(line["SKU Platform Discount"]) || 0,
+          sellerDiscount: Number(line["SKU Seller Discount"]) || 0,
+          priceAfterDiscount: Number(line["SKU Subtotal After Discount"]) || 0,
           sourceChecked: false
         }))
+
         inserts.push({
           orderId,
           customer: lines[0]["Buyer Username"] || "user",
@@ -1577,16 +1581,15 @@ export class IncomeService {
           products
         })
       }
+
       if (inserts.length) {
-        await this.incomeModel.insertMany(inserts, {
-          ordered: false
-        })
+        await this.incomeModel.insertMany(inserts, { ordered: false })
       }
 
       // Cập nhật quy cách đóng hộp
       await this.updateIncomesBox(new Date(dto.date))
 
-      // 2. Xử lý file affiliate: update source
+      // ====== 2) Xử lý file affiliate: update source (FIX RACE + IDEMPOTENT) ======
       const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
         type: "buffer"
       })
@@ -1596,69 +1599,95 @@ export class IncomeService {
         affiliateSheet
       ) as XlsxAffiliateData[]
 
-      affiliateData.forEach(async (line) => {
-        const existedOrder = await this.incomeModel
-          .findOne({
-            orderId: line["ID đơn hàng"]
-          })
-          .exec()
-        if (existedOrder) {
-          const foundProduct = existedOrder.products.find((p) => {
-            return (
-              p.code === line["Sku người bán"] &&
-              p.quantity === Number(line["Số lượng"]) &&
-              p.sourceChecked === false
-            )
-          })
+      // Optional: thống kê để debug
+      let updatedCount = 0
+      let noopCount = 0
 
-          if (foundProduct) {
-            foundProduct.sourceChecked = true
-            foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
-            foundProduct.source = OWN_USERS.includes(
-              line["Tên người dùng nhà sáng tạo"]
-            )
-              ? "ads"
-              : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
-                  !line["Tỷ lệ hoa hồng tiêu chuẩn"]
-                ? "affiliate-ads"
-                : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
-                    !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-                  ? "affiliate"
-                  : "other"
-            foundProduct.content = line["Loại nội dung"]
+      for (const line of affiliateData) {
+        const orderId = String(line["ID đơn hàng"] || "").trim()
+        const code = String(line["Sku người bán"] || "").trim()
+        const quantity = Number(line["Số lượng"])
 
-            const affiliateAdsPercentage = Number(
-              line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-            )
-            foundProduct.affiliateAdsPercentage = isNaN(affiliateAdsPercentage)
-              ? 0
-              : affiliateAdsPercentage
+        if (!orderId || !code || !Number.isFinite(quantity)) continue
 
-            const affiliateAdsAmount = Number(
-              line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
-            )
-            foundProduct.affiliateAdsAmount = isNaN(affiliateAdsAmount)
-              ? 0
-              : affiliateAdsAmount
+        const creator = line["Tên người dùng nhà sáng tạo"]
+        const nextSource = OWN_USERS.includes(String(creator))
+          ? "ads"
+          : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
+              !line["Tỷ lệ hoa hồng tiêu chuẩn"]
+            ? "affiliate-ads"
+            : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
+                !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+              ? "affiliate"
+              : "other"
 
-            const standardAffPercentage = Number(
-              line["Tỷ lệ hoa hồng tiêu chuẩn"]
-            )
-            foundProduct.standardAffPercentage = isNaN(standardAffPercentage)
-              ? 0
-              : standardAffPercentage
+        const affiliateAdsPercentage = Number(
+          line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+        )
+        const affiliateAdsAmount = Number(
+          line["Thanh toán hoa hồng Quảng cáo cửa hàng ước tính"]
+        )
+        const standardAffPercentage = Number(line["Tỷ lệ hoa hồng tiêu chuẩn"])
+        const standardAffAmount = Number(
+          line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
+        )
+        const content = line["Loại nội dung"]
 
-            const standardAffAmount = Number(
-              line["Thanh toán hoa hồng tiêu chuẩn ước tính"]
-            )
-            foundProduct.standardAffAmount = isNaN(standardAffAmount)
-              ? 0
-              : standardAffAmount
-
-            await existedOrder.save()
+        // Atomic update: chỉ update nếu có phần tử products match + sourceChecked=false
+        const res = await this.incomeModel.updateOne(
+          {
+            orderId,
+            channel: dto.channel,
+            date: { $gte: start, $lte: end },
+            products: { $elemMatch: { code, quantity, sourceChecked: false } }
+          },
+          {
+            $set: {
+              "products.$[p].sourceChecked": true,
+              "products.$[p].creator": creator,
+              "products.$[p].source": nextSource,
+              "products.$[p].content": content,
+              "products.$[p].affiliateAdsPercentage": isNaN(
+                affiliateAdsPercentage
+              )
+                ? 0
+                : affiliateAdsPercentage,
+              "products.$[p].affiliateAdsAmount": isNaN(affiliateAdsAmount)
+                ? 0
+                : affiliateAdsAmount,
+              "products.$[p].standardAffPercentage": isNaN(
+                standardAffPercentage
+              )
+                ? 0
+                : standardAffPercentage,
+              "products.$[p].standardAffAmount": isNaN(standardAffAmount)
+                ? 0
+                : standardAffAmount
+            }
+          },
+          {
+            arrayFilters: [
+              {
+                "p.code": code,
+                "p.quantity": quantity,
+                "p.sourceChecked": false
+              }
+            ]
           }
-        }
-      })
+        )
+
+        // res.matchedCount == 0: hoặc order không tồn tại, hoặc product đã được check (trùng dòng), hoặc code/qty không match
+        if ((res as any).modifiedCount > 0) updatedCount++
+        else noopCount++
+
+        // Nếu bạn vẫn muốn debug riêng 1 orderId:
+        // if (orderId === "581632382653597228") {
+        //   console.log("affiliate update result:", res)
+        // }
+      }
+
+      // Optional log tổng (tuỳ bạn giữ hay bỏ)
+      // console.log(`[AffiliateUpdate] updated=${updatedCount}, noop=${noopCount}`)
     } catch (error) {
       console.error(error)
       throw new HttpException(
