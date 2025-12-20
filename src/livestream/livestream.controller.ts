@@ -180,6 +180,7 @@ export class LivestreamController {
     @Body()
     body: {
       altAssignee?: string
+      altOtherAssignee?: string
       altNote?: string
     },
     @Req() req
