@@ -66,7 +66,6 @@ export interface MetricsResponse {
     customer: number
     closed: number
   }
-  topCustomersByRevenue: TopCustomerByRevenue[]
 }
 
 @Injectable()
@@ -446,7 +445,51 @@ export class SalesDashboardService {
         })
       })
 
-      // Calculate top 10 customers by revenue
+      return {
+        cac: Math.round(cac),
+        crr: Math.round(crr * 100) / 100,
+        churnRate: Math.round(churnRate * 100) / 100,
+        conversionRate: Math.round(conversionRate * 100) / 100,
+        avgDealSize: Math.round(avgDealSize),
+        salesCycleLength: Math.round(salesCycleLength * 100) / 100,
+        stageTransitions
+      }
+    } catch (error) {
+      console.error("Error in getMonthlyMetrics:", error)
+      throw new HttpException(
+        "Lỗi khi lấy chỉ số tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getTopCustomersByRevenue(
+    year: number,
+    month: number,
+    page = 1,
+    limit = 10
+  ): Promise<{ data: TopCustomerByRevenue[]; total: number }> {
+    try {
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+
+      // Month boundaries using UTC to avoid timezone issues
+      const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0))
+      const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
+
+      // Get all orders in this month (only official status)
+      const orders = await this.salesOrderModel
+        .find({
+          date: { $gte: startOfMonth, $lte: endOfMonth },
+          status: "official"
+        })
+        .populate({
+          path: "salesFunnelId",
+          select: "name phoneNumber"
+        })
+        .lean()
+
+      // Calculate revenue by customer
       const customerRevenueMap = new Map<
         string,
         {
@@ -460,7 +503,6 @@ export class SalesDashboardService {
 
       orders.forEach((order) => {
         const funnel = order.salesFunnelId as any
-        console.log(order)
         if (funnel && funnel._id) {
           const funnelId = funnel._id.toString()
           const customerName = funnel.name || "Unknown"
@@ -488,24 +530,22 @@ export class SalesDashboardService {
         }
       })
 
-      const topCustomersByRevenue = Array.from(customerRevenueMap.values())
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 10)
+      // Convert to array and sort by revenue
+      const allCustomers = Array.from(customerRevenueMap.values()).sort(
+        (a, b) => b.revenue - a.revenue
+      )
 
-      return {
-        cac: Math.round(cac),
-        crr: Math.round(crr * 100) / 100,
-        churnRate: Math.round(churnRate * 100) / 100,
-        conversionRate: Math.round(conversionRate * 100) / 100,
-        avgDealSize: Math.round(avgDealSize),
-        salesCycleLength: Math.round(salesCycleLength * 100) / 100,
-        stageTransitions,
-        topCustomersByRevenue
-      }
+      const total = allCustomers.length
+      const data = allCustomers.slice(
+        (safePage - 1) * safeLimit,
+        safePage * safeLimit
+      )
+
+      return { data, total }
     } catch (error) {
-      console.error("Error in getMonthlyMetrics:", error)
+      console.error("Error in getTopCustomersByRevenue:", error)
       throw new HttpException(
-        "Lỗi khi lấy chỉ số tháng",
+        "Lỗi khi lấy danh sách khách hàng theo doanh thu",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
