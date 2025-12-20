@@ -18,7 +18,8 @@ export interface LivestreamSnapshotEmbedded {
   comments?: number
   ordersNote?: string
   rating?: string
-  altAssignee?: Types.ObjectId
+  altAssignee?: Types.ObjectId | "other"
+  altOtherAssignee?: string
   altNote?: string
   altRequest?: Types.ObjectId
 }
@@ -64,10 +65,10 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
     ordersNote: { type: String, required: false },
     rating: { type: String, required: false },
     altAssignee: {
-      type: Schema.Types.ObjectId,
-      ref: "users",
+      type: Schema.Types.Mixed,
       required: false
     },
+    altOtherAssignee: { type: String, required: false },
     altNote: { type: String, required: false }
   },
   { _id: true }

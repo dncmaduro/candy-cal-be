@@ -1402,7 +1402,8 @@ export class LivestreamService {
     livestreamId: string,
     snapshotId: string,
     payload: {
-      altAssignee?: string
+      altAssignee?: string | "other"
+      altOtherAssignee?: string
       altNote?: string
     }
   ): Promise<Livestream> {
@@ -1425,12 +1426,10 @@ export class LivestreamService {
       // Case 1: altAssignee is undefined - remove both altAssignee and altNote
       if (payload.altAssignee === undefined) {
         snapshot.altAssignee = undefined
+        snapshot.altOtherAssignee = undefined
         snapshot.altNote = undefined
       } else {
         // Case 2: altAssignee is provided - validate and update
-
-        // Validate user exists
-        await this.validateUserExists(payload.altAssignee)
 
         // Check that altNote is provided
         if (!payload.altNote || payload.altNote.trim() === "") {
@@ -1440,23 +1439,33 @@ export class LivestreamService {
           )
         }
 
-        // Check that altAssignee is different from assignee
-        const assigneeId = snapshot.assignee?.toString()
-        if (assigneeId === payload.altAssignee) {
-          throw new HttpException(
-            "altAssignee must be different from assignee",
-            HttpStatus.BAD_REQUEST
-          )
-        }
+        // Handle "other" case
+        if (payload.altAssignee === "other") {
+          snapshot.altAssignee = "other"
+          snapshot.altOtherAssignee = payload.altOtherAssignee
+          snapshot.altNote = payload.altNote
+        } else {
+          // Validate user exists
+          await this.validateUserExists(payload.altAssignee)
 
-        snapshot.altAssignee = new Types.ObjectId(payload.altAssignee)
-        snapshot.altNote = payload.altNote
+          // Check that altAssignee is different from assignee
+          const assigneeId = snapshot.assignee?.toString()
+          if (assigneeId === payload.altAssignee) {
+            throw new HttpException(
+              "altAssignee must be different from assignee",
+              HttpStatus.BAD_REQUEST
+            )
+          }
+
+          snapshot.altAssignee = new Types.ObjectId(payload.altAssignee)
+          snapshot.altNote = payload.altNote
+        }
       }
 
       await livestreamDoc.save()
       // Populate user info before returning
       await livestreamDoc.populate(
-        "snapshots.assignee snapshots.altAssignee",
+        "snapshots.assignee snapshots.altAssignee snapshots.altOtherAssignee",
         "_id name username avatarUrl"
       )
       return livestreamDoc
