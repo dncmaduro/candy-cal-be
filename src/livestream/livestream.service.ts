@@ -277,15 +277,21 @@ export class LivestreamService {
     totalOrders?: number
     totalIncome?: number
     ads?: number
-    snapshots?: string[] // optional array of period ids to create default snapshots (no host/assistant)
+    snapshots?: string[] // period ids
   }): Promise<Livestream> {
     try {
-      const date = new Date(payload.date)
-      const start = new Date(date)
+      // 1) Normalize date to start-of-day (local server timezone)
+      const rawDate = new Date(payload.date)
+      if (isNaN(rawDate.getTime())) {
+        throw new HttpException("Invalid date", HttpStatus.BAD_REQUEST)
+      }
+
+      const start = new Date(rawDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(start)
       end.setDate(end.getDate() + 1)
 
+      // 2) Unique by day
       const existing = await this.livestreamModel
         .findOne({ date: { $gte: start, $lt: end } })
         .exec()
@@ -296,36 +302,89 @@ export class LivestreamService {
         )
       }
 
+      // 3) Base object
       const createdObj: any = {
-        date: start, // normalized to midnight of the day to ensure duplicate checks by day
+        date: start,
         snapshots: [],
         totalOrders: payload.totalOrders ?? 0,
-        totalIncome: 0,
-        ads: payload.ads ?? 0
+        totalIncome: 0, // recompute from snapshots
+        ads: payload.ads ?? 0,
+        dateKpi: 0
       }
 
-      // if snapshots (period ids) provided, create embedded snapshots without assignee
-      if (Array.isArray(payload.snapshots) && payload.snapshots.length > 0) {
-        const periods = await this.livestreamPeriodModel
-          .find({ _id: { $in: payload.snapshots } })
-          .exec()
-        // map and push snapshots (no assignee)
-        createdObj.snapshots = periods.map((p) => {
-          return {
-            period: {
-              _id: p._id as Types.ObjectId,
-              startTime: p.startTime,
-              endTime: p.endTime,
-              channel: (p.channel as Types.ObjectId).toString(),
-              for: p.for
-            },
-            goal: 0,
-            income: 0
-          }
-        })
-        createdObj.totalIncome = this.computeTotalIncome(createdObj.snapshots)
+      // ---- No snapshots => create livestream with dateKpi = 0
+      if (!Array.isArray(payload.snapshots) || payload.snapshots.length === 0) {
+        const created = new this.livestreamModel(createdObj)
+        return await created.save()
       }
 
+      // 4) Load periods
+      const periods = await this.livestreamPeriodModel
+        .find({ _id: { $in: payload.snapshots } })
+        .exec()
+
+      if (!periods || periods.length === 0) {
+        // If client passed invalid ids, you can either throw or accept empty
+        // Choose strict behavior to surface bugs early:
+        throw new HttpException(
+          "No valid periods found",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      // 5) Determine channelId from first period (handle populated/unpopulated)
+      const firstChannel = periods[0].channel
+      const channelObjectId: Types.ObjectId = firstChannel?._id
+        ? new Types.ObjectId(firstChannel._id)
+        : new Types.ObjectId(firstChannel)
+
+      // 6) Calculate dateKpi from month goal
+      const month = start.getMonth()
+      const year = start.getFullYear()
+
+      const monthGoal = await this.livestreamMonthGoalModel
+        .findOne({ month, year, channel: channelObjectId })
+        .exec()
+
+      let dateKpi = 0
+      if (monthGoal) {
+        const daysInMonth = new Date(year, month, 0).getDate()
+        // Round to nearest thousand
+        dateKpi = Math.round((monthGoal.goal ?? 0) / daysInMonth / 1000) * 1000
+      }
+      createdObj.dateKpi = dateKpi
+
+      // 7) snapshotKpi = dateKpi / number of snapshots, rounded to nearest thousand
+      const snapshotKpi =
+        periods.length > 0
+          ? Math.round(dateKpi / periods.length / 1000) * 1000
+          : 0
+
+      // 8) Map embedded snapshots
+      createdObj.snapshots = periods.map((p) => {
+        const pChannel: any = (p as any).channel
+        const pChannelId = pChannel?._id
+          ? pChannel._id.toString()
+          : pChannel.toString()
+
+        return {
+          period: {
+            _id: p._id as Types.ObjectId,
+            startTime: p.startTime,
+            endTime: p.endTime,
+            channel: pChannelId, // embedded snapshot stores channel as string
+            for: p.for
+          },
+          goal: 0,
+          income: 0,
+          snapshotKpi
+        }
+      })
+
+      // 9) Recompute totalIncome (currently all incomes are 0)
+      createdObj.totalIncome = this.computeTotalIncome(createdObj.snapshots)
+
+      // 10) Save
       const created = new this.livestreamModel(createdObj)
       return await created.save()
     } catch (error) {
@@ -838,6 +897,29 @@ export class LivestreamService {
           }
         }
 
+        // Calculate dateKpi and snapshotKpi
+        const livestreamDate = new Date(livestreamDoc.date)
+        const month = livestreamDate.getMonth() + 1
+        const year = livestreamDate.getFullYear()
+
+        const monthGoal = await this.livestreamMonthGoalModel
+          .findOne({ month, year, channel: channelId })
+          .exec()
+
+        let dateKpi = 0
+        if (monthGoal) {
+          const daysInMonth = new Date(year, month, 0).getDate()
+          // Round to nearest thousand
+          dateKpi = Math.round(monthGoal.goal / daysInMonth / 1000) * 1000
+          livestreamDoc.dateKpi = dateKpi
+        }
+
+        // Calculate snapshotKpi = dateKpi / number of snapshots, rounded to nearest thousand
+        const snapshotKpi =
+          currentPeriods.length > 0
+            ? Math.round(dateKpi / currentPeriods.length / 1000) * 1000
+            : 0
+
         // Process current periods
         for (const period of currentPeriods as LivestreamPeriod[]) {
           const periodId = period._id.toString()
@@ -855,7 +937,8 @@ export class LivestreamService {
                 for: period.for
               },
               assignee: existingSnapshot.assignee, // Keep existing assignee
-              income: existingSnapshot.income ?? 0
+              income: existingSnapshot.income ?? 0,
+              snapshotKpi: snapshotKpi
             })
           } else {
             // New period: Create new snapshot without assignee
@@ -868,7 +951,8 @@ export class LivestreamService {
                 for: period.for
               },
               assignee: undefined,
-              income: 0
+              income: 0,
+              snapshotKpi: snapshotKpi
             })
           }
         }
@@ -1036,26 +1120,37 @@ export class LivestreamService {
     goal: number
   }): Promise<LivestreamMonthGoal> {
     try {
+      const channelId = new Types.ObjectId(payload.channel)
+
       const exists = await this.livestreamMonthGoalModel
         .findOne({
           month: payload.month,
           year: payload.year,
-          channel: payload.channel
+          channel: channelId
         })
         .exec()
+
       if (exists) {
         throw new HttpException(
           "Monthly goal already exists for this channel",
           HttpStatus.BAD_REQUEST
         )
       }
-      const created = new this.livestreamMonthGoalModel({
+
+      const created = await this.livestreamMonthGoalModel.create({
         month: payload.month,
         year: payload.year,
-        channel: payload.channel,
+        channel: channelId,
         goal: payload.goal
       })
-      return await created.save()
+
+      // Trả về bản đã populate
+      const populated = await this.livestreamMonthGoalModel
+        .findById(created._id)
+        .populate("channel")
+        .exec()
+
+      return populated as unknown as LivestreamMonthGoal
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error
@@ -1075,18 +1170,22 @@ export class LivestreamService {
     try {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
+
       const filter: any = {}
-      if (typeof channel === "string" && channel.trim() !== "")
-        filter.channel = channel
+      if (typeof channel === "string" && channel.trim() !== "") {
+        filter.channel = new Types.ObjectId(channel)
+      }
 
       const [data, total] = await Promise.all([
         this.livestreamMonthGoalModel
           .find(filter)
+          .populate("channel") // <- đây
           .skip((safePage - 1) * safeLimit)
           .limit(safeLimit)
           .exec(),
         this.livestreamMonthGoalModel.countDocuments(filter).exec()
       ])
+
       return { data, total }
     } catch (error) {
       console.error(error)
@@ -1109,13 +1208,16 @@ export class LivestreamService {
           HttpStatus.BAD_REQUEST
         )
       }
-      const updateObj: any = { goal: payload.goal }
 
       const updated = await this.livestreamMonthGoalModel
-        .findByIdAndUpdate(id, { $set: updateObj }, { new: true })
+        .findByIdAndUpdate(id, { $set: { goal: payload.goal } }, { new: true })
+        .populate("channel") // <- đây
         .exec()
-      if (!updated)
+
+      if (!updated) {
         throw new HttpException("Monthly goal not found", HttpStatus.NOT_FOUND)
+      }
+
       return updated
     } catch (error) {
       console.error(error)
@@ -1126,7 +1228,6 @@ export class LivestreamService {
       )
     }
   }
-
   // Delete monthly goal
   async deleteLivestreamMonthGoal(id: string): Promise<void> {
     try {
@@ -1171,6 +1272,7 @@ export class LivestreamService {
       }
       const res = await this.livestreamMonthGoalModel
         .find({ month, year })
+        .populate("channel")
         .exec()
       return res
     } catch (error) {
