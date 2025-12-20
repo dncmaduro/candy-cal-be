@@ -2153,6 +2153,10 @@ export class SalesOrdersService {
       if (receivedDate !== undefined) {
         order.receivedDate = receivedDate
       }
+      // minus 7 hours
+      order.date = new Date(
+        new Date().setUTCHours(0, 0, 0, 0) - 7 * 3600 * 1000
+      )
       order.updatedAt = new Date()
 
       const savedOrder = await order.save()
