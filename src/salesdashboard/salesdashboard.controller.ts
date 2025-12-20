@@ -41,4 +41,21 @@ export class SalesDashboardController {
       Number(month)
     )
   }
+
+  @Roles("admin", "sales-emp", "system-emp")
+  @Get("top-customers")
+  @HttpCode(HttpStatus.OK)
+  async getTopCustomersByRevenue(
+    @Query("year") year: string,
+    @Query("month") month: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
+  ) {
+    return this.salesDashboardService.getTopCustomersByRevenue(
+      Number(year),
+      Number(month),
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 10
+    )
+  }
 }
