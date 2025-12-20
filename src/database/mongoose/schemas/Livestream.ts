@@ -22,6 +22,7 @@ export interface LivestreamSnapshotEmbedded {
   altOtherAssignee?: string
   altNote?: string
   altRequest?: Types.ObjectId
+  snapshotKpi?: number
 }
 
 export interface Livestream extends Document {
@@ -31,6 +32,7 @@ export interface Livestream extends Document {
   totalIncome: number
   ads: number
   fixed: boolean
+  dateKpi: number
 }
 
 export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
@@ -69,7 +71,8 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
       required: false
     },
     altOtherAssignee: { type: String, required: false },
-    altNote: { type: String, required: false }
+    altNote: { type: String, required: false },
+    snapshotKpi: { type: Number, required: false }
   },
   { _id: true }
 )
@@ -84,7 +87,8 @@ export const LivestreamSchema = new Schema<Livestream>({
   totalOrders: { type: Number, required: true, default: 0 },
   totalIncome: { type: Number, required: true, default: 0 },
   ads: { type: Number, required: true, default: 0 },
-  fixed: { type: Boolean, required: true, default: false }
+  fixed: { type: Boolean, required: true, default: false },
+  dateKpi: { type: Number, required: true, default: 0 }
 })
 
 export const LivestreamModel = model<Livestream>("Livestream", LivestreamSchema)
