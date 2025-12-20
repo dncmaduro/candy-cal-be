@@ -733,9 +733,10 @@ export class LivestreamService {
       const end = new Date(endDate)
       end.setHours(23, 59, 59, 999)
 
-      // Find all livestreams in date range
+      // Find all livestreams in date range, sorted by date
       const livestreams = await this.livestreamModel
         .find({ date: { $gte: start, $lte: end } })
+        .sort({ date: 1 })
         .populate("snapshots.assignee", "_id name username avatarUrl")
         .exec()
 
@@ -1815,6 +1816,150 @@ export class LivestreamService {
       }
 
       await this.livestreamAltRequestModel.findByIdAndDelete(requestId).exec()
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Get hosts ranked by revenue in date range
+  async getHostRevenueRankings(
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    rankings: Array<{
+      hostId: string | "other"
+      hostName: string
+      totalRevenue: number
+      totalAdsCost: number
+      totalOrders: number
+    }>
+  }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
+      }
+
+      // Get all livestreams in date range
+      const livestreams = await this.livestreamModel
+        .find({ date: { $gte: start, $lte: end } })
+        .populate("snapshots.assignee", "_id name username")
+        .populate("snapshots.altAssignee", "_id name username")
+        .exec()
+
+      // Map to store aggregated data per host
+      const hostDataMap = new Map<
+        string,
+        {
+          hostId: string | "other"
+          hostName: string
+          totalRevenue: number
+          totalAdsCost: number
+          totalOrders: number
+        }
+      >()
+
+      for (const livestream of livestreams) {
+        const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+
+        for (const snapshot of snapshots) {
+          const income = snapshot.income ?? 0
+          const adsCost = snapshot.adsCost ?? 0
+
+          let targetHostId: string | "other"
+          let targetHostName: string
+
+          // Determine which host to attribute the revenue to
+          if (snapshot.altAssignee) {
+            // Case: altAssignee exists
+            if (snapshot.altAssignee === "other") {
+              // Alt is "other"
+              targetHostId = "other"
+              targetHostName = "Other"
+            } else {
+              // Alt is a user
+              const altUser = snapshot.altAssignee as any
+              targetHostId = altUser._id?.toString() || altUser.toString()
+              targetHostName = altUser.name || altUser.username || "Unknown"
+            }
+          } else if (snapshot.assignee) {
+            // Case: No alt, use assignee
+            const assigneeUser = snapshot.assignee as any
+            targetHostId =
+              assigneeUser._id?.toString() || assigneeUser.toString()
+            targetHostName =
+              assigneeUser.name || assigneeUser.username || "Unknown"
+          } else {
+            // Case: No assignee at all, skip
+            continue
+          }
+
+          // Get or create entry in map
+          if (!hostDataMap.has(targetHostId)) {
+            hostDataMap.set(targetHostId, {
+              hostId: targetHostId,
+              hostName: targetHostName,
+              totalRevenue: 0,
+              totalAdsCost: 0,
+              totalOrders: 0
+            })
+          }
+
+          const hostData = hostDataMap.get(targetHostId)!
+          hostData.totalRevenue += income
+          hostData.totalAdsCost += adsCost
+        }
+
+        // Add orders to all hosts who have snapshots in this livestream
+        // Distribute orders proportionally or count for all?
+        // Based on requirement, we'll count total orders for each host that participated
+        const totalOrders = livestream.totalOrders ?? 0
+
+        // Get unique hosts in this livestream
+        const hostsInLivestream = new Set<string>()
+        for (const snapshot of snapshots) {
+          if (snapshot.altAssignee) {
+            if (snapshot.altAssignee === "other") {
+              hostsInLivestream.add("other")
+            } else {
+              const altUser = snapshot.altAssignee as any
+              const altId = altUser._id?.toString() || altUser.toString()
+              hostsInLivestream.add(altId)
+            }
+          } else if (snapshot.assignee) {
+            const assigneeUser = snapshot.assignee as any
+            const assigneeId =
+              assigneeUser._id?.toString() || assigneeUser.toString()
+            hostsInLivestream.add(assigneeId)
+          }
+        }
+
+        // Distribute orders equally among hosts in this livestream
+        const ordersPerHost =
+          hostsInLivestream.size > 0 ? totalOrders / hostsInLivestream.size : 0
+
+        for (const hostId of hostsInLivestream) {
+          if (hostDataMap.has(hostId)) {
+            hostDataMap.get(hostId)!.totalOrders += ordersPerHost
+          }
+        }
+      }
+
+      // Convert map to array and sort by revenue (descending)
+      const rankings = Array.from(hostDataMap.values()).sort(
+        (a, b) => b.totalRevenue - a.totalRevenue
+      )
+
+      return { rankings }
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error

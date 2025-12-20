@@ -971,4 +971,26 @@ export class LivestreamController {
       req.user.userId
     )
   }
+
+  // Get hosts ranked by revenue
+  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Get("host-revenue-rankings")
+  @HttpCode(HttpStatus.OK)
+  async getHostRevenueRankings(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string
+  ): Promise<{
+    rankings: Array<{
+      hostId: string | "other"
+      hostName: string
+      totalRevenue: number
+      totalAdsCost: number
+      totalOrders: number
+    }>
+  }> {
+    return this.livestreamService.getHostRevenueRankings(
+      new Date(startDate),
+      new Date(endDate)
+    )
+  }
 }
