@@ -13,7 +13,8 @@ import {
   UseGuards,
   Res,
   UseInterceptors,
-  UploadedFile
+  UploadedFile,
+  HttpException
 } from "@nestjs/common"
 import { Response } from "express"
 import { FileInterceptor } from "@nestjs/platform-express"
@@ -400,5 +401,29 @@ export class SalesOrdersController {
       req.user.userId
     )
     return updated
+  }
+
+  @Roles("admin", "sales-emp", "sales-leader")
+  @Post("export/xlsx/by-ids")
+  @HttpCode(HttpStatus.OK)
+  async exportOrdersToExcelByIds(
+    @Body() body: { orderIds: string[] },
+    @Res() res: Response
+  ): Promise<void> {
+    if (!body?.orderIds?.length) {
+      throw new HttpException("orderIds is required", HttpStatus.BAD_REQUEST)
+    }
+
+    const buffer = await this.salesOrdersService.exportOrdersToExcelByOrderIds(
+      body.orderIds
+    )
+
+    const filename = `orders_${Date.now()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
   }
 }
