@@ -134,7 +134,7 @@ export class LivestreamController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-ast")
   @Patch(":livestreamId/snapshots/:snapshotId/report")
   @HttpCode(HttpStatus.OK)
   async reportSnapshot(
@@ -275,7 +275,13 @@ export class LivestreamController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "order-emp")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "order-emp"
+  )
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLivestreamsByRange(
@@ -294,7 +300,7 @@ export class LivestreamController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("aggregated-metrics")
   @HttpCode(HttpStatus.OK)
   async getAggregatedMetrics(
@@ -418,7 +424,7 @@ export class LivestreamController {
     }
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("/monthly-totals")
   @HttpCode(HttpStatus.OK)
   async getMonthlyTotals(
@@ -473,14 +479,14 @@ export class LivestreamController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("periods")
   @HttpCode(HttpStatus.OK)
   async getAllLivestreamPeriods(): Promise<{ periods: LivestreamPeriod[] }> {
     return this.livestreamService.getAllLivestreamPeriods()
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("periods/:id")
   @HttpCode(HttpStatus.OK)
   async getLivestreamPeriodById(
@@ -620,7 +626,7 @@ export class LivestreamController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("stats")
   @HttpCode(HttpStatus.OK)
   async getLivestreamStats(
@@ -660,7 +666,7 @@ export class LivestreamController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("goals")
   @HttpCode(HttpStatus.OK)
   async getMonthGoals(
@@ -714,7 +720,7 @@ export class LivestreamController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("kpis")
   @HttpCode(HttpStatus.OK)
   async getMonthKpis(
@@ -752,6 +758,7 @@ export class LivestreamController {
     "admin",
     "livestream-leader",
     "livestream-emp",
+    "livestream-ast",
     "order-emp",
     "accounting-emp"
   )
@@ -769,7 +776,7 @@ export class LivestreamController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("channels/:id")
   @HttpCode(HttpStatus.OK)
   async getChannel(@Param("id") id: string): Promise<LivestreamChannel> {
@@ -821,7 +828,7 @@ export class LivestreamController {
   // === ALT REQUEST ENDPOINTS ===
 
   // 0. Search alt requests
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("alt-requests/search")
   @HttpCode(HttpStatus.OK)
   async searchAltRequests(
@@ -841,7 +848,7 @@ export class LivestreamController {
   }
 
   // 1. Create alt request
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Post("alt-requests")
   @HttpCode(HttpStatus.CREATED)
   async createAltRequest(
@@ -877,7 +884,7 @@ export class LivestreamController {
   }
 
   // 2. Update alt request (only creator)
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Put("alt-requests/:id")
   @HttpCode(HttpStatus.OK)
   async updateAltRequest(
@@ -907,7 +914,7 @@ export class LivestreamController {
   }
 
   // 3. Get request by livestream and snapshot
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("alt-requests")
   @HttpCode(HttpStatus.OK)
   async getRequestBySnapshot(
@@ -955,7 +962,7 @@ export class LivestreamController {
   }
 
   // 5. Delete alt request (only creator, only if pending)
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Delete("alt-requests/:id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAltRequest(@Param("id") id: string, @Req() req): Promise<void> {
@@ -973,7 +980,7 @@ export class LivestreamController {
   }
 
   // Get hosts ranked by revenue
-  @Roles("admin", "livestream-leader", "livestream-emp")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("host-revenue-rankings")
   @HttpCode(HttpStatus.OK)
   async getHostRevenueRankings(
