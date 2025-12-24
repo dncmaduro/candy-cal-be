@@ -610,6 +610,27 @@ export class SalesOrdersService {
     }
   }
 
+  async updateOrderDate(orderId: string, date: Date): Promise<SalesOrder> {
+    try {
+      const order = await this.salesOrderModel.findById(orderId)
+      if (!order) {
+        throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
+      }
+
+      order.date = date
+      order.updatedAt = new Date()
+
+      return await order.save()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi cập nhật ngày đơn hàng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   async deleteOrder(orderId: string): Promise<void> {
     try {
       const order = await this.salesOrderModel.findById(orderId)

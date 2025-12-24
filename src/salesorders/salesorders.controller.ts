@@ -171,6 +171,31 @@ export class SalesOrdersController {
   }
 
   @Roles("admin", "sales-emp")
+  @Patch(":id/date")
+  @HttpCode(HttpStatus.OK)
+  async updateOrderDate(
+    @Param("id") id: string,
+    @Body() body: { date: string },
+    @Req() req
+  ): Promise<SalesOrder> {
+    const updated = await this.salesOrdersService.updateOrderDate(
+      id,
+      new Date(body.date)
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesorders",
+        action: "updated_date",
+        entity: "salesorder",
+        entityId: updated._id.toString(),
+        result: "success"
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "sales-emp")
   @Patch(":id/shipping-tax")
   @HttpCode(HttpStatus.OK)
   async updateShippingAndTax(
