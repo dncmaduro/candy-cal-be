@@ -100,9 +100,7 @@ export class SalesDailyReportsService {
       channelOrders.forEach((order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
-        const tax = order.tax || 0
-        const shippingCost = order.shippingCost || 0
-        const actualRevenue = order.total - totalDiscount + tax + shippingCost
+        const actualRevenue = order.total - totalDiscount
 
         if (order.returning) {
           returningFunnelRevenue += actualRevenue
@@ -514,6 +512,80 @@ export class SalesDailyReportsService {
       console.error("Error in getMonthKpiDetail:", error)
       throw new HttpException(
         "Lỗi khi lấy chi tiết KPI",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  /**
+   * 11. Update reports in date range (recalculate all metrics except adsCost and dateKpi)
+   */
+  async updateReportsInDateRange(
+    startDate: Date,
+    endDate: Date,
+    channelId?: string
+  ): Promise<{ updated: number; skipped: number; errors: string[] }> {
+    try {
+      const start = new Date(startDate)
+      start.setUTCHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setUTCHours(23, 59, 59, 999)
+
+      // Build filter
+      const filter: any = {
+        date: { $gte: start, $lte: end },
+        deletedAt: null
+      }
+
+      if (channelId) {
+        filter.channel = new Types.ObjectId(channelId)
+      }
+
+      // Get all reports in date range
+      const reports = await this.salesDailyReportModel.find(filter).lean()
+
+      let updated = 0
+      let skipped = 0
+      const errors: string[] = []
+
+      // Update each report
+      for (const report of reports) {
+        try {
+          const reportChannelId = report.channel.toString()
+
+          // Get fresh revenue data from getRevenueForDate
+          const revenueData = await this.getRevenueForDate(
+            report.date,
+            reportChannelId
+          )
+
+          // Update report with new data, keeping adsCost and dateKpi
+          await this.salesDailyReportModel.findByIdAndUpdate(report._id, {
+            revenue: revenueData.revenue,
+            newFunnelRevenue: revenueData.newFunnelRevenue,
+            returningFunnelRevenue: revenueData.returningFunnelRevenue,
+            newOrder: revenueData.newOrder,
+            returningOrder: revenueData.returningOrder,
+            accumulatedRevenue: revenueData.accumulatedRevenue,
+            accumulatedAdsCost: revenueData.accumulatedAdsCost,
+            accumulatedNewFunnelRevenue:
+              revenueData.accumulatedNewFunnelRevenue,
+            updatedAt: new Date()
+          })
+
+          updated++
+        } catch (error) {
+          skipped++
+          errors.push(`Failed to update report ${report._id}: ${error.message}`)
+          console.error(`Error updating report ${report._id}:`, error)
+        }
+      }
+
+      return { updated, skipped, errors }
+    } catch (error) {
+      console.error("Error in updateReportsInDateRange:", error)
+      throw new HttpException(
+        "Lỗi khi cập nhật báo cáo theo khoảng thời gian",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

@@ -189,4 +189,19 @@ export class SalesDailyReportsController {
   ): Promise<SalesDailyReport | null> {
     return this.salesDailyReportsService.getReportDetail(id)
   }
+
+  @Roles("admin", "system-emp")
+  @Post("update-reports-in-range")
+  @HttpCode(HttpStatus.OK)
+  async updateReportsInDateRange(
+    @Body("startDate") startDate: string,
+    @Body("endDate") endDate: string,
+    @Body("channelId") channelId?: string
+  ): Promise<{ updated: number; skipped: number; errors: string[] }> {
+    return this.salesDailyReportsService.updateReportsInDateRange(
+      new Date(startDate),
+      new Date(endDate),
+      channelId
+    )
+  }
 }
