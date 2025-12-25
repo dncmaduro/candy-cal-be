@@ -12,7 +12,8 @@
     "up:staging": "docker buildx build --platform linux/amd64 -f Dockerfile.staging -t gunnyrealer9/candy-cal-be:staging --push .",
     "dump:prod": "mongodump --uri=\"mongodb+srv://manhdungtranvnuuet:madurc29@candy.j3wyn.mongodb.net/?retryWrites=true&w=majority&appName=Candy\"",
     "restore:staging": "mongorestore --uri=\"mongodb+srv://manhdungtran:manhdungtran29@candy-cal-staging.mkpz8xb.mongodb.net/?retryWrites=true&w=majority&appName=candy-cal-staging\"",
-    "restore:dev": "mongorestore --uri=\"mongodb+srv://admin:JgwY2q04RYT6CWbw@candy.x42d9.mongodb.net/?retryWrites=true&w=majority&tls=true\""
+    "restore:dev": "mongorestore --uri=\"mongodb+srv://admin:JgwY2q04RYT6CWbw@candy.x42d9.mongodb.net/?retryWrites=true&w=majority&tls=true\"",
+    "restore:temp": "mongorestore --uri=\"mongodb+srv://maduro:madurc.29@cluster0.hkeyxn2.mongodb.net/\""
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
