@@ -36,6 +36,8 @@ export interface RevenueByUser {
 export interface RevenueStatsResponse {
   totalRevenue: number
   totalOrders: number
+  totalTax: number
+  totalShippingCost: number
   revenueFromNewCustomers: number
   revenueFromReturningCustomers: number
   topItemsByRevenue: Omit<RevenueByItem, "quantity">[]
@@ -107,11 +109,16 @@ export class SalesDashboardService {
       const totalRevenue = orders.reduce((sum, order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
-        const tax = order.tax || 0
-        const shippingCost = order.shippingCost || 0
-        return sum + order.total - totalDiscount + tax + shippingCost
+        return sum + order.total - totalDiscount
       }, 0)
       const totalOrders = orders.length
+
+      // Calculate total tax and total shipping cost
+      const totalTax = orders.reduce((sum, order) => sum + (order.tax || 0), 0)
+      const totalShippingCost = orders.reduce(
+        (sum, order) => sum + (order.shippingCost || 0),
+        0
+      )
 
       // Calculate revenue from new vs returning customers
       let revenueFromNewCustomers = 0
@@ -120,9 +127,7 @@ export class SalesDashboardService {
       orders.forEach((order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
-        const tax = order.tax || 0
-        const shippingCost = order.shippingCost || 0
-        const actualRevenue = order.total - totalDiscount + tax + shippingCost
+        const actualRevenue = order.total - totalDiscount
 
         if (order.returning) {
           revenueFromReturningCustomers += actualRevenue
@@ -183,9 +188,7 @@ export class SalesDashboardService {
 
           const totalDiscount =
             (order.orderDiscount || 0) + (order.otherDiscount || 0)
-          const tax = order.tax || 0
-          const shippingCost = order.shippingCost || 0
-          const actualRevenue = order.total - totalDiscount + tax + shippingCost
+          const actualRevenue = order.total - totalDiscount
 
           const existing = channelMap.get(channelId)
           if (existing) {
@@ -217,9 +220,7 @@ export class SalesDashboardService {
 
           const totalDiscount =
             (order.orderDiscount || 0) + (order.otherDiscount || 0)
-          const tax = order.tax || 0
-          const shippingCost = order.shippingCost || 0
-          const actualRevenue = order.total - totalDiscount + tax + shippingCost
+          const actualRevenue = order.total - totalDiscount
 
           const existing = userMap.get(userId)
           if (existing) {
@@ -259,6 +260,8 @@ export class SalesDashboardService {
       return {
         totalRevenue,
         totalOrders,
+        totalTax,
+        totalShippingCost,
         revenueFromNewCustomers,
         revenueFromReturningCustomers,
         topItemsByRevenue,
@@ -510,9 +513,7 @@ export class SalesDashboardService {
 
           const totalDiscount =
             (order.orderDiscount || 0) + (order.otherDiscount || 0)
-          const tax = order.tax || 0
-          const shippingCost = order.shippingCost || 0
-          const actualRevenue = order.total - totalDiscount + tax + shippingCost
+          const actualRevenue = order.total - totalDiscount
 
           const existing = customerRevenueMap.get(funnelId)
           if (existing) {
