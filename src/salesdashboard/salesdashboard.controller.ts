@@ -21,11 +21,13 @@ export class SalesDashboardController {
   @HttpCode(HttpStatus.OK)
   async getRevenueStats(
     @Query("startDate") startDate: string,
-    @Query("endDate") endDate: string
+    @Query("endDate") endDate: string,
+    @Query("channel") channel?: string
   ) {
     return this.salesDashboardService.getRevenueStats(
       new Date(startDate),
-      new Date(endDate)
+      new Date(endDate),
+      channel
     )
   }
 
