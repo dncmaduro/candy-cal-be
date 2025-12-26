@@ -81,7 +81,8 @@ export class SalesDashboardService {
 
   async getRevenueStats(
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    channel?: string
   ): Promise<RevenueStatsResponse> {
     try {
       // Set time boundaries using UTC to avoid timezone issues
@@ -91,7 +92,7 @@ export class SalesDashboardService {
       end.setUTCHours(23, 59, 59, 999)
 
       // Get all orders in date range (only official status)
-      const orders = await this.salesOrderModel
+      let ordersQuery = await this.salesOrderModel
         .find({
           date: { $gte: start, $lte: end },
           status: "official"
@@ -104,6 +105,21 @@ export class SalesDashboardService {
           ]
         })
         .lean()
+
+      // Filter by channel if provided
+      let orders = ordersQuery
+      if (channel) {
+        orders = ordersQuery.filter((order) => {
+          const funnel = order.salesFunnelId as any
+          if (funnel && funnel.channel) {
+            const channelId = funnel.channel._id
+              ? funnel.channel._id.toString()
+              : funnel.channel.toString()
+            return channelId === channel
+          }
+          return false
+        })
+      }
 
       // Calculate total revenue and total orders
       const totalRevenue = orders.reduce((sum, order) => {
