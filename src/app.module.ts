@@ -26,7 +26,13 @@ import { DailyTasksModule } from "./dailytasks/dailytasks.module"
 import { RequestAuditSchema } from "./database/mongoose/schemas/RequestAudit"
 import { RequestAuditInterceptor } from "./dailytasks/interceptors/request-audit.interceptor"
 import { DailyAdsModule } from "./dailyads/dailyads.module"
-import { LivestreamModule } from "./livestream/livestream.module"
+import { LivestreamperiodsModule } from "./livestreamperiods/livestreamperiods.module"
+import { LivestreamchannelsModule } from "./livestreamchannels/livestreamchannels.module"
+import { LivestreammonthgoalsModule } from "./livestreammonthgoals/livestreammonthgoals.module"
+import { LivestreamaltrequestsModule } from "./livestreamaltrequests/livestreamaltrequests.module"
+import { LivestreamcoreModule } from "./livestreamcore/livestreamcore.module"
+import { LivestreamanalyticsModule } from "./livestreamanalytics/livestreamanalytics.module"
+import { LivestreamperformanceModule } from "./livestreamperformance/livestreamperformance.module"
 import { ShopeeProductsModule } from "./shopeeproducts/shopeeproducts.module"
 import { SalesPriceItemsModule } from "./salespriceitems/salespriceitems.module"
 import { ProvincesModule } from "./provinces/provinces.module"
@@ -68,7 +74,13 @@ import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.m
     AuthModule,
     DailyTasksModule,
     DailyAdsModule,
-    LivestreamModule,
+    LivestreamperiodsModule,
+    LivestreamchannelsModule,
+    LivestreammonthgoalsModule,
+    LivestreamaltrequestsModule,
+    LivestreamcoreModule,
+    LivestreamanalyticsModule,
+    LivestreamperformanceModule,
     ShopeeProductsModule,
     SalesPriceItemsModule,
     ProvincesModule,
