@@ -12,6 +12,7 @@ export interface LivestreamSnapshotEmbedded {
   }
   assignee?: Types.ObjectId
   income?: number
+  realIncome?: number
   adsCost?: number
   clickRate?: number
   avgViewingDuration?: number
@@ -23,6 +24,12 @@ export interface LivestreamSnapshotEmbedded {
   altNote?: string
   altRequest?: Types.ObjectId
   snapshotKpi?: number
+  updatedByFileAt?: Date
+  salary?: {
+    salaryPerHour: number
+    bonusPercentage: number
+    total?: number
+  }
 }
 
 export interface Livestream extends Document {
@@ -60,6 +67,7 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
       required: false
     },
     income: { type: Number, required: false },
+    realIncome: { type: Number, required: false },
     adsCost: { type: Number, required: false },
     clickRate: { type: Number, required: false },
     avgViewingDuration: { type: Number, required: false },
@@ -72,7 +80,12 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
     },
     altOtherAssignee: { type: String, required: false },
     altNote: { type: String, required: false },
-    snapshotKpi: { type: Number, required: false }
+    snapshotKpi: { type: Number, required: false },
+    salary: {
+      salaryPerHour: { type: Number, required: false },
+      bonusPercentage: { type: Number, required: false },
+      total: { type: Number, required: false }
+    }
   },
   { _id: true }
 )
