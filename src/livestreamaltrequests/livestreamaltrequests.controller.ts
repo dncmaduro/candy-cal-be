@@ -14,9 +14,9 @@ import {
   Patch
 } from "@nestjs/common"
 import { LivestreamaltrequestsService } from "./livestreamaltrequests.service"
-import { JwtAuthGuard } from "src/auth/jwt-auth.guard"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("livestreamaltrequests")
