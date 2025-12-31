@@ -39,6 +39,11 @@ export class XlsxAffiliateData {
   "Loại nội dung": string
   "Tỉ lệ hoa hồng tiêu chuẩn": number
   "Tỉ lệ hoa hồng Quảng cáo cửa hàng": number
+  "Tên người dùng nhà sáng tạo": string
+  "Thanh toán hoa hồng Quảng cáo cửa hàng ước tính": number
+  "Thanh toán hoa hồng tiêu chuẩn ước tính": number
+  "Thời gian đã tạo": string // dd/MM/YYYY hh:mm:ss
+  "Tổng phụ sau chiết khấu (SKU)": number // Income amount
 }
 
 export class AffiliateType {

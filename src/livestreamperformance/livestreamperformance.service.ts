@@ -4,6 +4,7 @@ import { Model, Types } from "mongoose"
 import { LivestreamPerformance } from "../database/mongoose/schemas/LivestreamPerformance"
 import { Livestream } from "../database/mongoose/schemas/Livestream"
 import { User } from "../database/mongoose/schemas/User"
+import * as XLSX from "xlsx"
 
 @Injectable()
 export class LivestreamperformanceService {
@@ -260,7 +261,7 @@ export class LivestreamperformanceService {
       // Process each snapshot
       for (const snapshot of livestream.snapshots) {
         // Use realIncome if available, otherwise use income
-        const incomeValue = (snapshot as any).realIncome ?? snapshot.income
+        const incomeValue = snapshot.realIncome ?? snapshot.income
 
         if (!incomeValue || incomeValue === 0) {
           snapshotsSkipped++
@@ -471,6 +472,312 @@ export class LivestreamperformanceService {
       if (error instanceof HttpException) throw error
       throw new HttpException(
         "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Calculate real income from two Excel files
+  async calculateRealIncome(
+    totalIncomeFile: Express.Multer.File,
+    sourceFile: Express.Multer.File,
+    date: Date
+  ): Promise<{
+    success: boolean
+    processedOrders: number
+    updatedSnapshots: number
+    message: string
+  }> {
+    try {
+      // ===== Helpers =====
+      const normalizeOrderId = (v: any) =>
+        String(v ?? "")
+          .trim()
+          .replace(/\.0$/, "") // phòng "123...0"
+          .replace(/\s+/g, "")
+
+      const normalizeOrderKey = (v: any) =>
+        String(v ?? "")
+          .replace(/\u00A0/g, " ")
+          .trim()
+          .replace(/\.0$/, "")
+          .replace(/\s+/g, "")
+          .replace(/\D/g, "")
+
+      const parseMoney = (v: any): number => {
+        if (v == null) return 0
+        if (typeof v === "number") return Number.isFinite(v) ? v : 0
+        const s = String(v).trim()
+        if (!s) return 0
+        // bỏ ký tự tiền tệ, khoảng trắng
+        const cleaned = s.replace(/[^\d,.\-]/g, "").replace(/\s+/g, "")
+        // xử lý 1,234.56 hoặc 1.234,56 hoặc 1234,56
+        // heuristic: nếu có cả ',' và '.', lấy dấu cuối làm decimal
+        const lastComma = cleaned.lastIndexOf(",")
+        const lastDot = cleaned.lastIndexOf(".")
+        let normalized = cleaned
+        if (lastComma !== -1 && lastDot !== -1) {
+          // dấu nào xuất hiện sau là decimal separator
+          if (lastComma > lastDot) {
+            normalized = cleaned.replace(/\./g, "").replace(",", ".")
+          } else {
+            normalized = cleaned.replace(/,/g, "")
+          }
+        } else if (lastComma !== -1 && lastDot === -1) {
+          // coi comma là decimal nếu sau nó có 1-2 số, còn lại là thousand
+          const decimals = cleaned.length - lastComma - 1
+          if (decimals === 1 || decimals === 2) {
+            normalized = cleaned.replace(/\./g, "").replace(",", ".")
+          } else {
+            normalized = cleaned.replace(/,/g, "")
+          }
+        } else {
+          // chỉ dot hoặc none
+          normalized = cleaned.replace(/,/g, "")
+        }
+        const n = Number(normalized)
+        return Number.isFinite(n) ? n : 0
+      }
+
+      const pickField = (row: any, keys: string[]) => {
+        for (const k of keys) {
+          if (row && Object.prototype.hasOwnProperty.call(row, k)) return row[k]
+        }
+        return undefined
+      }
+
+      const toMinutes = (h: number, m: number) => h * 60 + m
+
+      const inRange = (orderMin: number, startMin: number, endMin: number) => {
+        // normal range: start < end
+        if (startMin < endMin) return orderMin >= startMin && orderMin < endMin
+        // cross-midnight: ex 23:00-01:00
+        return orderMin >= startMin || orderMin < endMin
+      }
+
+      const sameYMD = (d: Date, y: number, m: number, day: number) => {
+        // source time string là local dd/MM/yyyy, ta so theo UTC-normalized date ở đây
+        // Nếu bạn muốn so theo local VN, hãy đổi livestreamDate sang local.
+        return (
+          d.getUTCFullYear() === y &&
+          d.getUTCMonth() + 1 === m &&
+          d.getUTCDate() === day
+        )
+      }
+
+      // ===== Normalize date to 00:00:00 UTC (giữ như code gốc của bạn) =====
+      const livestreamDate = new Date(date)
+      livestreamDate.setUTCHours(0, 0, 0, 0)
+      livestreamDate.setDate(livestreamDate.getDate() + 1)
+
+      // ===== Find livestream for this date first =====
+      const livestream = await this.livestreamModel
+        .findOne({ date: livestreamDate })
+        .exec()
+
+      if (
+        !livestream ||
+        !livestream.snapshots ||
+        livestream.snapshots.length === 0
+      ) {
+        throw new HttpException(
+          `No livestream found for date ${livestreamDate.toISOString()}`,
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      // ====== 1) Parse total income file ======
+      const totalWorkbook = XLSX.read(totalIncomeFile.buffer, {
+        type: "buffer"
+      })
+      const totalSheetName = totalWorkbook.SheetNames[0]
+      const totalSheet = totalWorkbook.Sheets[totalSheetName]
+
+      // raw:false để tránh Order ID bị scientific/mất digit khi Excel lưu dạng số
+      const totalReadData = XLSX.utils.sheet_to_json(totalSheet, {
+        raw: false,
+        defval: ""
+      }) as any[]
+
+      if (!totalReadData.length) {
+        return {
+          success: true,
+          processedOrders: 0,
+          updatedSnapshots: 0,
+          message: "Total income file has no data rows."
+        }
+      }
+
+      // Nhiều report TikTok có 1 dòng mô tả (Platform unique order ID.) ngay dưới header.
+      // sheet_to_json đã dùng dòng header làm key, nên dòng mô tả vẫn là 1 object.
+      const isDescriptionRow = (row: any) => {
+        const v = String(row["Order ID"] ?? "").toLowerCase()
+        return v.includes("platform unique order id")
+      }
+      const totalData = totalReadData.filter((r) => !isDescriptionRow(r))
+
+      // Build maps:
+      // - orderStatusMap: để skip Đã hủy
+      // - orderIncomeMap: orderId -> sum(income) theo SKU rows
+      const orderStatusMap = new Map<string, string>()
+      const orderIncomeMap = new Map<string, number>()
+
+      const totalOrderIdKeys = ["Order ID", "ID đơn hàng"]
+      const totalStatusKeys = ["Order Status", "Trạng thái đơn hàng"]
+      const subtotalKeys = [
+        "SKU Subtotal Before Discount",
+        "SKU Subtotal Before Discount (SKU)"
+      ]
+      const sellerDiscountKeys = [
+        "SKU Seller Discount",
+        "SKU Seller Discount (SKU)"
+      ]
+
+      for (const row of totalData) {
+        const orderId = normalizeOrderKey(pickField(row, totalOrderIdKeys))
+        if (!orderId) continue
+
+        const status = String(pickField(row, totalStatusKeys) ?? "").trim()
+        if (status) orderStatusMap.set(orderId, status)
+
+        const subtotal = parseMoney(pickField(row, subtotalKeys))
+        const sellerDiscount = parseMoney(pickField(row, sellerDiscountKeys))
+        const income = subtotal - sellerDiscount
+
+        if (income > 0) {
+          orderIncomeMap.set(
+            orderId,
+            (orderIncomeMap.get(orderId) ?? 0) + income
+          )
+        }
+      }
+
+      // ====== 2) Parse source file ======
+      const sourceWorkbook = XLSX.read(sourceFile.buffer, { type: "buffer" })
+      const sourceSheetName = sourceWorkbook.SheetNames[0]
+      const sourceSheet = sourceWorkbook.Sheets[sourceSheetName]
+      const sourceData = XLSX.utils.sheet_to_json(sourceSheet, {
+        raw: false,
+        defval: ""
+      }) as any[]
+
+      let processedOrders = 0
+      let updatedSnapshots = 0
+
+      // ====== 3) Process each row in source file ======
+      const contentTypeKeys = ["Loại nội dung", "Content Type"]
+      const sourceOrderIdKeys = ["ID đơn hàng", "Order ID"]
+      const createdTimeKeys = ["Thời gian đã tạo", "Created Time"]
+
+      let liveRows = 0
+      let liveRowsInTargetDate = 0
+      let hasIncome = 0
+      let cancelled = 0
+      let hasMatchingSnapshot = 0
+      let processed = 0
+
+      const sampleNoIncome: string[] = []
+      const sampleHasIncome: string[] = []
+
+      const targetY = livestreamDate.getUTCFullYear()
+      const targetM = livestreamDate.getUTCMonth() + 1
+      const targetD = livestreamDate.getUTCDate()
+
+      const onlyDigits = (s: string) => s.replace(/\D/g, "")
+
+      for (const row of sourceData) {
+        const contentType = String(pickField(row, contentTypeKeys) ?? "").trim()
+
+        // Only process if content type is "Phát trực tiếp"
+        if (contentType !== "Phát trực tiếp") {
+          continue
+        }
+
+        const orderId = normalizeOrderKey(pickField(row, totalOrderIdKeys))
+        if (!orderId) continue
+
+        // Step 1: Skip cancelled orders (status from totalIncome)
+        const orderStatus = orderStatusMap.get(orderId) ?? ""
+        if (
+          orderStatus.includes("Đã hủy") ||
+          orderStatus.toLowerCase().includes("cancel")
+        ) {
+          continue
+        }
+
+        // Step 2: Parse time from created time (dd/MM/YYYY hh:mm:ss)
+        const createdTime = String(pickField(row, createdTimeKeys) ?? "").trim()
+        if (!createdTime) continue
+
+        const match = createdTime.match(
+          /(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/
+        )
+        if (!match) continue
+
+        const dd = parseInt(match[1], 10)
+        const MM = parseInt(match[2], 10)
+        const yyyy = parseInt(match[3], 10)
+        const hour = parseInt(match[4], 10)
+        const minute = parseInt(match[5], 10)
+
+        // Filter đúng ngày target
+        if (!sameYMD(livestreamDate, yyyy, MM, dd)) {
+          continue
+        }
+
+        // Step 3: Get income from totalIncome map (đúng theo yêu cầu)
+        const incomeAmount = orderIncomeMap.get(orderId) ?? 0
+        if (incomeAmount <= 0) continue
+
+        // Step 4: Find matching snapshots based on time
+        const orderTimeMinutes = toMinutes(hour, minute)
+
+        const matchingSnapshotIds: string[] = []
+        for (const snapshot of livestream.snapshots) {
+          const startHour = snapshot.period.startTime.hour
+          const startMinute = snapshot.period.startTime.minute
+          const endHour = snapshot.period.endTime.hour
+          const endMinute = snapshot.period.endTime.minute
+
+          const startMin = toMinutes(startHour, startMinute)
+          const endMin = toMinutes(endHour, endMinute)
+
+          if (inRange(orderTimeMinutes, startMin, endMin)) {
+            matchingSnapshotIds.push(snapshot._id.toString())
+          }
+        }
+
+        // Update realIncome for all matching snapshots
+        if (matchingSnapshotIds.length > 0) {
+          for (const snapshotId of matchingSnapshotIds) {
+            const res = await this.livestreamModel.updateOne(
+              {
+                _id: livestream._id,
+                "snapshots._id": new Types.ObjectId(snapshotId)
+              },
+              { $inc: { "snapshots.$.realIncome": incomeAmount } }
+            )
+
+            if (res.modifiedCount > 0) {
+              updatedSnapshots++
+            }
+          }
+
+          processedOrders++
+        }
+      }
+
+      return {
+        success: true,
+        processedOrders,
+        updatedSnapshots,
+        message: `Successfully processed ${processedOrders} orders and updated ${updatedSnapshots} snapshots`
+      }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Error calculating real income from files",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

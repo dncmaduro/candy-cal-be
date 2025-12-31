@@ -6,8 +6,11 @@ import {
   Delete,
   Body,
   Param,
-  Query
+  Query,
+  UseInterceptors,
+  UploadedFiles
 } from "@nestjs/common"
+import { FilesInterceptor } from "@nestjs/platform-express"
 import { LivestreamperformanceService } from "./livestreamperformance.service"
 
 @Controller("livestreamperformance")
@@ -92,6 +95,28 @@ export class LivestreamperformanceController {
     return this.livestreamperformanceService.calculateMonthlySalary(
       Number(year),
       Number(month)
+    )
+  }
+
+  @Post("calculate-real-income")
+  @UseInterceptors(FilesInterceptor("files"))
+  async calculateRealIncome(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body() body: { date: string }
+  ) {
+    if (!files || files.length !== 2) {
+      return {
+        error: "Two files are required: total income file and source file"
+      }
+    }
+    if (!body.date) {
+      return { error: "Date is required" }
+    }
+    const [totalIncomeFile, sourceFile] = files
+    return this.livestreamperformanceService.calculateRealIncome(
+      totalIncomeFile,
+      sourceFile,
+      new Date(body.date)
     )
   }
 
