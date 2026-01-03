@@ -33,6 +33,7 @@ import { LivestreamaltrequestsModule } from "./livestreamaltrequests/livestreama
 import { LivestreamcoreModule } from "./livestreamcore/livestreamcore.module"
 import { LivestreamanalyticsModule } from "./livestreamanalytics/livestreamanalytics.module"
 import { LivestreamperformanceModule } from "./livestreamperformance/livestreamperformance.module"
+import { LivestreamsalaryModule } from "./livestreamsalary/livestreamsalary.module"
 import { ShopeeProductsModule } from "./shopeeproducts/shopeeproducts.module"
 import { SalesPriceItemsModule } from "./salespriceitems/salespriceitems.module"
 import { ProvincesModule } from "./provinces/provinces.module"
@@ -81,6 +82,7 @@ import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.m
     LivestreamcoreModule,
     LivestreamanalyticsModule,
     LivestreamperformanceModule,
+    LivestreamsalaryModule,
     ShopeeProductsModule,
     SalesPriceItemsModule,
     ProvincesModule,

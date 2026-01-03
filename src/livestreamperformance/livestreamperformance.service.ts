@@ -4,6 +4,7 @@ import { Model, Types } from "mongoose"
 import { LivestreamPerformance } from "../database/mongoose/schemas/LivestreamPerformance"
 import { Livestream } from "../database/mongoose/schemas/Livestream"
 import { User } from "../database/mongoose/schemas/User"
+import { LivestreamSalary } from "../database/mongoose/schemas/LivestreamSalary"
 import * as XLSX from "xlsx"
 
 @Injectable()
@@ -14,42 +15,38 @@ export class LivestreamperformanceService {
     @InjectModel("livestreams")
     private readonly livestreamModel: Model<Livestream>,
     @InjectModel("users")
-    private readonly userModel: Model<User>
+    private readonly userModel: Model<User>,
+    @InjectModel("LivestreamSalary")
+    private readonly salaryModel: Model<LivestreamSalary>
   ) {}
 
-  // Helper: Check if income ranges overlap
-  private rangesOverlap(
-    min1: number,
-    max1: number,
-    min2: number,
-    max2: number
-  ): boolean {
-    // Two ranges overlap if: min1 < max2 AND min2 < max1
-    return min1 < max2 && min2 < max1
-  }
-
-  // Helper: Validate no overlapping ranges exist (excluding current ID for updates)
-  private async validateNoOverlap(
+  // Helper: Validate global uniqueness (all fields must match to be duplicate)
+  private async validateGlobalUniqueness(
     minIncome: number,
     maxIncome: number,
+    salaryPerHour: number,
+    bonusPercentage: number,
     excludeId?: string
   ): Promise<void> {
-    const filter: any = {}
+    const filter: any = {
+      minIncome,
+      maxIncome,
+      salaryPerHour,
+      bonusPercentage
+    }
     if (excludeId) {
       filter._id = { $ne: excludeId }
     }
 
-    const existingPerformances = await this.performanceModel.find(filter).exec()
+    const existingPerformance = await this.performanceModel
+      .findOne(filter)
+      .exec()
 
-    for (const perf of existingPerformances) {
-      if (
-        this.rangesOverlap(minIncome, maxIncome, perf.minIncome, perf.maxIncome)
-      ) {
-        throw new HttpException(
-          `Income range [${minIncome}, ${maxIncome}) overlaps with existing range [${perf.minIncome}, ${perf.maxIncome})`,
-          HttpStatus.BAD_REQUEST
-        )
-      }
+    if (existingPerformance) {
+      throw new HttpException(
+        `A performance with these exact specifications already exists: minIncome=${minIncome}, maxIncome=${maxIncome}, salaryPerHour=${salaryPerHour}, bonusPercentage=${bonusPercentage}`,
+        HttpStatus.BAD_REQUEST
+      )
     }
   }
 
@@ -69,8 +66,13 @@ export class LivestreamperformanceService {
         )
       }
 
-      // Check for overlapping ranges
-      await this.validateNoOverlap(payload.minIncome, payload.maxIncome)
+      // Check for global uniqueness (all fields must be unique)
+      await this.validateGlobalUniqueness(
+        payload.minIncome,
+        payload.maxIncome,
+        payload.salaryPerHour,
+        payload.bonusPercentage
+      )
 
       const created = new this.performanceModel(payload)
       return await created.save()
@@ -103,6 +105,10 @@ export class LivestreamperformanceService {
       // Get final values (use existing if not provided)
       const finalMinIncome = payload.minIncome ?? performance.minIncome
       const finalMaxIncome = payload.maxIncome ?? performance.maxIncome
+      const finalSalaryPerHour =
+        payload.salaryPerHour ?? performance.salaryPerHour
+      const finalBonusPercentage =
+        payload.bonusPercentage ?? performance.bonusPercentage
 
       // Validate income range
       if (finalMinIncome >= finalMaxIncome) {
@@ -112,8 +118,14 @@ export class LivestreamperformanceService {
         )
       }
 
-      // Check for overlapping ranges (excluding current record)
-      await this.validateNoOverlap(finalMinIncome, finalMaxIncome, id)
+      // Check for global uniqueness (excluding current record)
+      await this.validateGlobalUniqueness(
+        finalMinIncome,
+        finalMaxIncome,
+        finalSalaryPerHour,
+        finalBonusPercentage,
+        id
+      )
 
       // Update fields
       if (payload.minIncome !== undefined)
@@ -217,11 +229,17 @@ export class LivestreamperformanceService {
     snapshotsSkipped: number
     details: Array<{
       snapshotId: string
+      userId: string
+      userName: string
       income: number
       salaryPerHour: number
       bonusPercentage: number
       total: number
-      status: "updated" | "skipped" | "no_performance_found"
+      status:
+        | "updated"
+        | "skipped"
+        | "no_performance_found"
+        | "no_salary_config"
     }>
   }> {
     try {
@@ -251,11 +269,17 @@ export class LivestreamperformanceService {
       let snapshotsSkipped = 0
       const details: Array<{
         snapshotId: string
+        userId: string
+        userName: string
         income: number
         salaryPerHour: number
         bonusPercentage: number
         total: number
-        status: "updated" | "skipped" | "no_performance_found"
+        status:
+          | "updated"
+          | "skipped"
+          | "no_performance_found"
+          | "no_salary_config"
       }> = []
 
       // Process each snapshot
@@ -267,6 +291,8 @@ export class LivestreamperformanceService {
           snapshotsSkipped++
           details.push({
             snapshotId: snapshot._id?.toString() || "",
+            userId: snapshot.assignee?.toString() || "",
+            userName: "",
             income: incomeValue || 0,
             salaryPerHour: 0,
             bonusPercentage: 0,
@@ -276,13 +302,80 @@ export class LivestreamperformanceService {
           continue
         }
 
-        // Find matching performance
-        const performance = await this.findPerformanceByIncome(incomeValue)
+        // Determine which user to calculate salary for
+        let targetUserId: Types.ObjectId | null = null
+        if ((snapshot as any).altAssignee) {
+          const altAssignee = (snapshot as any).altAssignee
+          console.log(altAssignee)
+          if (altAssignee !== "other") {
+            targetUserId = altAssignee
+          }
+        } else if (snapshot.assignee) {
+          targetUserId = snapshot.assignee as Types.ObjectId
+        }
 
-        if (!performance) {
+        console.log(targetUserId)
+
+        if (!targetUserId) {
           snapshotsSkipped++
           details.push({
             snapshotId: snapshot._id?.toString() || "",
+            userId: "",
+            userName: "",
+            income: incomeValue,
+            salaryPerHour: 0,
+            bonusPercentage: 0,
+            total: 0,
+            status: "skipped"
+          })
+          continue
+        }
+
+        // Find the salary configuration for this user
+        const salaryConfig = await this.salaryModel
+          .findOne({
+            livestreamEmployees: targetUserId
+          })
+          .populate("livestreamPerformances")
+          .exec()
+
+        if (!salaryConfig) {
+          snapshotsSkipped++
+          const user = await this.userModel.findById(targetUserId).exec()
+          details.push({
+            snapshotId: snapshot._id?.toString() || "",
+            userId: targetUserId.toString(),
+            userName: user?.name || "",
+            income: incomeValue,
+            salaryPerHour: 0,
+            bonusPercentage: 0,
+            total: 0,
+            status: "no_salary_config"
+          })
+          continue
+        }
+
+        // Find matching performance from the salary's performances
+        let matchingPerformance: any = null
+        for (const perfId of salaryConfig.livestreamPerformances) {
+          const perf = await this.performanceModel.findById(perfId).exec()
+          if (
+            perf &&
+            incomeValue >= perf.minIncome &&
+            incomeValue < perf.maxIncome
+          ) {
+            matchingPerformance = perf
+            break
+          }
+        }
+
+        if (!matchingPerformance) {
+          snapshotsSkipped++
+          const user = await this.userModel.findById(targetUserId).exec()
+          details.push({
+            snapshotId: snapshot._id?.toString() || "",
+            userId: targetUserId.toString(),
+            userName: user?.name || "",
             income: incomeValue,
             salaryPerHour: 0,
             bonusPercentage: 0,
@@ -303,23 +396,26 @@ export class LivestreamperformanceService {
         const durationHours = durationMinutes / 60
 
         // Calculate total salary
-        const baseSalary = performance.salaryPerHour * durationHours
-        const bonus = (incomeValue * performance.bonusPercentage) / 100
+        const baseSalary = matchingPerformance.salaryPerHour * durationHours
+        const bonus = (incomeValue * matchingPerformance.bonusPercentage) / 100
         const totalSalary = baseSalary + bonus
 
         // Update snapshot salary
         ;(snapshot as any).salary = {
-          salaryPerHour: performance.salaryPerHour,
-          bonusPercentage: performance.bonusPercentage,
+          salaryPerHour: matchingPerformance.salaryPerHour,
+          bonusPercentage: matchingPerformance.bonusPercentage,
           total: Math.round(totalSalary)
         }
 
         snapshotsUpdated++
+        const user = await this.userModel.findById(targetUserId).exec()
         details.push({
           snapshotId: snapshot._id?.toString() || "",
+          userId: targetUserId.toString(),
+          userName: user?.name || "",
           income: incomeValue,
-          salaryPerHour: performance.salaryPerHour,
-          bonusPercentage: performance.bonusPercentage,
+          salaryPerHour: matchingPerformance.salaryPerHour,
+          bonusPercentage: matchingPerformance.bonusPercentage,
           total: Math.round(totalSalary),
           status: "updated"
         })
