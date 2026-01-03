@@ -36,6 +36,7 @@ export interface RevenueByUser {
 export interface RevenueStatsResponse {
   totalRevenue: number
   totalOrders: number
+  totalQuantity: number
   totalTax: number
   totalShippingCost: number
   revenueFromNewCustomers: number
@@ -128,6 +129,15 @@ export class SalesDashboardService {
         return sum + order.total - totalDiscount
       }, 0)
       const totalOrders = orders.length
+
+      // Calculate total quantity of all items across all orders
+      const totalQuantity = orders.reduce((sum, order) => {
+        const orderQuantity = order.items.reduce(
+          (itemSum, item) => itemSum + item.quantity,
+          0
+        )
+        return sum + orderQuantity
+      }, 0)
 
       // Calculate total tax and total shipping cost
       const totalTax = orders.reduce((sum, order) => sum + (order.tax || 0), 0)
@@ -276,6 +286,7 @@ export class SalesDashboardService {
       return {
         totalRevenue,
         totalOrders,
+        totalQuantity,
         totalTax,
         totalShippingCost,
         revenueFromNewCustomers,
