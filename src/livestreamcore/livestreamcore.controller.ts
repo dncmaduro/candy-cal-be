@@ -204,6 +204,7 @@ export class LivestreamcoreController {
       clickRate: number
       avgViewingDuration: number
       comments: number
+      orders: number
       ordersNote: string
       rating?: string
     },

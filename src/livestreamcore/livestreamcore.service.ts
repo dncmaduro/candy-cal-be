@@ -94,18 +94,7 @@ export class LivestreamcoreService {
       const end = new Date(start)
       end.setDate(end.getDate() + 1)
 
-      // 2) Unique by day
-      const existing = await this.livestreamModel
-        .findOne({ date: { $gte: start, $lt: end } })
-        .exec()
-      if (existing) {
-        throw new HttpException(
-          "Livestream for this date already exists",
-          HttpStatus.BAD_REQUEST
-        )
-      }
-
-      // 3) Base object
+      // 2) Base object
       const createdObj: any = {
         date: start,
         snapshots: [],
@@ -121,7 +110,7 @@ export class LivestreamcoreService {
         return await created.save()
       }
 
-      // 4) Load periods
+      // 3) Load periods
       const periods = await this.livestreamPeriodModel
         .find({ _id: { $in: payload.snapshots } })
         .exec()
@@ -133,11 +122,33 @@ export class LivestreamcoreService {
         )
       }
 
-      // 5) Determine channelId from first period
+      // 4) Determine channelId from first period
       const firstChannel = periods[0].channel
       const channelObjectId: Types.ObjectId = firstChannel?._id
         ? new Types.ObjectId(firstChannel._id)
         : new Types.ObjectId(firstChannel)
+
+      const channelIdString = channelObjectId.toString()
+
+      // 5) Check uniqueness by date + channel
+      // Find all livestreams on this date and check if any has the same channel
+      const existingLivestreams = await this.livestreamModel
+        .find({ date: { $gte: start, $lt: end } })
+        .exec()
+
+      for (const existing of existingLivestreams) {
+        const existingSnapshots =
+          existing.snapshots as LivestreamSnapshotEmbedded[]
+        if (existingSnapshots.length > 0 && existingSnapshots[0].period) {
+          const existingChannel = existingSnapshots[0].period.channel
+          if (existingChannel === channelIdString) {
+            throw new HttpException(
+              "Livestream for this date and channel already exists",
+              HttpStatus.BAD_REQUEST
+            )
+          }
+        }
+      }
 
       // 6) Calculate dateKpi from month goal
       const month = start.getMonth() + 1
@@ -479,6 +490,7 @@ export class LivestreamcoreService {
       clickRate: number
       avgViewingDuration: number
       comments: number
+      orders: number
       ordersNote: string
       rating?: string
     }
@@ -503,6 +515,7 @@ export class LivestreamcoreService {
       snapshot.clickRate = payload.clickRate
       snapshot.avgViewingDuration = payload.avgViewingDuration
       snapshot.comments = payload.comments
+      snapshot.orders = payload.orders
       snapshot.ordersNote = payload.ordersNote
       if (typeof payload.rating !== "undefined") {
         snapshot.rating = payload.rating
@@ -898,6 +911,8 @@ export class LivestreamcoreService {
       const end = new Date(payload.endDate)
       start.setHours(0, 0, 0, 0)
       end.setHours(0, 0, 0, 0)
+
+      console.log(payload.channel)
 
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
         throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
