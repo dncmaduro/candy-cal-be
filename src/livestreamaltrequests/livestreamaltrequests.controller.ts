@@ -27,10 +27,11 @@ export class LivestreamaltrequestsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader")
+  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchAltRequests(
+    @Req() req,
     @Query("page") page?: number,
     @Query("limit") limit?: number,
     @Query("status") status?: "pending" | "accepted" | "rejected",
@@ -42,7 +43,9 @@ export class LivestreamaltrequestsController {
       limit,
       status,
       channel,
-      requestBy
+      requestBy,
+      req.user.userId,
+      req.user.roles
     )
   }
 
