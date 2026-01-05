@@ -30,12 +30,18 @@ export class LivestreamaltrequestsService {
     limit = 10,
     status?: "pending" | "accepted" | "rejected",
     channel?: string,
-    requestBy?: string
+    requestBy?: string,
+    userId?: string,
+    userRoles?: string[]
   ): Promise<{ data: LivestreamAltRequest[]; total: number }> {
     try {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
       const filter: any = {}
+
+      // Check if user is admin or leader
+      const isAdminOrLeader =
+        userRoles?.includes("admin") || userRoles?.includes("livestream-leader")
 
       // Filter by status
       if (status) {
@@ -56,8 +62,8 @@ export class LivestreamaltrequestsService {
 
       // Filter by channel if provided (need to check livestream snapshots)
       let filteredRequests = requests
-      if (channel) {
-        const filteredByChannel = []
+      if (channel || (!isAdminOrLeader && userId)) {
+        const filteredByChannelAndUser = []
         for (const request of requests) {
           const livestream = await this.livestreamModel
             .findById(request.livestreamId)
@@ -66,12 +72,30 @@ export class LivestreamaltrequestsService {
             const snapshot = livestream.snapshots.find(
               (s: any) => s._id?.toString() === request.snapshotId.toString()
             )
-            if (snapshot && (snapshot as any).period?.channel === channel) {
-              filteredByChannel.push(request)
+            if (snapshot) {
+              // Check channel filter
+              const channelMatch = channel
+                ? (snapshot as any).period?.channel === channel
+                : true
+
+              // Check user filter (only if not admin/leader)
+              let userMatch = true
+              if (!isAdminOrLeader && userId) {
+                const assigneeId = (snapshot as any).assignee?.toString()
+                const altAssigneeId =
+                  (snapshot as any).altAssignee === "other"
+                    ? null
+                    : (snapshot as any).altAssignee?.toString()
+                userMatch = assigneeId === userId || altAssigneeId === userId
+              }
+
+              if (channelMatch && userMatch) {
+                filteredByChannelAndUser.push(request)
+              }
             }
           }
         }
-        filteredRequests = filteredByChannel
+        filteredRequests = filteredByChannelAndUser
       }
 
       // Apply pagination

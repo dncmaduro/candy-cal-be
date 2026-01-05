@@ -30,6 +30,7 @@ export interface LivestreamSnapshotEmbedded {
     bonusPercentage: number
     total?: number
   }
+  orders?: number
 }
 
 export interface Livestream extends Document {
