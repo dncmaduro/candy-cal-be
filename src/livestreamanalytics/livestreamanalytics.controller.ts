@@ -18,7 +18,13 @@ export class LivestreamanalyticsController {
     private readonly livestreamanalyticsService: LivestreamanalyticsService
   ) {}
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("monthly-totals")
   @HttpCode(HttpStatus.OK)
   async getMonthlyTotals(
@@ -28,7 +34,13 @@ export class LivestreamanalyticsController {
     return this.livestreamanalyticsService.getMonthlyTotals(year, month)
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("stats")
   @HttpCode(HttpStatus.OK)
   async getLivestreamStats(
@@ -41,7 +53,13 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("aggregated-metrics")
   @HttpCode(HttpStatus.OK)
   async getAggregatedMetrics(
@@ -60,7 +78,13 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("host-revenue-rankings")
   @HttpCode(HttpStatus.OK)
   async getHostRevenueRankings(

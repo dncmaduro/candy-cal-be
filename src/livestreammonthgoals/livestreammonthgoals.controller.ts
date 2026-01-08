@@ -59,7 +59,13 @@ export class LivestreammonthgoalsController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLivestreamMonthGoals(
@@ -74,7 +80,13 @@ export class LivestreammonthgoalsController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("kpis")
   @HttpCode(HttpStatus.OK)
   async getLivestreamMonthKpis(

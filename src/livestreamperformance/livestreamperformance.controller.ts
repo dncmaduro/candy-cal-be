@@ -8,17 +8,23 @@ import {
   Param,
   Query,
   UseInterceptors,
-  UploadedFiles
+  UploadedFiles,
+  UseGuards
 } from "@nestjs/common"
 import { FilesInterceptor } from "@nestjs/platform-express"
 import { LivestreamperformanceService } from "./livestreamperformance.service"
+import { JwtAuthGuard } from "src/auth/jwt-auth.guard"
+import { RolesGuard } from "src/roles/roles.guard"
+import { Roles } from "src/roles/roles.decorator"
 
 @Controller("livestreamperformance")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LivestreamperformanceController {
   constructor(
     private readonly livestreamperformanceService: LivestreamperformanceService
   ) {}
 
+  @Roles("admin", "livestream-leader")
   @Post()
   async createPerformance(
     @Body()
@@ -32,6 +38,7 @@ export class LivestreamperformanceController {
     return this.livestreamperformanceService.createPerformance(payload)
   }
 
+  @Roles("admin", "livestream-leader")
   @Put(":id")
   async updatePerformance(
     @Param("id") id: string,
@@ -46,6 +53,13 @@ export class LivestreamperformanceController {
     return this.livestreamperformanceService.updatePerformance(id, payload)
   }
 
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("search")
   async searchPerformances(
     @Query("page") page?: number,
@@ -59,6 +73,13 @@ export class LivestreamperformanceController {
     )
   }
 
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("by-income")
   async findPerformanceByIncome(@Query("income") income: number) {
     if (!income || isNaN(Number(income))) {
@@ -74,6 +95,7 @@ export class LivestreamperformanceController {
     return performance
   }
 
+  @Roles("admin", "livestream-leader")
   @Post("calculate-daily")
   async calculateDailyPerformance(@Body() payload: { date: string }) {
     if (!payload.date) {
@@ -84,6 +106,13 @@ export class LivestreamperformanceController {
     )
   }
 
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("monthly-salary")
   async calculateMonthlySalary(
     @Query("year") year: number,
@@ -98,6 +127,7 @@ export class LivestreamperformanceController {
     )
   }
 
+  @Roles("admin", "livestream-leader")
   @Post("calculate-real-income")
   @UseInterceptors(FilesInterceptor("files"))
   async calculateRealIncome(
@@ -120,6 +150,7 @@ export class LivestreamperformanceController {
     )
   }
 
+  @Roles("admin", "livestream-leader")
   @Delete(":id")
   async deletePerformance(@Param("id") id: string) {
     await this.livestreamperformanceService.deletePerformance(id)
