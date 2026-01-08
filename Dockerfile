@@ -15,7 +15,7 @@ WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
-COPY .env.production .env
+# COPY .env.production .env
 
 ENV NODE_ENV=production
 EXPOSE 3333
