@@ -314,8 +314,6 @@ export class LivestreamperformanceService {
           targetUserId = snapshot.assignee as Types.ObjectId
         }
 
-        console.log(targetUserId)
-
         if (!targetUserId) {
           snapshotsSkipped++
           details.push({

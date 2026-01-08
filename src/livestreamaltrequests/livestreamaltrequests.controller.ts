@@ -27,7 +27,13 @@ export class LivestreamaltrequestsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchAltRequests(
@@ -108,7 +114,13 @@ export class LivestreamaltrequestsController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("by-snapshot/:livestreamId/:snapshotId")
   @HttpCode(HttpStatus.OK)
   async getRequestBySnapshot(
