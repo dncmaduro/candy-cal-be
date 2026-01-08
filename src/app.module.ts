@@ -47,6 +47,7 @@ import { SalesActivitiesModule } from "./salesactivities/salesactivities.module"
 import { SalesTasksModule } from "./salestasks/salestasks.module"
 import { AppController } from "./app.controller"
 import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.module"
+import { GreetModule } from "./greet/greet.module"
 
 @Module({
   imports: [
@@ -95,6 +96,7 @@ import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.m
     SalesActivitiesModule,
     SalesTasksModule,
     SalesDailyReportsModule,
+    GreetModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
