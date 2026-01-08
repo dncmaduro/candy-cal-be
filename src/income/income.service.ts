@@ -1086,6 +1086,23 @@ export class IncomeService {
       productsQuantity: {
         [code: string]: number
       }
+      dailyGoal?: {
+        beforeDiscount: {
+          liveIncomePercentage: number
+          shopIncomePercentage: number
+          incomePercentage: number
+        }
+        afterDiscount: {
+          liveIncomePercentage: number
+          shopIncomePercentage: number
+          incomePercentage: number
+        }
+        goals: {
+          dailyLiveIncomeGoal: number
+          dailyShopIncomeGoal: number
+          dailyTotalIncomeGoal: number
+        }
+      }
     }
     changes?: {
       beforeDiscount: {
@@ -1353,6 +1370,109 @@ export class IncomeService {
       }
 
       const current = await buildStats(start, end)
+
+      // Add daily goal calculation if start and end are on the same day
+      if (
+        start.getDate() === end.getDate() &&
+        start.getMonth() === end.getMonth() &&
+        start.getFullYear() === end.getFullYear()
+      ) {
+        const month = start.getMonth()
+        const year = start.getFullYear()
+
+        // Get month goal
+        const goalFilter: any = { month, year }
+        if (channelId) goalFilter.channel = channelId
+
+        const monthGoal = await this.monthGoalModel.findOne(goalFilter).lean()
+
+        if (monthGoal) {
+          // Calculate days in month
+          const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+          // Calculate daily goals (income goals divided by days in month)
+          const dailyLiveGoal = monthGoal.liveStreamGoal / daysInMonth
+          const dailyShopGoal = monthGoal.shopGoal / daysInMonth
+          const dailyTotalGoal = dailyLiveGoal + dailyShopGoal
+
+          // Calculate income percentages - BEFORE DISCOUNT
+          const liveIncomePercentageBeforeDiscount =
+            dailyLiveGoal === 0
+              ? 0
+              : Math.round(
+                  (current.beforeDiscount.liveIncome / dailyLiveGoal) *
+                    100 *
+                    100
+                ) / 100
+
+          const shopIncomePercentageBeforeDiscount =
+            dailyShopGoal === 0
+              ? 0
+              : Math.round(
+                  ((current.beforeDiscount.videoIncome +
+                    current.beforeDiscount.otherIncome) /
+                    dailyShopGoal) *
+                    100 *
+                    100
+                ) / 100
+
+          const incomePercentageBeforeDiscount =
+            dailyTotalGoal === 0
+              ? 0
+              : Math.round(
+                  (current.beforeDiscount.totalIncome / dailyTotalGoal) *
+                    100 *
+                    100
+                ) / 100
+
+          // Calculate income percentages - AFTER DISCOUNT
+          const liveIncomePercentageAfterDiscount =
+            dailyLiveGoal === 0
+              ? 0
+              : Math.round(
+                  (current.afterDiscount.liveIncome / dailyLiveGoal) * 100 * 100
+                ) / 100
+
+          const shopIncomePercentageAfterDiscount =
+            dailyShopGoal === 0
+              ? 0
+              : Math.round(
+                  ((current.afterDiscount.videoIncome +
+                    current.afterDiscount.otherIncome) /
+                    dailyShopGoal) *
+                    100 *
+                    100
+                ) / 100
+
+          const incomePercentageAfterDiscount =
+            dailyTotalGoal === 0
+              ? 0
+              : Math.round(
+                  (current.afterDiscount.totalIncome / dailyTotalGoal) *
+                    100 *
+                    100
+                ) / 100
+
+          ;(current as any).dailyGoal = {
+            beforeDiscount: {
+              liveIncomePercentage: liveIncomePercentageBeforeDiscount,
+              shopIncomePercentage: shopIncomePercentageBeforeDiscount,
+              incomePercentage: incomePercentageBeforeDiscount
+            },
+            afterDiscount: {
+              liveIncomePercentage: liveIncomePercentageAfterDiscount,
+              shopIncomePercentage: shopIncomePercentageAfterDiscount,
+              incomePercentage: incomePercentageAfterDiscount
+            },
+            goals: {
+              dailyLiveIncomeGoal: dailyLiveGoal,
+              dailyShopIncomeGoal: dailyShopGoal,
+              dailyTotalIncomeGoal: dailyTotalGoal
+            }
+          }
+        }
+      }
+
       if (!comparePrevious)
         return { period: { startDate: start, endDate: end, days }, current }
 
