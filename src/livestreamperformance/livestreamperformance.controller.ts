@@ -13,9 +13,9 @@ import {
 } from "@nestjs/common"
 import { FilesInterceptor } from "@nestjs/platform-express"
 import { LivestreamperformanceService } from "./livestreamperformance.service"
-import { JwtAuthGuard } from "src/auth/jwt-auth.guard"
-import { RolesGuard } from "src/roles/roles.guard"
-import { Roles } from "src/roles/roles.decorator"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "../roles/roles.guard"
+import { Roles } from "../roles/roles.decorator"
 
 @Controller("livestreamperformance")
 @UseGuards(JwtAuthGuard, RolesGuard)
