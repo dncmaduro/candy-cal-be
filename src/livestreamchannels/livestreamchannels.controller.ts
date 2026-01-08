@@ -60,7 +60,8 @@ export class LivestreamchannelsController {
     "livestream-emp",
     "livestream-ast",
     "order-emp",
-    "accounting-emp"
+    "accounting-emp",
+    "livestream-accounting"
   )
   @Get("search")
   @HttpCode(HttpStatus.OK)
@@ -76,7 +77,13 @@ export class LivestreamchannelsController {
     )
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getLivestreamChannelById(@Param("id") id: string) {

@@ -26,7 +26,13 @@ export class LivestreamperiodsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("by-channel/:channelId")
   @HttpCode(HttpStatus.OK)
   async getPeriodIdsByChannel(@Param("channelId") channelId: string) {
@@ -62,14 +68,26 @@ export class LivestreamperiodsController {
     return created
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllLivestreamPeriods() {
     return this.livestreamperiodsService.getAllLivestreamPeriods()
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getLivestreamPeriodById(@Param("id") id: string) {

@@ -105,7 +105,8 @@ export class LivestreamcoreController {
     "livestream-leader",
     "livestream-emp",
     "livestream-ast",
-    "order-emp"
+    "order-emp",
+    "livestream-accounting"
   )
   @Get("by-date-range")
   @HttpCode(HttpStatus.OK)
