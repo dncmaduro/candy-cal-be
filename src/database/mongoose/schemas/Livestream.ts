@@ -7,7 +7,7 @@ export interface LivestreamSnapshotEmbedded {
     _id?: Types.ObjectId
     startTime: { hour: number; minute: number }
     endTime: { hour: number; minute: number }
-    channel: string
+    channel: Types.ObjectId
     for: "host" | "assistant"
   }
   assignee?: Types.ObjectId
@@ -55,7 +55,11 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
         hour: { type: Number, required: true },
         minute: { type: Number, required: true }
       },
-      channel: { type: String, required: true },
+      channel: {
+        type: Schema.Types.ObjectId,
+        ref: "livestreamchannels",
+        required: true
+      },
       for: {
         type: String,
         enum: ["host", "assistant"],
