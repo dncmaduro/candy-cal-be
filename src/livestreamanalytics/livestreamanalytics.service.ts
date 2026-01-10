@@ -148,7 +148,8 @@ export class LivestreamanalyticsService {
 
         for (const snapshot of snapshots) {
           // Apply filters to snapshots
-          if (channelId && snapshot.period?.channel !== channelId) continue
+          if (channelId && snapshot.period?.channel.toString() !== channelId)
+            continue
           if (forRole && snapshot.period?.for !== forRole) continue
           if (assigneeId && snapshot.assignee?.toString() !== assigneeId)
             continue

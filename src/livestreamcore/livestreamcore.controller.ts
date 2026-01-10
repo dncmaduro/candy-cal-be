@@ -319,12 +319,13 @@ export class LivestreamcoreController {
   @Patch("fix-by-date")
   @HttpCode(HttpStatus.OK)
   async fixLivestreamByDate(
-    @Body() payload: { date: Date; channelId: string },
+    @Body() payload: { startDate: Date; endDate: Date; channel: string },
     @Req() req
   ) {
     const updated = await this.livestreamcoreService.fixLivestreamByDate(
-      payload.date,
-      payload.channelId
+      payload.startDate,
+      payload.endDate,
+      payload.channel
     )
     void this.systemLogsService.createSystemLog(
       {
@@ -334,8 +335,9 @@ export class LivestreamcoreController {
         entityId: "bulk",
         result: "success",
         meta: {
-          date: payload.date,
-          channelId: payload.channelId,
+          startDate: payload.startDate,
+          endDate: payload.endDate,
+          channel: payload.channel,
           updated
         }
       },
