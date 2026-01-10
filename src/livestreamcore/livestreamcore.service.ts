@@ -140,8 +140,8 @@ export class LivestreamcoreService {
         const existingSnapshots =
           existing.snapshots as LivestreamSnapshotEmbedded[]
         if (existingSnapshots.length > 0 && existingSnapshots[0].period) {
-          const existingChannel = existingSnapshots[0].period.channel
-          if (existingChannel === channelIdString) {
+          const existingChannel = existingSnapshots[0].period.channel.toString()
+          if (existingChannel === channelObjectId.toString()) {
             throw new HttpException(
               "Livestream for this date and channel already exists",
               HttpStatus.BAD_REQUEST
@@ -236,7 +236,9 @@ export class LivestreamcoreService {
           return snapshots.some((s) => {
             if (!s.period) return false
 
-            const channelMatch = channel ? s.period.channel === channel : true
+            const channelMatch = channel
+              ? s.period.channel.toString() === channel
+              : true
             const roleMatch = forRole ? s.period.for === forRole : true
             const assigneeMatch = assigneeId
               ? s.assignee?.toString() === assigneeId
@@ -290,7 +292,8 @@ export class LivestreamcoreService {
       // Check channel consistency
       const existingChannels = new Set<string>()
       for (const s of livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]) {
-        if (s.period && s.period.channel) existingChannels.add(s.period.channel)
+        if (s.period && s.period.channel)
+          existingChannels.add(s.period.channel.toString())
       }
       if (existingChannels.size > 0) {
         const only = Array.from(existingChannels)[0]
@@ -324,7 +327,7 @@ export class LivestreamcoreService {
           _id: newPeriodTyped._id as Types.ObjectId,
           startTime: newPeriodTyped.startTime,
           endTime: newPeriodTyped.endTime,
-          channel: (newPeriodTyped.channel as Types.ObjectId).toString(),
+          channel: newPeriodTyped.channel,
           for: newPeriodTyped.for
         },
         assignee: payload.assignee
@@ -415,7 +418,8 @@ export class LivestreamcoreService {
       // Check channel consistency
       const existingChannels = new Set<string>()
       for (const s of otherSnapshots) {
-        if (s.period && s.period.channel) existingChannels.add(s.period.channel)
+        if (s.period && s.period.channel)
+          existingChannels.add(s.period.channel.toString())
       }
       if (existingChannels.size > 0) {
         const only = Array.from(existingChannels)[0]
@@ -449,7 +453,7 @@ export class LivestreamcoreService {
           _id: newPeriodTyped._id as Types.ObjectId,
           startTime: newPeriodTyped.startTime,
           endTime: newPeriodTyped.endTime,
-          channel: (newPeriodTyped.channel as Types.ObjectId).toString(),
+          channel: newPeriodTyped.channel,
           for: newPeriodTyped.for
         }
       if (payload.assignee)
@@ -642,7 +646,7 @@ export class LivestreamcoreService {
           livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
 
         const channelSnapshots = snapshots.filter(
-          (s) => s.period && s.period.channel === channelId
+          (s) => s.period && s.period.channel.toString() === channelId
         )
 
         const existingSnapshotsMap = new Map<
@@ -662,7 +666,10 @@ export class LivestreamcoreService {
         const newSnapshots: LivestreamSnapshotEmbedded[] = []
 
         for (const snapshot of snapshots) {
-          if (snapshot.period && snapshot.period.channel !== channelId) {
+          if (
+            snapshot.period &&
+            snapshot.period.channel.toString() !== channelId
+          ) {
             newSnapshots.push(snapshot)
           }
         }
@@ -698,7 +705,7 @@ export class LivestreamcoreService {
                 _id: period._id as Types.ObjectId,
                 startTime: period.startTime,
                 endTime: period.endTime,
-                channel: (period.channel as Types.ObjectId).toString(),
+                channel: period.channel,
                 for: period.for
               },
               assignee: existingSnapshot.assignee,
@@ -711,7 +718,7 @@ export class LivestreamcoreService {
                 _id: period._id as Types.ObjectId,
                 startTime: period.startTime,
                 endTime: period.endTime,
-                channel: (period.channel as Types.ObjectId).toString(),
+                channel: period.channel,
                 for: period.for
               },
               assignee: undefined,
@@ -769,15 +776,19 @@ export class LivestreamcoreService {
   }
 
   // Fix livestreams
-  async fixLivestreamByDate(date: Date, channelId: string): Promise<number> {
+  async fixLivestreamByDate(
+    startDate: Date,
+    endDate: Date,
+    channelId: string
+  ): Promise<number> {
     try {
-      const dayStart = new Date(date)
-      dayStart.setHours(0, 0, 0, 0)
-      const dayEnd = new Date(dayStart)
-      dayEnd.setDate(dayEnd.getDate() + 1)
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
 
       const livestreams = await this.livestreamModel
-        .find({ date: { $gte: dayStart, $lt: dayEnd } })
+        .find({ date: { $gte: start, $lte: end } })
         .exec()
 
       let updated = 0
@@ -789,7 +800,7 @@ export class LivestreamcoreService {
 
         const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
         const hasChannelSnapshot = snapshots.some(
-          (s) => s.period && s.period.channel === channelId
+          (s) => s.period && s.period.channel.toString() === channelId
         )
 
         if (hasChannelSnapshot) {
@@ -911,8 +922,6 @@ export class LivestreamcoreService {
       const end = new Date(payload.endDate)
       start.setHours(0, 0, 0, 0)
       end.setHours(0, 0, 0, 0)
-
-      console.log(payload.channel)
 
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
         throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
