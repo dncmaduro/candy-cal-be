@@ -90,7 +90,8 @@ export const LivestreamSnapshotSchema = new Schema<LivestreamSnapshotEmbedded>(
       salaryPerHour: { type: Number, required: false },
       bonusPercentage: { type: Number, required: false },
       total: { type: Number, required: false }
-    }
+    },
+    orders: { type: Number, required: false }
   },
   { _id: true }
 )
