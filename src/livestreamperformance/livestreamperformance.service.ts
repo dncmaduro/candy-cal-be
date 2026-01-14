@@ -243,6 +243,7 @@ export class LivestreamperformanceService {
     }>
   }> {
     try {
+      date.setUTCHours(date.getUTCHours() + 7)
       const startOfDay = new Date(date)
       startOfDay.setUTCHours(0, 0, 0, 0)
       const endOfDay = new Date(date)
