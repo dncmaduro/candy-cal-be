@@ -9,7 +9,7 @@ export interface StorageLog extends Document {
   item?: StorageLogItem // Keep for backward compatibility with old data
   items?: StorageLogItem[] // New field for multiple items
   note?: string
-  status: string
+  status: "delivered" | "received" | "returned"
   date: Date
   tag?: string
   deliveredRequestId?: Types.ObjectId
@@ -20,7 +20,7 @@ export interface StorageLogModel extends Model<StorageLog> {
     items: StorageLogItem[],
     data: {
       note?: string
-      status: string
+      status: "delivered" | "received" | "returned"
       date: Date
       tag?: string
       deliveredRequestId?: Types.ObjectId
@@ -37,7 +37,11 @@ export const StorageLogSchema = new Schema<StorageLog>({
   item: { type: StorageLogItemSchema, required: false }, // Keep for old data
   items: { type: [StorageLogItemSchema], required: false }, // New field for multiple items
   note: { type: String, required: false },
-  status: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ["delivered", "received", "returned"],
+    required: true
+  },
   date: { type: Date, required: true },
   tag: { type: String, required: false },
   deliveredRequestId: {

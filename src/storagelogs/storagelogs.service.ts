@@ -57,6 +57,8 @@ export class StorageLogsService {
           item.receivedQuantity.quantity += logItem.quantity
         } else if (storageLog.status === "delivered") {
           item.deliveredQuantity.quantity += logItem.quantity
+        } else if (storageLog.status === "returned") {
+          item.deliveredQuantity.quantity -= logItem.quantity
         }
 
         item.restQuantity.quantity =
@@ -155,6 +157,8 @@ export class StorageLogsService {
           item.receivedQuantity.quantity -= existingItem.quantity
         } else if (existingLog.status === "delivered") {
           item.deliveredQuantity.quantity -= existingItem.quantity
+        } else if (existingLog.status === "returned") {
+          item.deliveredQuantity.quantity += existingItem.quantity
         }
 
         item.restQuantity.quantity =
@@ -171,6 +175,8 @@ export class StorageLogsService {
           item.receivedQuantity.quantity += newItem.quantity
         } else if (updatedLog.status === "delivered") {
           item.deliveredQuantity.quantity += newItem.quantity
+        } else if (updatedLog.status === "returned") {
+          item.deliveredQuantity.quantity -= newItem.quantity
         }
 
         item.restQuantity.quantity =
@@ -320,6 +326,8 @@ export class StorageLogsService {
           item.receivedQuantity.quantity -= logItem.quantity
         } else if (log.status === "delivered") {
           item.deliveredQuantity.quantity -= logItem.quantity
+        } else if (log.status === "returned") {
+          item.deliveredQuantity.quantity += logItem.quantity
         }
 
         item.restQuantity.quantity =
