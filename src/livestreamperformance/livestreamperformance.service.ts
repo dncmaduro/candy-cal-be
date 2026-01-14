@@ -243,11 +243,10 @@ export class LivestreamperformanceService {
     }>
   }> {
     try {
-      // Find livestream by date
       const startOfDay = new Date(date)
-      startOfDay.setHours(0, 0, 0, 0)
+      startOfDay.setUTCHours(0, 0, 0, 0)
       const endOfDay = new Date(date)
-      endOfDay.setHours(23, 59, 59, 999)
+      endOfDay.setUTCHours(23, 59, 59, 999)
 
       const livestream = await this.livestreamModel
         .findOne({
@@ -283,9 +282,11 @@ export class LivestreamperformanceService {
       }> = []
 
       // Process each snapshot
+      console.log(livestream)
       for (const snapshot of livestream.snapshots) {
         // Use realIncome if available, otherwise use income
         const incomeValue = snapshot.realIncome ?? snapshot.income
+        console.log(snapshot, incomeValue)
 
         if (!incomeValue || incomeValue === 0) {
           snapshotsSkipped++
@@ -306,7 +307,6 @@ export class LivestreamperformanceService {
         let targetUserId: Types.ObjectId | null = null
         if ((snapshot as any).altAssignee) {
           const altAssignee = (snapshot as any).altAssignee
-          console.log(altAssignee)
           if (altAssignee !== "other") {
             targetUserId = altAssignee
           }
