@@ -128,6 +128,7 @@ export class LivestreamanalyticsService {
     totalIncome: number
     totalAdsCost: number
     totalComments: number
+    totalOrders: number
   }> {
     try {
       const start = new Date(startDate)
@@ -142,6 +143,7 @@ export class LivestreamanalyticsService {
       let totalIncome = 0
       let totalAdsCost = 0
       let totalComments = 0
+      let totalOrders = 0
 
       for (const livestream of livestreams) {
         const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
@@ -157,13 +159,15 @@ export class LivestreamanalyticsService {
           totalIncome += snapshot.income ?? 0
           totalAdsCost += snapshot.adsCost ?? 0
           totalComments += snapshot.comments ?? 0
+          totalOrders += snapshot.orders ?? 0
         }
       }
 
       return {
         totalIncome,
         totalAdsCost,
-        totalComments
+        totalComments,
+        totalOrders
       }
     } catch (error) {
       console.error(error)
