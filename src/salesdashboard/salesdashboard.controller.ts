@@ -36,11 +36,13 @@ export class SalesDashboardController {
   @HttpCode(HttpStatus.OK)
   async getMonthlyMetrics(
     @Query("year") year: string,
-    @Query("month") month: string
+    @Query("month") month: string,
+    @Query("channel") channel?: string
   ) {
     return this.salesDashboardService.getMonthlyMetrics(
       Number(year),
-      Number(month)
+      Number(month),
+      channel
     )
   }
 
@@ -51,13 +53,15 @@ export class SalesDashboardController {
     @Query("year") year: string,
     @Query("month") month: string,
     @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("limit") limit?: string,
+    @Query("channel") channel?: string
   ) {
     return this.salesDashboardService.getTopCustomersByRevenue(
       Number(year),
       Number(month),
       page ? Number(page) : 1,
-      limit ? Number(limit) : 10
+      limit ? Number(limit) : 10,
+      channel
     )
   }
 }
