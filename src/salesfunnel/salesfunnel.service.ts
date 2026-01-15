@@ -588,6 +588,8 @@ export class SalesFunnelService {
       noActivityDays?: number
       funnelSource?: SalesFunnelSource
       deleted?: boolean
+      sortBy?: "totalIncome" | "lastTimeBuyed"
+      sortOrder?: "asc" | "desc"
     },
     page = 1,
     limit = 10
@@ -688,6 +690,15 @@ export class SalesFunnelService {
             .sort({ time: -1 })
             .lean()
 
+          // Get last order (purchase) for this funnel
+          const lastOrder = await this.salesOrderModel
+            .findOne({ salesFunnelId: funnel._id })
+            .sort({ date: -1 })
+            .lean()
+
+          const lastTimeBuyedDate = lastOrder?.date || null
+          const lastTimeBuyed = this.formatTimeSinceLastBuy(lastTimeBuyedDate)
+
           return {
             ...enriched,
             lastActivityTime: lastActivity?.time || null,
@@ -697,7 +708,9 @@ export class SalesFunnelService {
                     new Date(lastActivity.time).getTime()) /
                     (1000 * 60 * 60 * 24)
                 )
-              : null
+              : null,
+            lastTimeBuyed,
+            lastTimeBuyedDate // Keep the raw date for sorting
           }
         })
       )
@@ -707,6 +720,34 @@ export class SalesFunnelService {
         enrichedFunnels = enrichedFunnels.filter(
           (funnel) => funnel.rank === filters.rank
         )
+      }
+
+      // Sort by specified field if provided
+      if (filters.sortBy) {
+        const sortOrder = filters.sortOrder === "asc" ? 1 : -1
+
+        enrichedFunnels.sort((a, b) => {
+          if (filters.sortBy === "totalIncome") {
+            const aValue = a.totalIncome || 0
+            const bValue = b.totalIncome || 0
+            return (aValue - bValue) * sortOrder
+          } else if (filters.sortBy === "lastTimeBuyed") {
+            // Sort by lastTimeBuyed: null values go to the end
+            // For sorting, we need the actual date, not the formatted string
+            const aDate = a.lastTimeBuyedDate || null
+            const bDate = b.lastTimeBuyedDate || null
+
+            if (aDate === null && bDate === null) return 0
+            if (aDate === null) return 1 // null goes to end
+            if (bDate === null) return -1 // null goes to end
+
+            return (
+              (new Date(aDate).getTime() - new Date(bDate).getTime()) *
+              sortOrder
+            )
+          }
+          return 0
+        })
       }
 
       // Recalculate total if rank filter was applied
@@ -906,6 +947,32 @@ export class SalesFunnelService {
         "Lỗi khi kiểm tra quyền truy cập funnel",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
+    }
+  }
+
+  private formatTimeSinceLastBuy(lastBuyDate: Date | null): string | null {
+    if (!lastBuyDate) return null
+
+    const now = new Date()
+    const diffMs = now.getTime() - new Date(lastBuyDate).getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffDays < 1) {
+      return "<1 ngày"
+    } else if (diffDays < 30) {
+      return `${diffDays} ngày`
+    } else if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30)
+      return `${months} tháng`
+    } else {
+      const years = Math.floor(diffDays / 365)
+      const remainingDays = diffDays % 365
+      const months = Math.floor(remainingDays / 30)
+      if (months > 0) {
+        return `${years} năm ${months} tháng`
+      } else {
+        return `${years} năm`
+      }
     }
   }
 

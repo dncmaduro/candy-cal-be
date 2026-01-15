@@ -233,6 +233,8 @@ export class SalesFunnelController {
     @Query("noActivityDays") noActivityDays?: string,
     @Query("funnelSource") funnelSource?: SalesFunnelSource,
     @Query("deleted") deleted?: string,
+    @Query("sortBy") sortBy?: "totalIncome" | "lastTimeBuyed",
+    @Query("sortOrder") sortOrder?: "asc" | "desc",
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: any[]; total: number }> {
@@ -249,7 +251,9 @@ export class SalesFunnelController {
         noActivityDays: noActivityDays ? Number(noActivityDays) : undefined,
         funnelSource,
         deleted:
-          deleted === "true" ? true : deleted === "false" ? false : undefined
+          deleted === "true" ? true : deleted === "false" ? false : undefined,
+        sortBy,
+        sortOrder
       },
       Number(page),
       Number(limit)
