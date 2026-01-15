@@ -3,6 +3,7 @@ import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
+import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
 
 export interface RevenueByItem {
   code: string
@@ -69,6 +70,8 @@ export interface MetricsResponse {
     customer: number
     closed: number
   }
+  monthlyGoal: number // KPI for the month
+  goalCompletionPercentage: number // % of KPI completed
 }
 
 @Injectable()
@@ -77,7 +80,9 @@ export class SalesDashboardService {
     @InjectModel("salesorders")
     private readonly salesOrderModel: Model<SalesOrder>,
     @InjectModel("salesfunnel")
-    private readonly salesFunnelModel: Model<SalesFunnel>
+    private readonly salesFunnelModel: Model<SalesFunnel>,
+    @InjectModel("salesmonthkpi")
+    private readonly salesMonthKpiModel: Model<SalesMonthKpi>
   ) {}
 
   async getRevenueStats(
@@ -308,7 +313,8 @@ export class SalesDashboardService {
 
   async getMonthlyMetrics(
     year: number,
-    month: number
+    month: number,
+    channel?: string
   ): Promise<MetricsResponse> {
     try {
       // Month boundaries using UTC to avoid timezone issues
@@ -316,7 +322,7 @@ export class SalesDashboardService {
       const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
 
       // Get all orders in this month (only official status)
-      const orders = await this.salesOrderModel
+      let ordersQuery = await this.salesOrderModel
         .find({
           date: { $gte: startOfMonth, $lte: endOfMonth },
           status: "official"
@@ -329,6 +335,21 @@ export class SalesDashboardService {
           ]
         })
         .lean()
+
+      // Filter by channel if provided
+      let orders = ordersQuery
+      if (channel) {
+        orders = ordersQuery.filter((order) => {
+          const funnel = order.salesFunnelId as any
+          if (funnel && funnel.channel) {
+            const channelId = funnel.channel._id
+              ? funnel.channel._id.toString()
+              : funnel.channel.toString()
+            return channelId === channel
+          }
+          return false
+        })
+      }
 
       // Calculate Average Deal Size
       const avgDealSize =
@@ -475,6 +496,45 @@ export class SalesDashboardService {
         })
       })
 
+      // Get monthly goal (KPI) for this month and channel
+      let monthlyGoal = 0
+      if (channel) {
+        // Get KPI for specific channel
+        const kpiRecord = await this.salesMonthKpiModel
+          .findOne({
+            month,
+            year,
+            channel: new Types.ObjectId(channel)
+          })
+          .lean()
+        monthlyGoal = kpiRecord ? kpiRecord.kpi : 0
+      } else {
+        // Get sum of all KPIs for all channels in this month
+        const kpiRecords = await this.salesMonthKpiModel
+          .find({
+            month,
+            year
+          })
+          .lean()
+        monthlyGoal = kpiRecords.reduce((sum, record) => sum + record.kpi, 0)
+      }
+
+      // Calculate actual revenue for the month
+      // When no channel filter: use all orders (ordersQuery)
+      // When channel filter: use filtered orders (orders)
+      const ordersForRevenue = channel ? orders : ordersQuery
+      const actualRevenue = ordersForRevenue.reduce((sum, order) => {
+        const totalDiscount =
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
+        return sum + order.total - totalDiscount
+      }, 0)
+
+      // Calculate goal completion percentage
+      const goalCompletionPercentage =
+        monthlyGoal > 0
+          ? Math.round((actualRevenue / monthlyGoal) * 10000) / 100
+          : 0
+
       return {
         cac: Math.round(cac),
         crr: Math.round(crr * 100) / 100,
@@ -482,7 +542,9 @@ export class SalesDashboardService {
         conversionRate: Math.round(conversionRate * 100) / 100,
         avgDealSize: Math.round(avgDealSize),
         salesCycleLength: Math.round(salesCycleLength * 100) / 100,
-        stageTransitions
+        stageTransitions,
+        monthlyGoal: Math.round(monthlyGoal),
+        goalCompletionPercentage
       }
     } catch (error) {
       console.error("Error in getMonthlyMetrics:", error)
@@ -497,7 +559,8 @@ export class SalesDashboardService {
     year: number,
     month: number,
     page = 1,
-    limit = 10
+    limit = 10,
+    channel?: string
   ): Promise<{ data: TopCustomerByRevenue[]; total: number }> {
     try {
       const safePage = Math.max(1, Number(page) || 1)
@@ -508,16 +571,32 @@ export class SalesDashboardService {
       const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
 
       // Get all orders in this month (only official status)
-      const orders = await this.salesOrderModel
+      let ordersQuery = await this.salesOrderModel
         .find({
           date: { $gte: startOfMonth, $lte: endOfMonth },
           status: "official"
         })
         .populate({
           path: "salesFunnelId",
-          select: "name phoneNumber"
+          populate: [{ path: "channel", select: "channelName" }],
+          select: "name phoneNumber channel"
         })
         .lean()
+
+      // Filter by channel if provided
+      let orders = ordersQuery
+      if (channel) {
+        orders = ordersQuery.filter((order) => {
+          const funnel = order.salesFunnelId as any
+          if (funnel && funnel.channel) {
+            const channelId = funnel.channel._id
+              ? funnel.channel._id.toString()
+              : funnel.channel.toString()
+            return channelId === channel
+          }
+          return false
+        })
+      }
 
       // Calculate revenue by customer
       const customerRevenueMap = new Map<
