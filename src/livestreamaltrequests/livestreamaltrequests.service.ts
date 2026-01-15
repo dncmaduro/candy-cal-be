@@ -257,7 +257,9 @@ export class LivestreamaltrequestsService {
       // Check permissions: creator, livestream-leader, or admin
       const isCreator = request.createdBy._id.toString() === userId
       const isLeaderOrAdmin =
-        user.roles.includes("admin") || user.roles.includes("livestream-leader")
+        user.roles.includes("admin") ||
+        user.roles.includes("livestream-leader") ||
+        user.roles.includes("livestream-accounting")
 
       if (!isCreator && !isLeaderOrAdmin) {
         throw new HttpException(

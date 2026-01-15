@@ -53,7 +53,7 @@ export class LivestreamsalaryController {
   }
 
   @Get("search")
-  @Roles("admin")
+  @Roles("admin", "livestream-accounting")
   @HttpCode(HttpStatus.OK)
   async searchSalaries(
     @Query("page") page?: number,
