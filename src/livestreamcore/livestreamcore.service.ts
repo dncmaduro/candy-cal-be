@@ -49,6 +49,42 @@ export class LivestreamcoreService {
     return snapshots.reduce((sum, s) => sum + (s.income ?? 0), 0)
   }
 
+  // helper: check if time range A contains time range B
+  private timeRangeContains(
+    aStart: { hour: number; minute: number },
+    aEnd: { hour: number; minute: number },
+    bStart: { hour: number; minute: number },
+    bEnd: { hour: number; minute: number }
+  ): boolean {
+    const aStartMin = this.timeToMinutes(aStart)
+    const aEndMin = this.timeToMinutes(aEnd)
+    const bStartMin = this.timeToMinutes(bStart)
+    const bEndMin = this.timeToMinutes(bEnd)
+    return aStartMin <= bStartMin && aEndMin >= bEndMin
+  }
+
+  // helper: find assistant snapshots that are contained by the host snapshot time range
+  private findCorrespondingAssistantSnapshots(
+    snapshots: LivestreamSnapshotEmbedded[],
+    hostSnapshot: LivestreamSnapshotEmbedded
+  ): LivestreamSnapshotEmbedded[] {
+    if (!hostSnapshot.period) return []
+
+    const hostStart = hostSnapshot.period.startTime
+    const hostEnd = hostSnapshot.period.endTime
+
+    return snapshots.filter((s) => {
+      if (!s.period || s.period.for !== "assistant") return false
+
+      return this.timeRangeContains(
+        hostStart,
+        hostEnd,
+        s.period.startTime,
+        s.period.endTime
+      )
+    })
+  }
+
   // helper: validate user exists
   private async validateUserExists(userId: string): Promise<void> {
     const user = await this.userModel.findById(userId).exec()
@@ -461,8 +497,104 @@ export class LivestreamcoreService {
       else {
         snapshot.assignee = null
       }
-      if (typeof payload.income !== "undefined")
-        snapshot.income = payload.income
+
+      // Track income changes for HOST snapshots
+      let incomeChange = 0
+      let realIncomeChange = 0
+      let adsCostChange = 0
+      let ordersChange = 0
+      let commentsChange = 0
+      const isHostSnapshot = snapshot.period?.for === "host"
+
+      if (isHostSnapshot) {
+        if (typeof payload.income !== "undefined") {
+          const oldIncome = snapshot.income ?? 0
+          incomeChange = payload.income - oldIncome
+          snapshot.income = payload.income
+        }
+
+        // Check if realIncome is being updated (even though not in current payload interface)
+        if (typeof (payload as any).realIncome !== "undefined") {
+          const oldRealIncome = snapshot.realIncome ?? 0
+          realIncomeChange = (payload as any).realIncome - oldRealIncome
+          snapshot.realIncome = (payload as any).realIncome
+        }
+
+        // Check if adsCost is being updated
+        if (typeof (payload as any).adsCost !== "undefined") {
+          const oldAdsCost = snapshot.adsCost ?? 0
+          adsCostChange = (payload as any).adsCost - oldAdsCost
+          snapshot.adsCost = (payload as any).adsCost
+        }
+
+        // Check if orders is being updated
+        if (typeof (payload as any).orders !== "undefined") {
+          const oldOrders = snapshot.orders ?? 0
+          ordersChange = (payload as any).orders - oldOrders
+          snapshot.orders = (payload as any).orders
+        }
+
+        // Check if comments is being updated
+        if (typeof (payload as any).comments !== "undefined") {
+          const oldComments = snapshot.comments ?? 0
+          commentsChange = (payload as any).comments - oldComments
+          snapshot.comments = (payload as any).comments
+        }
+
+        // Update corresponding assistant snapshots
+        if (
+          incomeChange !== 0 ||
+          realIncomeChange !== 0 ||
+          adsCostChange !== 0 ||
+          ordersChange !== 0 ||
+          commentsChange !== 0
+        ) {
+          const assistantSnapshots = this.findCorrespondingAssistantSnapshots(
+            livestreamDoc.snapshots as LivestreamSnapshotEmbedded[],
+            snapshot
+          )
+
+          for (const assistantSnapshot of assistantSnapshots) {
+            if (incomeChange !== 0) {
+              assistantSnapshot.income =
+                (assistantSnapshot.income ?? 0) + incomeChange
+            }
+            if (realIncomeChange !== 0) {
+              assistantSnapshot.realIncome =
+                (assistantSnapshot.realIncome ?? 0) + realIncomeChange
+            }
+            if (adsCostChange !== 0) {
+              assistantSnapshot.adsCost =
+                (assistantSnapshot.adsCost ?? 0) + adsCostChange
+            }
+            if (ordersChange !== 0) {
+              assistantSnapshot.orders =
+                (assistantSnapshot.orders ?? 0) + ordersChange
+            }
+            if (commentsChange !== 0) {
+              assistantSnapshot.comments =
+                (assistantSnapshot.comments ?? 0) + commentsChange
+            }
+          }
+        }
+      } else {
+        // Not a host snapshot, update normally
+        if (typeof payload.income !== "undefined") {
+          snapshot.income = payload.income
+        }
+        if (typeof (payload as any).realIncome !== "undefined") {
+          snapshot.realIncome = (payload as any).realIncome
+        }
+        if (typeof (payload as any).adsCost !== "undefined") {
+          snapshot.adsCost = (payload as any).adsCost
+        }
+        if (typeof (payload as any).orders !== "undefined") {
+          snapshot.orders = (payload as any).orders
+        }
+        if (typeof (payload as any).comments !== "undefined") {
+          snapshot.comments = (payload as any).comments
+        }
+      }
 
       livestreamDoc.totalIncome = this.computeTotalIncome(
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -514,6 +646,25 @@ export class LivestreamcoreService {
       if (!snapshot)
         throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
 
+      // Track changes for HOST snapshots
+      const isHostSnapshot = snapshot.period?.for === "host"
+      let incomeChange = 0
+      let adsCostChange = 0
+      let ordersChange = 0
+      let commentsChange = 0
+
+      if (isHostSnapshot) {
+        const oldIncome = snapshot.income ?? 0
+        const oldAdsCost = snapshot.adsCost ?? 0
+        const oldOrders = snapshot.orders ?? 0
+        const oldComments = snapshot.comments ?? 0
+
+        incomeChange = payload.income - oldIncome
+        adsCostChange = payload.adsCost - oldAdsCost
+        ordersChange = payload.orders - oldOrders
+        commentsChange = payload.comments - oldComments
+      }
+
       snapshot.income = payload.income
       snapshot.adsCost = payload.adsCost
       snapshot.clickRate = payload.clickRate
@@ -523,6 +674,39 @@ export class LivestreamcoreService {
       snapshot.ordersNote = payload.ordersNote
       if (typeof payload.rating !== "undefined") {
         snapshot.rating = payload.rating
+      }
+
+      // Update corresponding assistant snapshots if this is a host snapshot
+      if (
+        isHostSnapshot &&
+        (incomeChange !== 0 ||
+          adsCostChange !== 0 ||
+          ordersChange !== 0 ||
+          commentsChange !== 0)
+      ) {
+        const assistantSnapshots = this.findCorrespondingAssistantSnapshots(
+          livestreamDoc.snapshots as LivestreamSnapshotEmbedded[],
+          snapshot
+        )
+
+        for (const assistantSnapshot of assistantSnapshots) {
+          if (incomeChange !== 0) {
+            assistantSnapshot.income =
+              (assistantSnapshot.income ?? 0) + incomeChange
+          }
+          if (adsCostChange !== 0) {
+            assistantSnapshot.adsCost =
+              (assistantSnapshot.adsCost ?? 0) + adsCostChange
+          }
+          if (ordersChange !== 0) {
+            assistantSnapshot.orders =
+              (assistantSnapshot.orders ?? 0) + ordersChange
+          }
+          if (commentsChange !== 0) {
+            assistantSnapshot.comments =
+              (assistantSnapshot.comments ?? 0) + commentsChange
+          }
+        }
       }
 
       livestreamDoc.totalIncome = this.computeTotalIncome(
