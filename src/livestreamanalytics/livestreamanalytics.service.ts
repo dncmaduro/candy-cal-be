@@ -320,4 +320,158 @@ export class LivestreamanalyticsService {
       )
     }
   }
+
+  // Get assistants ranked by revenue in date range
+  async getAssistantRevenueRankings(
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    rankings: Array<{
+      assistantId: string | "other"
+      assistantName: string
+      totalRevenue: number
+      totalAdsCost: number
+      totalOrders: number
+    }>
+  }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        throw new HttpException("Invalid date range", HttpStatus.BAD_REQUEST)
+      }
+
+      // Get all livestreams in date range
+      const livestreams = await this.livestreamModel
+        .find({ date: { $gte: start, $lte: end } })
+        .populate("snapshots.assignee", "_id name username")
+        .populate("snapshots.altAssignee", "_id name username")
+        .exec()
+
+      // Map to store aggregated data per assistant
+      const assistantDataMap = new Map<
+        string,
+        {
+          assistantId: string | "other"
+          assistantName: string
+          totalRevenue: number
+          totalAdsCost: number
+          totalOrders: number
+        }
+      >()
+
+      for (const livestream of livestreams) {
+        const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+
+        for (const snapshot of snapshots) {
+          // Only process assistant snapshots
+          if ((snapshot as any).period?.for !== "assistant") {
+            continue
+          }
+
+          const income = snapshot.income ?? 0
+          const adsCost = snapshot.adsCost ?? 0
+
+          let targetAssistantId: string | "other"
+          let targetAssistantName: string
+
+          // Determine which assistant to attribute the revenue to
+          if (snapshot.altAssignee) {
+            // Case: altAssignee exists
+            if (snapshot.altAssignee === "other") {
+              // Alt is "other"
+              targetAssistantId = "other"
+              targetAssistantName = "Other"
+            } else {
+              // Alt is a user
+              const altUser = snapshot.altAssignee as any
+              targetAssistantId = altUser._id?.toString() || altUser.toString()
+              targetAssistantName =
+                altUser.name || altUser.username || "Unknown"
+            }
+          } else if (snapshot.assignee) {
+            // Case: No alt, use assignee
+            const assigneeUser = snapshot.assignee as any
+            targetAssistantId =
+              assigneeUser._id?.toString() || assigneeUser.toString()
+            targetAssistantName =
+              assigneeUser.name || assigneeUser.username || "Unknown"
+          } else {
+            // Case: No assignee at all, skip
+            continue
+          }
+
+          // Get or create entry in map
+          if (!assistantDataMap.has(targetAssistantId)) {
+            assistantDataMap.set(targetAssistantId, {
+              assistantId: targetAssistantId,
+              assistantName: targetAssistantName,
+              totalRevenue: 0,
+              totalAdsCost: 0,
+              totalOrders: 0
+            })
+          }
+
+          const assistantData = assistantDataMap.get(targetAssistantId)!
+          assistantData.totalRevenue += income
+          assistantData.totalAdsCost += adsCost
+        }
+
+        // Add orders to all assistants who have snapshots in this livestream
+        const totalOrders = livestream.totalOrders ?? 0
+
+        // Get unique assistants in this livestream (only assistant snapshots)
+        const assistantsInLivestream = new Set<string>()
+        for (const snapshot of snapshots) {
+          if ((snapshot as any).period?.for !== "assistant") {
+            continue
+          }
+
+          if (snapshot.altAssignee) {
+            if (snapshot.altAssignee === "other") {
+              assistantsInLivestream.add("other")
+            } else {
+              const altUser = snapshot.altAssignee as any
+              const altId = altUser._id?.toString() || altUser.toString()
+              assistantsInLivestream.add(altId)
+            }
+          } else if (snapshot.assignee) {
+            const assigneeUser = snapshot.assignee as any
+            const assigneeId =
+              assigneeUser._id?.toString() || assigneeUser.toString()
+            assistantsInLivestream.add(assigneeId)
+          }
+        }
+
+        // Distribute orders equally among assistants in this livestream
+        const ordersPerAssistant =
+          assistantsInLivestream.size > 0
+            ? totalOrders / assistantsInLivestream.size
+            : 0
+
+        for (const assistantId of assistantsInLivestream) {
+          if (assistantDataMap.has(assistantId)) {
+            assistantDataMap.get(assistantId)!.totalOrders += ordersPerAssistant
+          }
+        }
+      }
+
+      // Convert map to array and sort by revenue (descending)
+      const rankings = Array.from(assistantDataMap.values()).sort(
+        (a, b) => b.totalRevenue - a.totalRevenue
+      )
+
+      return { rankings }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
 }

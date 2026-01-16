@@ -96,4 +96,23 @@ export class LivestreamanalyticsController {
       new Date(endDate)
     )
   }
+
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
+  @Get("assistant-revenue-rankings")
+  @HttpCode(HttpStatus.OK)
+  async getAssistantRevenueRankings(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string
+  ) {
+    return this.livestreamanalyticsService.getAssistantRevenueRankings(
+      new Date(startDate),
+      new Date(endDate)
+    )
+  }
 }

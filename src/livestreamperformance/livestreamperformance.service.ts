@@ -283,7 +283,6 @@ export class LivestreamperformanceService {
       }> = []
 
       // Process each snapshot
-      console.log(livestream)
       for (const snapshot of livestream.snapshots) {
         // Use realIncome if available, otherwise use income
         const incomeValue = snapshot.realIncome ?? snapshot.income
