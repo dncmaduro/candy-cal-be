@@ -1153,4 +1153,314 @@ export class LivestreamcoreService {
       )
     }
   }
+
+  // Merge two snapshots of a livestream
+  async mergeSnapshots(
+    livestreamId: string,
+    snapshotId1: string,
+    snapshotId2: string
+  ): Promise<{ livestream: Livestream }> {
+    try {
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      const snapshotsArray =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      const snapshot1Index = snapshotsArray.findIndex(
+        (s) => s._id?.toString() === snapshotId1
+      )
+      const snapshot2Index = snapshotsArray.findIndex(
+        (s) => s._id?.toString() === snapshotId2
+      )
+
+      if (snapshot1Index === -1 || snapshot2Index === -1)
+        throw new HttpException(
+          "One or both snapshots not found",
+          HttpStatus.NOT_FOUND
+        )
+
+      const snapshot1 = snapshotsArray[snapshot1Index]
+      const snapshot2 = snapshotsArray[snapshot2Index]
+
+      // Validate snapshots can be merged
+      // 1. Check if they don't have reporting metrics
+      const reportingMetrics = [
+        "income",
+        "realIncome",
+        "adsCost",
+        "clickRate",
+        "avgViewingDuration",
+        "comments",
+        "orders"
+      ]
+
+      for (const metric of reportingMetrics) {
+        const val1 = (snapshot1 as any)[metric]
+        const val2 = (snapshot2 as any)[metric]
+        if (
+          (val1 !== undefined && val1 !== null && val1 !== 0) ||
+          (val2 !== undefined && val2 !== null && val2 !== 0)
+        ) {
+          throw new HttpException(
+            `Cannot merge: Snapshots contain reporting metrics (${metric}). Both snapshots must be unreported.`,
+            HttpStatus.BAD_REQUEST
+          )
+        }
+      }
+
+      // 2. Check if endTime of snapshot1 = startTime of snapshot2
+      const endTime1 = snapshot1.period?.endTime
+      const startTime2 = snapshot2.period?.startTime
+
+      if (!endTime1 || !startTime2) {
+        throw new HttpException(
+          "Snapshots must have valid time periods",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      if (
+        endTime1.hour !== startTime2.hour ||
+        endTime1.minute !== startTime2.minute
+      ) {
+        throw new HttpException(
+          "Cannot merge: endTime of first snapshot must equal startTime of second snapshot",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      // 3. Determine the correct order (snapshot1 should be before snapshot2)
+      let earlierSnapshot = snapshot1
+      let laterSnapshot = snapshot2
+      let earlierIndex = snapshot1Index
+      let laterIndex = snapshot2Index
+
+      // If snapshot2 is before snapshot1, swap them
+      const startTime1Min = this.timeToMinutes(snapshot1.period!.startTime)
+      const startTime2Min = this.timeToMinutes(snapshot2.period!.startTime)
+      if (startTime2Min < startTime1Min) {
+        earlierSnapshot = snapshot2
+        laterSnapshot = snapshot1
+        earlierIndex = snapshot2Index
+        laterIndex = snapshot1Index
+      }
+
+      // Merge: create new snapshot with merged period and keep earlier assignee info
+      const mergedSnapshot: LivestreamSnapshotEmbedded = {
+        _id: earlierSnapshot._id,
+        period: {
+          _id: earlierSnapshot.period!._id,
+          startTime: earlierSnapshot.period!.startTime,
+          endTime: laterSnapshot.period!.endTime, // extend to later snapshot's end
+          channel: earlierSnapshot.period!.channel,
+          for: earlierSnapshot.period!.for
+        },
+        assignee: earlierSnapshot.assignee,
+        altAssignee: earlierSnapshot.altAssignee,
+        altOtherAssignee: earlierSnapshot.altOtherAssignee,
+        // Keep other properties from earlier snapshot if not set
+        income: earlierSnapshot.income ?? laterSnapshot.income,
+        realIncome: earlierSnapshot.realIncome ?? laterSnapshot.realIncome,
+        adsCost: earlierSnapshot.adsCost ?? laterSnapshot.adsCost,
+        clickRate: earlierSnapshot.clickRate ?? laterSnapshot.clickRate,
+        avgViewingDuration:
+          earlierSnapshot.avgViewingDuration ??
+          laterSnapshot.avgViewingDuration,
+        comments: earlierSnapshot.comments ?? laterSnapshot.comments,
+        ordersNote: earlierSnapshot.ordersNote ?? laterSnapshot.ordersNote,
+        rating: earlierSnapshot.rating ?? laterSnapshot.rating,
+        altNote: earlierSnapshot.altNote ?? laterSnapshot.altNote,
+        altRequest: earlierSnapshot.altRequest ?? laterSnapshot.altRequest,
+        snapshotKpi: earlierSnapshot.snapshotKpi ?? laterSnapshot.snapshotKpi,
+        updatedByFileAt:
+          earlierSnapshot.updatedByFileAt ?? laterSnapshot.updatedByFileAt,
+        salary: earlierSnapshot.salary ?? laterSnapshot.salary,
+        orders: earlierSnapshot.orders ?? laterSnapshot.orders
+      }
+
+      // Remove both old snapshots and add merged one
+      const newSnapshots = snapshotsArray.filter(
+        (s, idx) => idx !== earlierIndex && idx !== laterIndex
+      )
+      newSnapshots.push(mergedSnapshot)
+
+      livestreamDoc.snapshots = newSnapshots
+      livestreamDoc.totalIncome = this.computeTotalIncome(newSnapshots)
+
+      await livestreamDoc.save()
+      await livestreamDoc.populate(
+        "snapshots.assignee",
+        "_id name username avatarUrl"
+      )
+      return {
+        livestream: livestreamDoc
+      }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Update startTime and endTime for multiple snapshots
+  async updateSnapshotTimesForLivestream(
+    livestreamId: string,
+    payload: Array<{
+      id: string
+      startTime: { hour: number; minute: number }
+      endTime: { hour: number; minute: number }
+    }>
+  ): Promise<{ livestream: Livestream }> {
+    try {
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      if (livestreamDoc.fixed) {
+        throw new HttpException(
+          "Cannot update snapshot times: Livestream is fixed",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const snapshotsArray =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+
+      // First validate all snapshots exist and collect them
+      const snapshotUpdates: Array<{
+        snapshot: LivestreamSnapshotEmbedded
+        index: number
+        startTime: { hour: number; minute: number }
+        endTime: { hour: number; minute: number }
+      }> = []
+
+      for (const update of payload) {
+        const index = snapshotsArray.findIndex(
+          (s) => s._id?.toString() === update.id
+        )
+        if (index === -1) {
+          throw new HttpException(
+            `Snapshot with id ${update.id} not found`,
+            HttpStatus.NOT_FOUND
+          )
+        }
+
+        // Validate startTime < endTime
+        const startMin = this.timeToMinutes(update.startTime)
+        const endMin = this.timeToMinutes(update.endTime)
+        if (startMin >= endMin) {
+          throw new HttpException(
+            `Invalid time range for snapshot ${update.id}: startTime must be before endTime`,
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        snapshotUpdates.push({
+          snapshot: snapshotsArray[index],
+          index,
+          startTime: update.startTime,
+          endTime: update.endTime
+        })
+      }
+
+      // Check for overlaps: each snapshot's role ("host" or "assistant") should not overlap with others of the same role
+      for (let i = 0; i < snapshotUpdates.length; i++) {
+        const snapshotA = snapshotUpdates[i]
+        const roleA = snapshotA.snapshot.period?.for
+
+        for (let j = i + 1; j < snapshotUpdates.length; j++) {
+          const snapshotB = snapshotUpdates[j]
+          const roleB = snapshotB.snapshot.period?.for
+
+          // Only check overlap if both are the same role
+          if (roleA === roleB) {
+            if (
+              this.intervalsOverlap(
+                snapshotA.startTime,
+                snapshotA.endTime,
+                snapshotB.startTime,
+                snapshotB.endTime
+              )
+            ) {
+              throw new HttpException(
+                `Snapshots ${snapshotA.snapshot._id} and ${snapshotB.snapshot._id} have overlapping times for role "${roleA}"`,
+                HttpStatus.BAD_REQUEST
+              )
+            }
+          }
+        }
+      }
+
+      // Also check overlap with snapshots not being updated
+      for (const update of snapshotUpdates) {
+        const updateRole = update.snapshot.period?.for
+
+        for (const snapshot of snapshotsArray) {
+          // Skip if this is one of the snapshots being updated
+          if (payload.some((p) => p.id === snapshot._id?.toString())) {
+            continue
+          }
+
+          const snapshotRole = snapshot.period?.for
+          if (snapshotRole !== updateRole) {
+            continue
+          }
+
+          const snapshotStart = snapshot.period?.startTime
+          const snapshotEnd = snapshot.period?.endTime
+          if (!snapshotStart || !snapshotEnd) {
+            continue
+          }
+
+          if (
+            this.intervalsOverlap(
+              update.startTime,
+              update.endTime,
+              snapshotStart,
+              snapshotEnd
+            )
+          ) {
+            throw new HttpException(
+              `Updated snapshot ${update.snapshot._id} overlaps with existing snapshot ${snapshot._id} for role "${updateRole}"`,
+              HttpStatus.BAD_REQUEST
+            )
+          }
+        }
+      }
+
+      // All validations passed, update the snapshots
+      for (const update of snapshotUpdates) {
+        update.snapshot.period!.startTime = update.startTime
+        update.snapshot.period!.endTime = update.endTime
+      }
+
+      livestreamDoc.totalIncome = this.computeTotalIncome(
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      )
+
+      await livestreamDoc.save()
+      await livestreamDoc.populate(
+        "snapshots.assignee",
+        "_id name username avatarUrl"
+      )
+      return {
+        livestream: livestreamDoc
+      }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
 }

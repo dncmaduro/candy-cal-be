@@ -380,6 +380,75 @@ export class LivestreamcoreController {
   }
 
   @Roles("admin", "livestream-leader")
+  @Post(":livestreamId/snapshots/merge")
+  @HttpCode(HttpStatus.OK)
+  async mergeSnapshots(
+    @Param("livestreamId") livestreamId: string,
+    @Body()
+    payload: {
+      snapshotId1: string
+      snapshotId2: string
+    },
+    @Req() req
+  ) {
+    const updated = await this.livestreamcoreService.mergeSnapshots(
+      livestreamId,
+      payload.snapshotId1,
+      payload.snapshotId2
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "merged_snapshots",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: {
+          snapshotId1: payload.snapshotId1,
+          snapshotId2: payload.snapshotId2
+        }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
+  @Patch(":livestreamId/snapshots/times")
+  @HttpCode(HttpStatus.OK)
+  async updateSnapshotTimesForLivestream(
+    @Param("livestreamId") livestreamId: string,
+    @Body()
+    payload: Array<{
+      id: string
+      startTime: { hour: number; minute: number }
+      endTime: { hour: number; minute: number }
+    }>,
+    @Req() req
+  ) {
+    const updated =
+      await this.livestreamcoreService.updateSnapshotTimesForLivestream(
+        livestreamId,
+        payload
+      )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "updated_snapshot_times",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: {
+          count: payload.length,
+          snapshotIds: payload.map((p) => p.id)
+        }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLivestream(@Param("id") id: string, @Req() req) {
