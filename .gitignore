@@ -38,6 +38,7 @@
 
 # dotenv environment variable files
 .env
+.env.in
 .env.development.local
 .env.test.local
 .env.production.local
