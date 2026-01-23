@@ -65,8 +65,8 @@ export class LivestreamanalyticsController {
   async getAggregatedMetrics(
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
-    @Query("channelId") channelId?: string,
-    @Query("forRole") forRole?: "host" | "assistant",
+    @Query("channel") channelId?: string,
+    @Query("for") forRole?: "host" | "assistant",
     @Query("assigneeId") assigneeId?: string
   ) {
     return this.livestreamanalyticsService.getAggregatedMetrics(
@@ -85,15 +85,63 @@ export class LivestreamanalyticsController {
     "livestream-ast",
     "livestream-accounting"
   )
+  @Get("month-metrics")
+  @HttpCode(HttpStatus.OK)
+  async getMonthMetrics(
+    @Query("year") year: number,
+    @Query("month") month: number,
+    @Query("channel") channelId?: string,
+    @Query("for") forRole?: "host" | "assistant",
+    @Query("assigneeId") assigneeId?: string
+  ) {
+    return this.livestreamanalyticsService.getMonthMetrics(
+      year,
+      month,
+      channelId,
+      forRole,
+      assigneeId
+    )
+  }
+
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
   @Get("host-revenue-rankings")
   @HttpCode(HttpStatus.OK)
   async getHostRevenueRankings(
     @Query("startDate") startDate: string,
-    @Query("endDate") endDate: string
+    @Query("endDate") endDate: string,
+    @Query("channel") channelId?: string
   ) {
     return this.livestreamanalyticsService.getHostRevenueRankings(
       new Date(startDate),
-      new Date(endDate)
+      new Date(endDate),
+      channelId
+    )
+  }
+
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
+  @Get("host-revenue-rankings-by-month")
+  @HttpCode(HttpStatus.OK)
+  async getHostRevenueRankingsByMonth(
+    @Query("year") year: number,
+    @Query("month") month: number,
+    @Query("channel") channelId?: string
+  ) {
+    return this.livestreamanalyticsService.getHostRevenueRankingsByMonth(
+      year,
+      month,
+      channelId
     )
   }
 
@@ -108,11 +156,34 @@ export class LivestreamanalyticsController {
   @HttpCode(HttpStatus.OK)
   async getAssistantRevenueRankings(
     @Query("startDate") startDate: string,
-    @Query("endDate") endDate: string
+    @Query("endDate") endDate: string,
+    @Query("channel") channelId?: string
   ) {
     return this.livestreamanalyticsService.getAssistantRevenueRankings(
       new Date(startDate),
-      new Date(endDate)
+      new Date(endDate),
+      channelId
+    )
+  }
+
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
+  @Get("assistant-revenue-rankings-by-month")
+  @HttpCode(HttpStatus.OK)
+  async getAssistantRevenueRankingsByMonth(
+    @Query("year") year: number,
+    @Query("month") month: number,
+    @Query("channel") channelId?: string
+  ) {
+    return this.livestreamanalyticsService.getAssistantRevenueRankingsByMonth(
+      year,
+      month,
+      channelId
     )
   }
 }
