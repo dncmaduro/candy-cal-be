@@ -63,6 +63,32 @@ export class LivestreamcoreService {
     return aStartMin <= bStartMin && aEndMin >= bEndMin
   }
 
+  private validateTimePayload(
+    t: any,
+    fieldName: string
+  ): { hour: number; minute: number } {
+    const hour = t?.hour
+    const minute = t?.minute
+    if (
+      typeof hour !== "number" ||
+      typeof minute !== "number" ||
+      !Number.isFinite(hour) ||
+      !Number.isFinite(minute)
+    ) {
+      throw new HttpException(
+        `${fieldName} must be {hour:number, minute:number}`,
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      throw new HttpException(
+        `${fieldName} is out of range`,
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    return { hour, minute }
+  }
+
   // helper: find assistant snapshots that are contained by the host snapshot time range
   private findCorrespondingAssistantSnapshots(
     snapshots: LivestreamSnapshotEmbedded[],
@@ -768,6 +794,85 @@ export class LivestreamcoreService {
     }
   }
 
+  // Update only startTime/endTime of a snapshot (no period change)
+  async updateSnapshotTimeDirect(
+    livestreamId: string,
+    snapshotId: string,
+    payload: {
+      startTime: { hour: number; minute: number }
+      endTime: { hour: number; minute: number }
+    }
+  ): Promise<Livestream> {
+    try {
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      const snapshotsArray =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      const snapshot = snapshotsArray.find(
+        (s) => s._id?.toString() === snapshotId
+      )
+      if (!snapshot)
+        throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
+      if (!snapshot.period) {
+        throw new HttpException(
+          "Snapshot period not found",
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      const newStart = this.validateTimePayload(payload.startTime, "startTime")
+      const newEnd = this.validateTimePayload(payload.endTime, "endTime")
+
+      const startMin = this.timeToMinutes(newStart)
+      const endMin = this.timeToMinutes(newEnd)
+      if (startMin >= endMin) {
+        throw new HttpException(
+          "startTime must be before endTime",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const otherSnapshots = (
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      ).filter((s) => s._id?.toString() !== snapshotId)
+
+      // Check overlap with other snapshots of the same role (host/assistant)
+      for (const s of otherSnapshots) {
+        const p = s.period as LivestreamSnapshotEmbedded["period"]
+        if (!p || !p.startTime || !p.endTime) continue
+        if (p.for === snapshot.period.for) {
+          if (this.intervalsOverlap(p.startTime, p.endTime, newStart, newEnd)) {
+            throw new HttpException(
+              `Snapshot period overlaps with existing ${snapshot.period.for} snapshot period`,
+              HttpStatus.BAD_REQUEST
+            )
+          }
+        }
+      }
+
+      snapshot.period.startTime = newStart
+      snapshot.period.endTime = newEnd
+
+      await livestreamDoc.save()
+      await livestreamDoc.populate(
+        "snapshots.assignee",
+        "_id name username avatarUrl"
+      )
+      return livestreamDoc
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   // Set livestream metrics
   async setLivestreamMetrics(
     livestreamId: string,
@@ -1065,6 +1170,114 @@ export class LivestreamcoreService {
       await livestreamDoc.save()
       await livestreamDoc.populate(
         "snapshots.assignee snapshots.altAssignee snapshots.altOtherAssignee",
+        "_id name username avatarUrl"
+      )
+      return livestreamDoc
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Add an external snapshot (without period reference)
+  async addExternalSnapshot(
+    livestreamId: string,
+    payload: {
+      startTime: { hour: number; minute: number }
+      endTime: { hour: number; minute: number }
+      forRole: "host" | "assistant"
+      assignee?: string
+      income?: number
+    }
+  ): Promise<Livestream> {
+    try {
+      if (payload.assignee) {
+        await this.validateUserExists(payload.assignee)
+      }
+
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      const startTime = this.validateTimePayload(payload.startTime, "startTime")
+      const endTime = this.validateTimePayload(payload.endTime, "endTime")
+
+      const startMin = this.timeToMinutes(startTime)
+      const endMin = this.timeToMinutes(endTime)
+      if (startMin >= endMin) {
+        throw new HttpException(
+          "startTime must be before endTime",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      // Determine channel from existing snapshots
+      const existingSnapshots =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      let channelId: Types.ObjectId | undefined
+
+      if (existingSnapshots.length > 0) {
+        const firstSnapshot = existingSnapshots.find((s) => s.period?.channel)
+        if (firstSnapshot?.period?.channel) {
+          channelId = firstSnapshot.period.channel as Types.ObjectId
+        }
+      }
+
+      if (!channelId) {
+        throw new HttpException(
+          "Cannot determine channel. Please add a regular snapshot first.",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const forRole = payload.forRole || "host"
+
+      // Check overlap with existing snapshots of the same role
+      for (const s of existingSnapshots) {
+        const p = s.period as LivestreamSnapshotEmbedded["period"]
+        if (!p || !p.startTime || !p.endTime) continue
+        if (p.for === forRole) {
+          if (
+            this.intervalsOverlap(p.startTime, p.endTime, startTime, endTime)
+          ) {
+            throw new HttpException(
+              `Snapshot period overlaps with existing ${forRole} snapshot period`,
+              HttpStatus.BAD_REQUEST
+            )
+          }
+        }
+      }
+
+      const newSnapshot: LivestreamSnapshotEmbedded = {
+        period: {
+          _id: new Types.ObjectId(), // Generate a temporary ID
+          startTime: startTime,
+          endTime: endTime,
+          channel: channelId,
+          for: forRole
+        },
+        assignee: payload.assignee
+          ? new Types.ObjectId(payload.assignee)
+          : undefined,
+        income: payload.income ?? 0,
+        snapshotKpi: 0
+      }
+
+      livestreamDoc.snapshots.push(newSnapshot as LivestreamSnapshotEmbedded)
+
+      livestreamDoc.totalIncome = this.computeTotalIncome(
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      )
+
+      await livestreamDoc.save()
+      await livestreamDoc.populate(
+        "snapshots.assignee",
         "_id name username avatarUrl"
       )
       return livestreamDoc
