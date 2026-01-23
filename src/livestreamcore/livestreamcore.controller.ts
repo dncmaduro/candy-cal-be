@@ -159,6 +159,44 @@ export class LivestreamcoreController {
   }
 
   @Roles("admin", "livestream-leader")
+  @Post(":livestreamId/snapshots/external")
+  @HttpCode(HttpStatus.CREATED)
+  async addExternalSnapshot(
+    @Param("livestreamId") livestreamId: string,
+    @Body()
+    payload: {
+      startTime: { hour: number; minute: number }
+      endTime: { hour: number; minute: number }
+      forRole: "host" | "assistant"
+      assignee?: string
+      income?: number
+    },
+    @Req() req
+  ) {
+    const updated = await this.livestreamcoreService.addExternalSnapshot(
+      livestreamId,
+      payload
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "added_external_snapshot",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: {
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          forRole: payload.forRole,
+          assignee: payload.assignee
+        }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
   @Put(":livestreamId/snapshots/:snapshotId")
   @HttpCode(HttpStatus.OK)
   async updateSnapshot(
@@ -250,6 +288,43 @@ export class LivestreamcoreController {
       },
       req.user.userId
     )
+  }
+
+  // API mới: chỉ update startTime/endTime trực tiếp trên snapshot
+  @Roles("admin", "livestream-leader")
+  @Patch(":livestreamId/snapshots/:snapshotId/time-direct")
+  @HttpCode(HttpStatus.OK)
+  async updateSnapshotTimeDirect(
+    @Param("livestreamId") livestreamId: string,
+    @Param("snapshotId") snapshotId: string,
+    @Body()
+    payload: {
+      startTime: { hour: number; minute: number }
+      endTime: { hour: number; minute: number }
+    },
+    @Req() req
+  ) {
+    const updated = await this.livestreamcoreService.updateSnapshotTimeDirect(
+      livestreamId,
+      snapshotId,
+      payload
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "updated_snapshot_time_direct",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: {
+          snapshotId,
+          startTime: payload.startTime,
+          endTime: payload.endTime
+        }
+      },
+      req.user.userId
+    )
+    return updated
   }
 
   @Roles("admin", "livestream-leader")
