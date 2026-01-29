@@ -5,12 +5,15 @@ import {
   Livestream,
   LivestreamSnapshotEmbedded
 } from "../database/mongoose/schemas/Livestream"
+import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
 
 @Injectable()
 export class LivestreamanalyticsService {
   constructor(
     @InjectModel("livestreams")
-    private readonly livestreamModel: Model<Livestream>
+    private readonly livestreamModel: Model<Livestream>,
+    @InjectModel("livestreammonthgoals")
+    private readonly livestreamMonthGoalModel: Model<LivestreamMonthGoal>
   ) {}
 
   // Get monthly totals for orders, income and ads
@@ -122,13 +125,13 @@ export class LivestreamanalyticsService {
     startDate: Date,
     endDate: Date,
     channelId?: string,
-    forRole?: "host" | "assistant",
     assigneeId?: string
   ): Promise<{
     totalIncome: number
     totalAdsCost: number
     totalComments: number
     totalOrders: number
+    kpi: number
   }> {
     try {
       const start = new Date(startDate)
@@ -144,22 +147,65 @@ export class LivestreamanalyticsService {
       let totalAdsCost = 0
       let totalComments = 0
       let totalOrders = 0
+      let totalKpi = 0
 
+      // Group livestreams by date to calculate daily KPI
+      const livestreamsByDate = new Map<string, typeof livestreams>()
       for (const livestream of livestreams) {
-        const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+        const dateKey = livestream.date.toISOString().split("T")[0]
+        if (!livestreamsByDate.has(dateKey)) {
+          livestreamsByDate.set(dateKey, [])
+        }
+        livestreamsByDate.get(dateKey)!.push(livestream)
+      }
 
-        for (const snapshot of snapshots) {
-          // Apply filters to snapshots
-          if (channelId && snapshot.period?.channel.toString() !== channelId)
-            continue
-          // if (forRole && snapshot.period?.for !== forRole) continue
-          if (assigneeId && snapshot.assignee?.toString() !== assigneeId)
-            continue
+      // Calculate KPI for each day
+      for (const [dateStr, dayLivestreams] of livestreamsByDate.entries()) {
+        const currentDate = new Date(dateStr)
+        const year = currentDate.getFullYear()
+        const month = currentDate.getMonth() + 1
 
-          totalIncome += snapshot.income ?? 0
-          totalAdsCost += snapshot.adsCost ?? 0
-          totalComments += snapshot.comments ?? 0
-          totalOrders += snapshot.orders ?? 0
+        // Get the number of days in the month
+        const daysInMonth = new Date(year, month, 0).getDate()
+
+        // Get month goals for this month and channel (if specified)
+        const monthGoalsQuery: any = { year, month: month - 1 }
+        if (channelId) {
+          monthGoalsQuery.channel = channelId
+        }
+
+        const monthGoals = await this.livestreamMonthGoalModel
+          .find(monthGoalsQuery)
+          .exec()
+
+        // Calculate total monthly goal
+        const totalMonthlyGoal = monthGoals.reduce(
+          (sum, goal) => sum + (goal.goal ?? 0),
+          0
+        )
+
+        // Calculate daily KPI: Monthly Goal / Days in Month
+        const dailyKpi = totalMonthlyGoal / daysInMonth
+
+        // Add daily KPI to total
+        totalKpi += dailyKpi
+
+        // Process snapshots for this day
+        for (const livestream of dayLivestreams) {
+          const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+
+          for (const snapshot of snapshots) {
+            // Apply filters to snapshots
+            if (channelId && snapshot.period?.channel.toString() !== channelId)
+              continue
+            if (assigneeId && snapshot.assignee?.toString() !== assigneeId)
+              continue
+
+            totalIncome += snapshot.income ?? 0
+            totalAdsCost += snapshot.adsCost ?? 0
+            totalComments += snapshot.comments ?? 0
+            totalOrders += snapshot.orders ?? 0
+          }
         }
       }
 
@@ -167,7 +213,8 @@ export class LivestreamanalyticsService {
         totalIncome,
         totalAdsCost,
         totalComments,
-        totalOrders
+        totalOrders,
+        kpi: totalKpi
       }
     } catch (error) {
       console.error(error)
