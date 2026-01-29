@@ -455,6 +455,38 @@ export class LivestreamcoreController {
   }
 
   @Roles("admin", "livestream-leader")
+  @Patch(":livestreamId/snapshots/:snapshotId/assign-other")
+  @HttpCode(HttpStatus.OK)
+  async assignOtherToSnapshot(
+    @Param("livestreamId") livestreamId: string,
+    @Param("snapshotId") snapshotId: string,
+    @Body()
+    payload: {
+      altOtherAssignee: string
+      altNote: string
+    },
+    @Req() req
+  ) {
+    const updated = await this.livestreamcoreService.assignOtherToSnapshot(
+      livestreamId,
+      snapshotId,
+      payload
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "livestream",
+        action: "assigned_other_to_snapshot",
+        entity: "livestream",
+        entityId: livestreamId,
+        result: "success",
+        meta: { snapshotId, altOtherAssignee: payload.altOtherAssignee }
+      },
+      req.user.userId
+    )
+    return updated
+  }
+
+  @Roles("admin", "livestream-leader")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLivestream(@Param("id") id: string, @Req() req) {
