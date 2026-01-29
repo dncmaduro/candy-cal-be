@@ -968,6 +968,12 @@ export class IncomeService {
       shopAdsToShopIncome: number
     }
     totalIncome: { live: number; shop: number }
+    kpi: {
+      liveKpi: number
+      shopKpi: number
+      liveKpiPercentage: number
+      shopKpiPercentage: number
+    }
   }> {
     try {
       // Adjust for GMT+7 timezone (Vietnam time)
@@ -1015,11 +1021,34 @@ export class IncomeService {
           shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100
       }
 
+      // Get month goals for KPI calculation
+      const goalFilter: any = { month, year }
+      if (channelId) goalFilter.channel = channelId
+
+      const monthGoal = await this.monthGoalModel.findOne(goalFilter).lean()
+
+      const liveKpi = monthGoal?.liveStreamGoal || 0
+      const shopKpi = monthGoal?.shopGoal || 0
+      const liveKpiPercentage =
+        liveKpi === 0
+          ? 0
+          : Math.min(Math.round((live / liveKpi) * 10000) / 100, 999)
+      const shopKpiPercentage =
+        shopKpi === 0
+          ? 0
+          : Math.min(Math.round((shop / shopKpi) * 10000) / 100, 999)
+
       return {
         liveAdsCost,
         shopAdsCost,
         percentages,
-        totalIncome: { live, shop }
+        totalIncome: { live, shop },
+        kpi: {
+          liveKpi,
+          shopKpi,
+          liveKpiPercentage,
+          shopKpiPercentage
+        }
       }
     } catch (error) {
       console.error(error)
