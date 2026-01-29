@@ -66,14 +66,12 @@ export class LivestreamanalyticsController {
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
     @Query("channel") channelId?: string,
-    @Query("for") forRole?: "host" | "assistant",
     @Query("assigneeId") assigneeId?: string
   ) {
     return this.livestreamanalyticsService.getAggregatedMetrics(
       new Date(startDate),
       new Date(endDate),
       channelId,
-      forRole,
       assigneeId
     )
   }

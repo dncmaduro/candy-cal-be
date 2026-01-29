@@ -784,8 +784,6 @@ export class LivestreamperformanceService {
 
       const onlyDigits = (s: string) => s.replace(/\D/g, "")
 
-      const seen = new Set<string>()
-
       for (const row of sourceData) {
         const contentType = String(pickField(row, contentTypeKeys) ?? "").trim()
 
@@ -829,9 +827,6 @@ export class LivestreamperformanceService {
         // Step 3: Get income from totalIncome map (đúng theo yêu cầu)
         const incomeAmount = orderIncomeMap.get(orderId) ?? 0
         if (incomeAmount <= 0) continue
-
-        if (seen.has(orderId)) continue
-        seen.add(orderId)
 
         // Step 4: Find matching snapshots based on time
         const orderTimeMinutes = toMinutes(hour, minute)
