@@ -443,13 +443,6 @@ export class LivestreamcoreService {
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
 
-      if (livestreamDoc.fixed) {
-        throw new HttpException(
-          "Cannot update snapshot: Livestream is fixed",
-          HttpStatus.BAD_REQUEST
-        )
-      }
-
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
       const snapshot = snapshotsArray.find(
@@ -458,6 +451,39 @@ export class LivestreamcoreService {
       if (!snapshot)
         throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
 
+      // Check if livestream is fixed
+      // Allow assignment if snapshot doesn't have an assignee yet
+      const isOnlyAssigningEmployee =
+        payload.assignee &&
+        !snapshot.assignee &&
+        !payload.period &&
+        !payload.income &&
+        !payload.goal
+
+      if (livestreamDoc.fixed && !isOnlyAssigningEmployee) {
+        throw new HttpException(
+          "Cannot update snapshot: Livestream is fixed",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      // If only assigning employee, skip period checks and just assign
+      if (isOnlyAssigningEmployee) {
+        snapshot.assignee = new Types.ObjectId(payload.assignee)
+
+        livestreamDoc.totalIncome = this.computeTotalIncome(
+          livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+        )
+
+        await livestreamDoc.save()
+        await livestreamDoc.populate(
+          "snapshots.assignee",
+          "_id name username avatarUrl"
+        )
+        return livestreamDoc
+      }
+
+      // Continue with period-related updates
       const newPeriodId = payload.period
         ? payload.period
         : (
@@ -1170,6 +1196,63 @@ export class LivestreamcoreService {
       await livestreamDoc.save()
       await livestreamDoc.populate(
         "snapshots.assignee snapshots.altAssignee snapshots.altOtherAssignee",
+        "_id name username avatarUrl"
+      )
+      return livestreamDoc
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  // Assign "other" person to snapshot
+  async assignOtherToSnapshot(
+    livestreamId: string,
+    snapshotId: string,
+    payload: {
+      altOtherAssignee: string
+      altNote: string
+    }
+  ): Promise<Livestream> {
+    try {
+      if (!payload.altOtherAssignee || payload.altOtherAssignee.trim() === "") {
+        throw new HttpException(
+          "altOtherAssignee is required",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      if (!payload.altNote || payload.altNote.trim() === "") {
+        throw new HttpException("altNote is required", HttpStatus.BAD_REQUEST)
+      }
+
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
+        throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+
+      const snapshotsArray =
+        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
+      const snapshot = snapshotsArray.find(
+        (s) => s._id?.toString() === snapshotId
+      )
+      if (!snapshot)
+        throw new HttpException("Snapshot not found", HttpStatus.NOT_FOUND)
+
+      // Set assignee to null and altAssignee to "other"
+      snapshot.assignee = null
+      snapshot.altAssignee = "other"
+      snapshot.altOtherAssignee = payload.altOtherAssignee
+      snapshot.altNote = payload.altNote
+
+      await livestreamDoc.save()
+      await livestreamDoc.populate(
+        "snapshots.assignee snapshots.altAssignee",
         "_id name username avatarUrl"
       )
       return livestreamDoc
