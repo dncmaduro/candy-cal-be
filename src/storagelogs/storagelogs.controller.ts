@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -20,6 +21,7 @@ import { GetMonthStorageLogsReponse } from "./dto/month"
 import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
+import { differenceInCalendarDays } from "date-fns"
 
 @Controller("storagelogs")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -87,6 +89,62 @@ export class StorageLogsController {
       Number(year),
       tag
     )
+  }
+
+  @Roles("admin", "accounting-emp", "system-emp")
+  @Get("delivered/summary")
+  @HttpCode(HttpStatus.OK)
+  async getDeliveredSummary(
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string
+  ): Promise<{
+    startDate: string
+    endDate: string
+    totalDeliveredQuantity: number
+    days: number
+    averagePerDay: number
+    items: Array<{
+      itemId: string
+      totalDeliveredQuantity: number
+      averagePerDay: number
+      item?: { _id: string; code: string; name: string; quantityPerBox: number }
+    }>
+  }> {
+    if (!startDate || !endDate) {
+      throw new BadRequestException("startDate and endDate are required")
+    }
+
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException("startDate/endDate must be valid dates")
+    }
+    if (start.getTime() > end.getTime()) {
+      throw new BadRequestException("startDate must be <= endDate")
+    }
+
+    const days = differenceInCalendarDays(end, start) + 1
+    const summary =
+      await this.storageLogsService.getDeliveredQuantitySummaryByDateRange(
+        start,
+        end
+      )
+    const totalDeliveredQuantity = summary.totalQuantity
+    const averagePerDay = days > 0 ? totalDeliveredQuantity / days : 0
+
+    return {
+      startDate,
+      endDate,
+      totalDeliveredQuantity,
+      days,
+      averagePerDay,
+      items: summary.byItem.map((row) => ({
+        itemId: row.itemId,
+        totalDeliveredQuantity: row.totalQuantity,
+        averagePerDay: days > 0 ? row.totalQuantity / days : 0,
+        item: row.item
+      }))
+    }
   }
 
   @Roles("admin", "accounting-emp", "system-emp")
