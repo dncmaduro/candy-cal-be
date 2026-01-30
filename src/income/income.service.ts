@@ -1960,6 +1960,39 @@ export class IncomeService {
     }
   }
 
+  async getTotalIncomeCountByMonth(
+    month: number,
+    year: number,
+    channelId?: string
+  ): Promise<{ totalCount: number }> {
+    try {
+      // Adjust for GMT+7 timezone (Vietnam time)
+      const start = new Date(Date.UTC(year, month, 1))
+      start.setUTCHours(start.getUTCHours() - 7)
+
+      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+      end.setUTCHours(end.getUTCHours() - 7)
+
+      console.log(start, end)
+
+      // Filter by month, year, and channel
+      const filter: any = {
+        date: { $gte: start, $lte: end }
+      }
+      if (channelId) filter.channel = channelId
+
+      const totalCount = await this.incomeModel.countDocuments(filter)
+
+      return { totalCount }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi đếm số đơn hàng theo tháng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   private splitByChannel(products: Income["products"]) {
     const isLive = (p: any) =>
       typeof p.content === "string" &&
