@@ -35,6 +35,152 @@ export class StorageLogsService {
     return []
   }
 
+  async getDeliveredQuantitySumByDateRange(
+    startDate: Date,
+    endDate: Date
+  ): Promise<number> {
+    try {
+      const result = await this.storageLogsModel
+        .aggregate<{ totalQuantity: number }>([
+          {
+            $match: {
+              status: "delivered",
+              date: { $gte: startDate, $lte: endDate }
+            }
+          },
+          {
+            $project: {
+              itemsToSum: {
+                $cond: [
+                  { $gt: [{ $size: { $ifNull: ["$items", []] } }, 0] },
+                  "$items",
+                  [{ $ifNull: ["$item", null] }]
+                ]
+              }
+            }
+          },
+          { $unwind: "$itemsToSum" },
+          { $match: { "itemsToSum._id": { $ne: null } } },
+          {
+            $group: {
+              _id: null,
+              totalQuantity: { $sum: "$itemsToSum.quantity" }
+            }
+          }
+        ])
+        .exec()
+
+      if (result.length === 0) return 0
+      return result[0]?.totalQuantity ?? 0
+    } catch (error) {
+      console.error(error)
+      throw new Error("Internal server error")
+    }
+  }
+
+  async getDeliveredQuantitySummaryByDateRange(
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    totalQuantity: number
+    byItem: Array<{
+      itemId: string
+      totalQuantity: number
+      item?: { _id: string; code: string; name: string; quantityPerBox: number }
+    }>
+  }> {
+    try {
+      const result = await this.storageLogsModel
+        .aggregate<{
+          overall: Array<{ totalQuantity: number }>
+          byItem: Array<{
+            _id: any
+            totalQuantity: number
+            item?: Array<{
+              _id: any
+              code: string
+              name: string
+              quantityPerBox: number
+            }>
+          }>
+        }>([
+          {
+            $match: {
+              status: "delivered",
+              date: { $gte: startDate, $lte: endDate }
+            }
+          },
+          {
+            $project: {
+              itemsToSum: {
+                $cond: [
+                  { $gt: [{ $size: { $ifNull: ["$items", []] } }, 0] },
+                  "$items",
+                  [{ $ifNull: ["$item", null] }]
+                ]
+              }
+            }
+          },
+          { $unwind: "$itemsToSum" },
+          { $match: { "itemsToSum._id": { $ne: null } } },
+          {
+            $facet: {
+              overall: [
+                {
+                  $group: {
+                    _id: null,
+                    totalQuantity: { $sum: "$itemsToSum.quantity" }
+                  }
+                }
+              ],
+              byItem: [
+                {
+                  $group: {
+                    _id: "$itemsToSum._id",
+                    totalQuantity: { $sum: "$itemsToSum.quantity" }
+                  }
+                },
+                {
+                  $lookup: {
+                    from: "storageitems",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "item"
+                  }
+                }
+              ]
+            }
+          }
+        ])
+        .exec()
+
+      const overallTotal = result?.[0]?.overall?.[0]?.totalQuantity ?? 0
+      const byItemRaw = result?.[0]?.byItem ?? []
+
+      return {
+        totalQuantity: overallTotal,
+        byItem: byItemRaw.map((row) => {
+          const itemDoc = row.item?.[0]
+          return {
+            itemId: row._id?.toString?.() ?? String(row._id),
+            totalQuantity: row.totalQuantity,
+            item: itemDoc
+              ? {
+                  _id: itemDoc._id?.toString?.() ?? String(itemDoc._id),
+                  code: itemDoc.code,
+                  name: itemDoc.name,
+                  quantityPerBox: itemDoc.quantityPerBox
+                }
+              : undefined
+          }
+        })
+      }
+    } catch (error) {
+      console.error(error)
+      throw new Error("Internal server error")
+    }
+  }
+
   async createRequest(storageLog: StorageLogDto): Promise<StorageLog> {
     try {
       // Only create new format with items array
