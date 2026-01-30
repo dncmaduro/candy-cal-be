@@ -230,6 +230,21 @@ export class IncomeController {
   }
 
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Get("total-orders-by-month")
+  @HttpCode(HttpStatus.OK)
+  async getTotalIncomeCountByMonth(
+    @Query("month") month: string,
+    @Query("year") year: string,
+    @Query("channelId") channelId?: string
+  ): Promise<{ totalCount: number }> {
+    return this.incomeService.getTotalIncomeCountByMonth(
+      Number(month),
+      Number(year),
+      channelId
+    )
+  }
+
+  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get("kpi-percentage-split-by-month")
   @HttpCode(HttpStatus.OK)
   async KPIPercentageByMonthSplit(
