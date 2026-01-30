@@ -9,13 +9,15 @@ import {
   Query,
   UseInterceptors,
   UploadedFiles,
-  UseGuards
+  UseGuards,
+  Res
 } from "@nestjs/common"
 import { FilesInterceptor } from "@nestjs/platform-express"
 import { LivestreamperformanceService } from "./livestreamperformance.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
+import { Response } from "express"
 
 @Controller("livestreamperformance")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -116,15 +118,57 @@ export class LivestreamperformanceController {
   @Get("monthly-salary")
   async calculateMonthlySalary(
     @Query("year") year: number,
-    @Query("month") month: number
+    @Query("month") month: number,
+    @Query("channelId") channelId?: string
   ) {
     if (!year || !month || isNaN(Number(year)) || isNaN(Number(month))) {
       return { error: "Year and month are required and must be valid numbers" }
     }
     return this.livestreamperformanceService.calculateMonthlySalary(
       Number(year),
-      Number(month)
+      Number(month),
+      channelId
     )
+  }
+
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "livestream-accounting"
+  )
+  @Get("monthly-salary/export-xlsx")
+  async exportMonthlySalaryToXlsx(
+    @Query("year") year: number,
+    @Query("month") month: number,
+    @Query("channelId") channelId: string | undefined,
+    @Res() res: Response
+  ): Promise<void> {
+    if (!year || !month || isNaN(Number(year)) || isNaN(Number(month))) {
+      res.status(400).send({
+        error: "Year and month are required and must be valid numbers"
+      })
+      return
+    }
+
+    const buffer = await this.livestreamperformanceService.exportMonthlySalaryToXlsx(
+      Number(year),
+      Number(month),
+      channelId
+    )
+
+    const safeMonth = String(Number(month)).padStart(2, "0")
+    const filename = `LuongLivestream_${year}_${safeMonth}${
+      channelId ? `_channel_${channelId}` : ""
+    }.xlsx`
+
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}`)
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.send(buffer)
   }
 
   @Roles("admin", "livestream-leader")
