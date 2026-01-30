@@ -6,6 +6,7 @@ import { Livestream } from "../database/mongoose/schemas/Livestream"
 import { User } from "../database/mongoose/schemas/User"
 import { LivestreamSalary } from "../database/mongoose/schemas/LivestreamSalary"
 import * as XLSX from "xlsx"
+import * as ExcelJS from "exceljs"
 
 @Injectable()
 export class LivestreamperformanceService {
@@ -442,10 +443,12 @@ export class LivestreamperformanceService {
   // 7. Calculate monthly salary for all users
   async calculateMonthlySalary(
     year: number,
-    month: number
+    month: number,
+    channelId?: string
   ): Promise<{
     year: number
     month: number
+    channelId?: string
     users: Array<{
       userId: string
       userName: string
@@ -486,6 +489,16 @@ export class LivestreamperformanceService {
       // Process each livestream
       for (const livestream of livestreams) {
         for (const snapshot of livestream.snapshots) {
+          // Filter by channelId if provided
+          if (channelId) {
+            const snapshotChannelId = (
+              snapshot as any
+            ).period?.channel?.toString()
+            if (snapshotChannelId !== channelId) {
+              continue
+            }
+          }
+
           const salary = (snapshot as any).salary
 
           // Skip if no salary calculated
@@ -555,12 +568,242 @@ export class LivestreamperformanceService {
         0
       )
 
-      return {
+      const result: any = {
         year,
         month,
         users,
         totalSalaryPaid
       }
+
+      // Include channelId in response if provided
+      if (channelId) {
+        result.channelId = channelId
+      }
+
+      return result
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async exportMonthlySalaryToXlsx(
+    year: number,
+    month: number,
+    channelId?: string
+  ): Promise<Buffer> {
+    try {
+      if (month < 1 || month > 12) {
+        throw new HttpException(
+          "Invalid month. Must be between 1 and 12",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const startDate = new Date(year, month - 1, 1)
+      const endDate = new Date(year, month, 0, 23, 59, 59, 999)
+      const daysInMonth = new Date(year, month, 0).getDate()
+
+      const livestreams = await this.livestreamModel
+        .find({
+          date: {
+            $gte: startDate,
+            $lte: endDate
+          }
+        })
+        .sort({ date: 1, _id: 1 })
+        .lean()
+
+      type UserAcc = {
+        userName: string
+        totalSalary: number
+        snapshotsCount: number
+        dailySalary: number[]
+        dailySnapshotsCount: number[]
+      }
+
+      const userSalaryMap = new Map<string, UserAcc>()
+      const userDayShifts = new Map<
+        string,
+        Map<number, Array<{ revenue: number; durationMinutes: number }>>
+      >()
+      const seenUserIds = new Set<string>()
+
+      const getOrInitUser = (userId: string) => {
+        if (!userSalaryMap.has(userId)) {
+          userSalaryMap.set(userId, {
+            userName: "Unknown",
+            totalSalary: 0,
+            snapshotsCount: 0,
+            dailySalary: Array.from({ length: daysInMonth }, () => 0),
+            dailySnapshotsCount: Array.from({ length: daysInMonth }, () => 0)
+          })
+        }
+        return userSalaryMap.get(userId)!
+      }
+
+      const getOrInitUserDayShiftArr = (userId: string, dayIndex: number) => {
+        if (!userDayShifts.has(userId)) userDayShifts.set(userId, new Map())
+        const dayMap = userDayShifts.get(userId)!
+        if (!dayMap.has(dayIndex)) dayMap.set(dayIndex, [])
+        return dayMap.get(dayIndex)!
+      }
+
+      for (const livestream of livestreams as any[]) {
+        const date = new Date(livestream.date)
+        const dayIndex = date.getDate() - 1
+
+        for (const snapshot of livestream.snapshots ?? []) {
+          if (channelId) {
+            const snapshotChannelId = snapshot?.period?.channel?.toString()
+            if (snapshotChannelId !== channelId) continue
+          }
+
+          const salaryTotal = snapshot?.salary?.total
+          if (!salaryTotal) continue
+
+          let targetUserId: string | null = null
+          if (snapshot?.altAssignee) {
+            if (snapshot.altAssignee === "other") continue
+            targetUserId = snapshot.altAssignee.toString()
+          } else if (snapshot?.assignee) {
+            targetUserId = snapshot.assignee.toString()
+          } else {
+            continue
+          }
+
+          const userAcc = getOrInitUser(targetUserId)
+          userAcc.totalSalary += salaryTotal
+          userAcc.snapshotsCount += 1
+          if (dayIndex >= 0 && dayIndex < daysInMonth) {
+            userAcc.dailySalary[dayIndex] += salaryTotal
+            userAcc.dailySnapshotsCount[dayIndex] += 1
+          }
+
+          if (dayIndex >= 0 && dayIndex < daysInMonth) {
+            const revenue =
+              snapshot?.realIncome ?? snapshot?.income ?? 0
+
+            const startMinutes =
+              (snapshot?.period?.startTime?.hour ?? 0) * 60 +
+              (snapshot?.period?.startTime?.minute ?? 0)
+            const endMinutes =
+              (snapshot?.period?.endTime?.hour ?? 0) * 60 +
+              (snapshot?.period?.endTime?.minute ?? 0)
+            const durationMinutes = Math.max(0, endMinutes - startMinutes)
+
+            const arr = getOrInitUserDayShiftArr(targetUserId, dayIndex)
+            arr.push({
+              revenue: Number(revenue) || 0,
+              durationMinutes
+            })
+          }
+
+          seenUserIds.add(targetUserId)
+        }
+      }
+
+      if (seenUserIds.size > 0) {
+        const users = await this.userModel
+          .find(
+            { _id: { $in: Array.from(seenUserIds) } },
+            { name: 1, username: 1 }
+          )
+          .lean()
+        const nameById = new Map(
+          users.map((u: any) => [
+            u._id.toString(),
+            u.name || u.username || "Unknown"
+          ])
+        )
+        for (const [userId, acc] of userSalaryMap.entries()) {
+          acc.userName = nameById.get(userId) ?? "Unknown"
+        }
+      }
+
+      const usersSorted = Array.from(userSalaryMap.entries())
+        .map(([userId, acc]) => ({
+          userId,
+          userName: acc.userName,
+          totalSalary: Math.round(acc.totalSalary),
+          snapshotsCount: acc.snapshotsCount,
+          dailySalary: acc.dailySalary.map((v) => Math.round(v)),
+          dailySnapshotsCount: acc.dailySnapshotsCount
+        }))
+        .sort((a, b) => b.totalSalary - a.totalSalary)
+
+      const workbook = new ExcelJS.Workbook()
+
+      const sheet = workbook.addWorksheet("Luong")
+      sheet.columns = [
+        { header: "Tên", key: "name", width: 24 },
+        { header: "Ngày", key: "day", width: 14 },
+        { header: "Lương", key: "salary", width: 14 },
+        { header: "Doanh thu", key: "revenue", width: 14 },
+        { header: "Thời gian live", key: "duration", width: 18 }
+      ]
+      sheet.getColumn(3).numFmt = "#,##0"
+      sheet.getColumn(4).numFmt = "#,##0"
+
+      usersSorted.forEach((u) => {
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateLabel = `${String(d).padStart(2, "0")}/${String(
+            month
+          ).padStart(2, "0")}`
+          const dayIndex = d - 1
+          const shifts =
+            userDayShifts.get(u.userId)?.get(dayIndex) ?? []
+          const rowsNeeded = Math.max(1, shifts.length)
+
+          for (let i = 0; i < rowsNeeded; i++) {
+            const shift = shifts[i]
+            const durationLabel = shift
+              ? `${Math.floor(shift.durationMinutes / 60)}h${
+                  shift.durationMinutes % 60
+                }p`
+              : ""
+            sheet.addRow({
+              name: d === 1 && i === 0 ? u.userName : "",
+              day: i === 0 ? dateLabel : "",
+              salary: i === 0 ? (u.dailySalary[dayIndex] ?? 0) : "",
+              revenue: shift ? shift.revenue : "",
+              duration: shift ? durationLabel : ""
+            })
+          }
+        }
+
+        const totalRow = sheet.addRow({
+          name: "",
+          day: "Tổng",
+          salary: u.totalSalary,
+          revenue: "",
+          duration: ""
+        })
+        totalRow.eachCell((cell) => {
+          cell.font = { ...(cell.font ?? {}), bold: true }
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFFF00" }
+          }
+        })
+
+        sheet.addRow({ name: "", day: "", salary: "" })
+      })
+
+      sheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          cell.font = { name: "Times New Roman", size: 11 }
+          cell.alignment = { vertical: "middle", horizontal: "left" }
+        })
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      return Buffer.from(buffer)
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error
