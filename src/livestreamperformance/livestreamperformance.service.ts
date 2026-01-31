@@ -685,8 +685,7 @@ export class LivestreamperformanceService {
           }
 
           if (dayIndex >= 0 && dayIndex < daysInMonth) {
-            const revenue =
-              snapshot?.realIncome ?? snapshot?.income ?? 0
+            const revenue = snapshot?.realIncome ?? snapshot?.income ?? 0
 
             const startMinutes =
               (snapshot?.period?.startTime?.hour ?? 0) * 60 +
@@ -755,8 +754,7 @@ export class LivestreamperformanceService {
             month
           ).padStart(2, "0")}`
           const dayIndex = d - 1
-          const shifts =
-            userDayShifts.get(u.userId)?.get(dayIndex) ?? []
+          const shifts = userDayShifts.get(u.userId)?.get(dayIndex) ?? []
           const rowsNeeded = Math.max(1, shifts.length)
 
           for (let i = 0; i < rowsNeeded; i++) {
@@ -1027,6 +1025,8 @@ export class LivestreamperformanceService {
 
       const onlyDigits = (s: string) => s.replace(/\D/g, "")
 
+      const processedOrderIdsInLive = new Set()
+
       for (const row of sourceData) {
         const contentType = String(pickField(row, contentTypeKeys) ?? "").trim()
 
@@ -1067,6 +1067,8 @@ export class LivestreamperformanceService {
           continue
         }
 
+        if (processedOrderIdsInLive.has(orderId)) continue
+
         // Step 3: Get income from totalIncome map (đúng theo yêu cầu)
         const incomeAmount = orderIncomeMap.get(orderId) ?? 0
         if (incomeAmount <= 0) continue
@@ -1102,6 +1104,10 @@ export class LivestreamperformanceService {
 
             if (res.modifiedCount > 0) {
               updatedSnapshots++
+            }
+
+            if (res.modifiedCount > 0) {
+              processedOrderIdsInLive.add(orderId) // Đánh dấu đã cộng tiền đơn này
             }
           }
 
