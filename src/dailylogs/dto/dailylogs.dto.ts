@@ -1,5 +1,6 @@
 export class DailyLogDto {
   date: Date
+  channelId?: string
   items: {
     _id: string
     quantity: number

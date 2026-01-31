@@ -8,6 +8,7 @@ export interface ShopeeItem {
 export interface ShopeeProduct extends Document {
   name: string
   items: ShopeeItem[]
+  deletedAt?: Date
 }
 
 const ShopeeItemSchema = new Schema<ShopeeItem>({
@@ -17,7 +18,8 @@ const ShopeeItemSchema = new Schema<ShopeeItem>({
 
 export const ShopeeProductSchema = new Schema<ShopeeProduct>({
   name: { type: String, required: true, unique: true },
-  items: { type: [ShopeeItemSchema], required: true }
+  items: { type: [ShopeeItemSchema], required: true },
+  deletedAt: { type: Date, required: false, default: null }
 })
 
 export const ShopeeProductModel = model<ShopeeProduct>(
