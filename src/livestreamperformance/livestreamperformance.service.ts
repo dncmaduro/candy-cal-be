@@ -982,7 +982,8 @@ export class LivestreamperformanceService {
 
         const subtotal = parseMoney(pickField(row, subtotalKeys))
         const sellerDiscount = parseMoney(pickField(row, sellerDiscountKeys))
-        const income = subtotal - sellerDiscount
+        // const afterDiscountKeys = ["SKU Subtotal After Discount"]
+        const income = parseMoney(subtotal - sellerDiscount)
 
         if (income > 0) {
           orderIncomeMap.set(

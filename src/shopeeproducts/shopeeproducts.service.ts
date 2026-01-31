@@ -57,7 +57,7 @@ export class ShopeeService {
   ): Promise<ShopeeProduct> {
     try {
       const updated = await this.shopeeProductModel
-        .findByIdAndUpdate(id, payload, { new: true })
+        .findOneAndUpdate({ _id: id, deletedAt: null }, payload, { new: true })
         .exec()
       if (!updated)
         throw new HttpException(
@@ -74,10 +74,16 @@ export class ShopeeService {
     }
   }
 
-  // New: delete shopee product by id
+  // Soft delete shopee product by id
   async deleteShopeeProduct(id: string): Promise<ShopeeProduct> {
     try {
-      const deleted = await this.shopeeProductModel.findByIdAndDelete(id).exec()
+      const deleted = await this.shopeeProductModel
+        .findOneAndUpdate(
+          { _id: id, deletedAt: null },
+          { $set: { deletedAt: new Date() } },
+          { new: true }
+        )
+        .exec()
       if (!deleted)
         throw new HttpException(
           "Không tìm thấy shopee product",
@@ -96,7 +102,9 @@ export class ShopeeService {
   async getAllShopeeProducts(): Promise<{ products: ShopeeProduct[] }> {
     try {
       return {
-        products: await this.shopeeProductModel.find().exec()
+        products: await this.shopeeProductModel
+          .find({ deletedAt: null })
+          .exec()
       }
     } catch (error) {
       console.error(error)
@@ -109,7 +117,9 @@ export class ShopeeService {
 
   async getShopeeProduct(id: string): Promise<ShopeeProduct> {
     try {
-      const doc = await this.shopeeProductModel.findById(id).exec()
+      const doc = await this.shopeeProductModel
+        .findOne({ _id: id, deletedAt: null })
+        .exec()
       if (!doc)
         throw new HttpException(
           "Shopee product not found",
@@ -128,12 +138,23 @@ export class ShopeeService {
   async searchShopeeProducts(
     searchText: string,
     page: number = 1,
-    limit: number = 10
+    limit: number = 10,
+    deleted?: boolean
   ): Promise<{ data: ShopeeProduct[]; total: number }> {
     try {
-      const query = searchText
-        ? { name: { $regex: `.*${searchText}.*`, $options: "i" } }
-        : {}
+      let deletedFilter = {}
+      if (deleted === true) {
+        deletedFilter = { deletedAt: { $ne: null } }
+      } else if (deleted === false) {
+        deletedFilter = { deletedAt: null }
+      }
+
+      const query = {
+        ...(searchText
+          ? { name: { $regex: `.*${searchText}.*`, $options: "i" } }
+          : {}),
+        ...deletedFilter
+      }
       const total = await this.shopeeProductModel.countDocuments(query)
       const data = await this.shopeeProductModel
         .find(query)
