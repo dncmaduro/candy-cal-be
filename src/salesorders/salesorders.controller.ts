@@ -244,14 +244,14 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getOrderById(@Param("id") id: string): Promise<SalesOrder | null> {
     return this.salesOrdersService.getOrderById(id)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-emp", "sales-accounting")
   @Get("funnel/:funnelId")
   @HttpCode(HttpStatus.OK)
   async getOrdersByFunnel(
@@ -274,7 +274,7 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchOrders(
@@ -337,7 +337,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("options/storages")
   @HttpCode(HttpStatus.OK)
   async getAllStorages(): Promise<{
@@ -346,7 +346,7 @@ export class SalesOrdersController {
     return this.salesOrdersService.getAllStorages()
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("options/shipping-types")
   @HttpCode(HttpStatus.OK)
   async getAllShippingTypes(): Promise<{
@@ -355,7 +355,7 @@ export class SalesOrdersController {
     return this.salesOrdersService.getAllShippingTypes()
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("export/xlsx")
   @HttpCode(HttpStatus.OK)
   async exportOrdersToExcel(
@@ -428,7 +428,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "sales-leader")
+  @Roles("admin", "sales-emp", "sales-leader", "sales-accounting")
   @Post("export/xlsx/by-ids")
   @HttpCode(HttpStatus.OK)
   async exportOrdersToExcelByIds(
