@@ -13,19 +13,27 @@ export class DailyLogsService {
 
   async createDailyLog(dto: DailyLogDto): Promise<void> {
     try {
-      const filter: any = { date: dto.date }
-      if (dto.channelId) filter.channel = dto.channelId
-      const update = {
-        ...dto,
-        ...(dto.channelId ? { channel: dto.channelId } : {}),
-        updatedAt: new Date()
+      // Require channelId since one date can have multiple logs for different channels
+      if (!dto.channelId) {
+        throw new HttpException("channelId is required", HttpStatus.BAD_REQUEST)
       }
-      await this.dailyLogModel.findOneAndUpdate(filter, update, {
-        upsert: true,
-        new: true
+
+      // Delete existing log for this specific date + channel combination
+      const filter = {
+        date: dto.date,
+        channel: dto.channelId
+      }
+      await this.dailyLogModel.findOneAndDelete(filter).exec()
+
+      // Create new log for this date + channel
+      await this.dailyLogModel.create({
+        ...dto,
+        channel: dto.channelId,
+        updatedAt: new Date()
       })
     } catch (error) {
       console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Lỗi khi tạo log ngày",
         HttpStatus.INTERNAL_SERVER_ERROR

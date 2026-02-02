@@ -39,19 +39,21 @@ export class DeliveredRequestsService {
       )
     }
 
-    const newRequest = await this.deliveredRequestModel.findOneAndUpdate(
-      baseQuery,
-      {
-        $set: {
-          items: request.items,
-          note: request.note,
-          date: request.date,
-          ...(request.channelId ? { channel: request.channelId } : {}),
-          updatedAt: Date.now()
-        }
-      },
-      { upsert: true, new: true }
-    )
+    const newRequest = await this.deliveredRequestModel
+      .findOneAndUpdate(
+        baseQuery,
+        {
+          $set: {
+            items: request.items,
+            note: request.note,
+            date: request.date,
+            ...(request.channelId ? { channel: request.channelId } : {}),
+            updatedAt: Date.now()
+          }
+        },
+        { upsert: true, new: true }
+      )
+      .populate("channel")
 
     const notification: NotificationDto = {
       title: "Yêu cầu xuất kho cho vận đơn",
@@ -79,11 +81,13 @@ export class DeliveredRequestsService {
     }
   ): Promise<DeliveredRequest> {
     try {
-      const updated = await this.deliveredRequestModel.findByIdAndUpdate(
-        requestId,
-        { $push: { comments: comment } },
-        { new: true }
-      )
+      const updated = await this.deliveredRequestModel
+        .findByIdAndUpdate(
+          requestId,
+          { $push: { comments: comment } },
+          { new: true }
+        )
+        .populate("channel")
       if (!updated) throw new BadRequestException("Không tìm thấy yêu cầu")
       return updated
     } catch (error) {
@@ -94,13 +98,24 @@ export class DeliveredRequestsService {
 
   async acceptRequest(requestId: string): Promise<DeliveredRequest> {
     try {
-      const req = await this.deliveredRequestModel.findById(requestId)
+      const req = await this.deliveredRequestModel
+        .findById(requestId)
+        .populate("channel")
       if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
       if (req.accepted) throw new BadRequestException("Đã được chấp nhận rồi")
 
       req.accepted = true
       req.updatedAt = new Date()
       await req.save()
+
+      // Determine tag based on channel platform
+      let tag = "deliver-shopee" // default
+      if (req.channel) {
+        const channel = req.channel as any
+        if (channel.platform === "tiktokshop") {
+          tag = "deliver-tiktokshop"
+        }
+      }
 
       // Create single storage log with all items instead of multiple logs
       await this.storageLogsService.createRequest({
@@ -111,7 +126,8 @@ export class DeliveredRequestsService {
         status: "delivered",
         date: req.date,
         note: req.note,
-        deliveredRequestId: requestId
+        deliveredRequestId: requestId,
+        tag
       })
 
       return req
@@ -146,6 +162,7 @@ export class DeliveredRequestsService {
       const [requests, total] = await Promise.all([
         this.deliveredRequestModel
           .find(query)
+          .populate("channel")
           .sort({ date: -1 })
           .skip(skip)
           .limit(limit)
@@ -160,10 +177,15 @@ export class DeliveredRequestsService {
     }
   }
 
-  async getRequest(idOrDate: string, channelId?: string): Promise<DeliveredRequest> {
+  async getRequest(
+    idOrDate: string,
+    channelId?: string
+  ): Promise<DeliveredRequest> {
     try {
       if (Types.ObjectId.isValid(idOrDate)) {
-        const request = await this.deliveredRequestModel.findById(idOrDate)
+        const request = await this.deliveredRequestModel
+          .findById(idOrDate)
+          .populate("channel")
         if (!request) throw new BadRequestException("Không tìm thấy yêu cầu")
         return request
       }
@@ -174,7 +196,9 @@ export class DeliveredRequestsService {
       const query: any = { date: { $gte: start, $lte: end } }
       if (channelId) query.channel = channelId
 
-      const request = await this.deliveredRequestModel.findOne(query)
+      const request = await this.deliveredRequestModel
+        .findOne(query)
+        .populate("channel")
 
       if (!request) {
         throw new BadRequestException("Không tìm thấy yêu cầu")
@@ -190,7 +214,9 @@ export class DeliveredRequestsService {
 
   async undoAcceptRequest(requestId: string): Promise<DeliveredRequest> {
     try {
-      const req = await this.deliveredRequestModel.findById(requestId)
+      const req = await this.deliveredRequestModel
+        .findById(requestId)
+        .populate("channel")
       if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
       if (!req.accepted) throw new BadRequestException("Chưa được chấp nhận")
 
