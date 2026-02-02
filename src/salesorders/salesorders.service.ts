@@ -2976,4 +2976,902 @@ export class SalesOrdersService {
     const buffer = await workbook.xlsx.writeBuffer()
     return Buffer.from(buffer as ArrayBuffer)
   }
+
+  async exportOrdersToExcelForAccounting(filters: {
+    salesFunnelId?: string
+    userId?: string
+    channelId?: string
+    returning?: boolean
+    startDate?: Date
+    endDate?: Date
+    searchText?: string
+    shippingType?: SalesOrderShippingType
+    status?: SalesOrderStatus
+  }): Promise<Buffer> {
+    try {
+      // Build filter - same as exportOrdersToExcel
+      const filter: any = {}
+      if (filters.salesFunnelId)
+        filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
+      if (filters.returning !== undefined) filter.returning = filters.returning
+      if (filters.shippingType) filter.shippingType = filters.shippingType
+      if (filters.status) filter.status = filters.status
+
+      if (filters.channelId) {
+        const funnelIds = await this.salesFunnelModel
+          .find({ channel: new Types.ObjectId(filters.channelId) })
+          .distinct("_id")
+        filter.salesFunnelId = { $in: funnelIds }
+      }
+
+      if (filters.userId) {
+        const funnelIds = await this.salesFunnelModel
+          .find({ user: new Types.ObjectId(filters.userId) })
+          .distinct("_id")
+        filter.salesFunnelId = { $in: funnelIds }
+      }
+
+      if (filters.startDate || filters.endDate) {
+        filter.date = {}
+        if (filters.startDate) {
+          const startDate = new Date(filters.startDate)
+          startDate.setUTCHours(startDate.getUTCHours() - 7)
+          filter.date.$gte = startDate
+        }
+        if (filters.endDate) {
+          const endDate = new Date(filters.endDate)
+          endDate.setUTCHours(endDate.getUTCHours() - 7)
+          filter.date.$lte = endDate
+        }
+      }
+
+      if (filters.searchText && filters.searchText.trim().length > 0) {
+        const searchText = filters.searchText.trim()
+
+        const matchingFunnels = await this.salesFunnelModel
+          .find({
+            $or: [
+              { name: { $regex: `.*${searchText}.*`, $options: "i" } },
+              { phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" } },
+              {
+                secondaryPhoneNumbers: {
+                  $regex: `.*${searchText}.*`,
+                  $options: "i"
+                }
+              }
+            ]
+          })
+          .distinct("_id")
+
+        const searchRegex = { $regex: `.*${searchText}.*`, $options: "i" }
+
+        filter.$or = [
+          { shippingCode: searchRegex },
+          { "items.code": searchRegex },
+          { "items.name": searchRegex },
+          { salesFunnelId: { $in: matchingFunnels } }
+        ]
+      }
+
+      const orders = await this.salesOrderModel
+        .find(filter)
+        .populate({
+          path: "salesFunnelId",
+          populate: [
+            { path: "channel", model: "saleschannels" },
+            { path: "user", model: "users", select: "name email role" },
+            { path: "province", model: "provinces" }
+          ]
+        })
+        .sort({ createdAt: -1 })
+        .lean()
+
+      return await this.buildOrdersExcelBufferForAccounting(orders)
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi export đơn hàng",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  private async buildOrdersExcelBufferForAccounting(
+    orders: any[]
+  ): Promise<Buffer> {
+    // Separate orders by shipping type and sort by date
+    const cargoOrders = orders
+      .filter((o) => o.shippingType === "shipping_cargo")
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const vtpOrders = orders
+      .filter((o) => o.shippingType === "shipping_vtp")
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const otherOrders = orders
+      .filter(
+        (o) =>
+          !o.shippingType ||
+          (o.shippingType !== "shipping_cargo" &&
+            o.shippingType !== "shipping_vtp")
+      )
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    // Create workbook using ExcelJS
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet("Orders")
+
+    // Define column widths - add 2 new columns for discount and value after discount
+    const columnWidths = [
+      88, 376, 140, 336, 104, 105, 105, 78, 97, 105, 105, 105, 159, 247, 210,
+      160, 123, 118, 147
+    ]
+    worksheet.columns = columnWidths.map((width, idx) => ({
+      key: `col${idx + 1}`,
+      width: width / 7
+    }))
+
+    // Define headers with new columns
+    const headers = [
+      "Ngày",
+      "客户（省份）NPP",
+      "Mã",
+      "Sản phẩm",
+      "Số lượng",
+      "Giá bán - 外部价格",
+      "Thành tiền 销售金额",
+      "Thuế 0.75%",
+      "Tiền ship",
+      "Thu tiền",
+      "Chiết khấu",
+      "Giá trị sau chiết khấu",
+      "Còn phải thu",
+      "备注 NPP",
+      "Ngày thu tiền",
+      "Nguồn gốc",
+      "Kho xuất hàng",
+      "Mã vận đơn",
+      ""
+    ]
+
+    // Add header row
+    const headerRow = worksheet.addRow(headers)
+    headerRow.height = 71
+    headerRow.font = {
+      name: "Times New Roman",
+      size: 12,
+      bold: true,
+      color: { argb: "FFFF0000" }
+    }
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFFF04" }
+    }
+    headerRow.alignment = {
+      vertical: "middle",
+      horizontal: "center",
+      wrapText: true
+    }
+
+    // Add borders to header
+    headerRow.eachCell((cell) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF000000" } },
+        left: { style: "thin", color: { argb: "FF000000" } },
+        bottom: { style: "thin", color: { argb: "FF000000" } },
+        right: { style: "thin", color: { argb: "FF000000" } }
+      }
+    })
+
+    let currentRow = 2
+
+    // Helper function to format date
+    const formatDateExtended = (date: Date): string => {
+      if (!date) return ""
+      const d = new Date(date)
+      // Add 7 hours
+      d.setUTCHours(d.getUTCHours() + 7)
+      const day = d.getDate()
+      const month = d.getMonth() + 1
+      const year = d.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+
+    // Track totals for each section
+    let cargoTotals = {
+      quantity: 0,
+      thanhTien: 0,
+      tax: 0,
+      shipping: 0,
+      discount: 0,
+      valueAfterDiscount: 0,
+      collected: 0
+    }
+
+    let vtpTotals = {
+      quantity: 0,
+      thanhTien: 0,
+      tax: 0,
+      shipping: 0,
+      discount: 0,
+      valueAfterDiscount: 0,
+      collected: 0
+    }
+
+    let otherTotals = {
+      quantity: 0,
+      thanhTien: 0,
+      tax: 0,
+      shipping: 0,
+      discount: 0,
+      valueAfterDiscount: 0,
+      collected: 0
+    }
+
+    // Helper function to add order rows (always adds separator row at end)
+    const addOrderRows = (order: any, totals: any) => {
+      const funnel = order.salesFunnelId as any
+      const funnelName = funnel?.name || ""
+      let provinceName = funnel?.province?.name || ""
+
+      // Remove "Tỉnh" or "Thành phố" prefix from province name
+      provinceName = provinceName.replace(/^(Tỉnh|Thành phố)\s+/i, "")
+
+      // Customer info based on shipping type
+      let customerInfo = ""
+      if (order.shippingType === "shipping_vtp") {
+        customerInfo = `Shipcod (${funnelName} - ${provinceName})`
+      } else if (order.shippingType === "shipping_cargo") {
+        customerInfo = `Chành (${funnelName} - ${provinceName})`
+      } else {
+        customerInfo = `${funnelName} - ${provinceName}`
+      }
+
+      // Shipping type label
+      const shippingTypeLabel =
+        order.shippingType === "shipping_vtp"
+          ? "VIETTEL POST"
+          : order.shippingType === "shipping_cargo"
+            ? "SHIPCOD LÊN CHÀNH"
+            : "KHÁC"
+
+      // Calculate tax (only for VTP)
+      const taxValue =
+        order.shippingType === "shipping_vtp"
+          ? Math.round(order.total * 0.0075)
+          : 0
+
+      // Build array of discount values (only non-zero values)
+      const discountValues: number[] = []
+      if (order.orderDiscount && order.orderDiscount > 0) {
+        discountValues.push(order.orderDiscount)
+      }
+      if (order.otherDiscount && order.otherDiscount > 0) {
+        discountValues.push(order.otherDiscount)
+      }
+      if (order.deposit && order.deposit > 0) {
+        discountValues.push(order.deposit)
+      }
+
+      // Calculate total discount
+      const totalDiscount =
+        (order.orderDiscount || 0) +
+        (order.otherDiscount || 0) +
+        (order.deposit || 0)
+
+      // Calculate total rows needed (max of items count and discount values count)
+      const totalRowsNeeded = Math.max(
+        order.items.length,
+        discountValues.length
+      )
+
+      for (let i = 0; i < totalRowsNeeded; i++) {
+        const item = i < order.items.length ? order.items[i] : null
+        const thanhTien = item ? item.price * item.quantity : 0
+
+        // Calculate values for this row
+        const taxForRow = i === 0 ? taxValue : 0
+        const shippingForRow = i === 0 ? order.shippingCost || 0 : 0
+        const discountForRow = i < discountValues.length ? discountValues[i] : 0
+
+        // Value after discount = total - total discount (only on first row)
+        const valueAfterDiscount = i === 0 ? order.total - totalDiscount : ""
+
+        // Thu tiền calculation
+        const thuTien = item
+          ? Math.round(thanhTien + taxForRow + shippingForRow - discountForRow)
+          : discountForRow > 0
+            ? -discountForRow
+            : 0
+
+        const row = worksheet.addRow([
+          formatDateExtended(order.date), // Always show date
+          customerInfo, // Always show NPP
+          item ? item.code : "",
+          item ? item.name : "",
+          item ? item.quantity : "",
+          item ? item.price : "",
+          item ? thanhTien : "",
+          i === 0 && order.shippingType === "shipping_vtp" ? taxValue : "",
+          i === 0 ? order.shippingCost || 0 : "",
+          thuTien || "",
+          discountForRow || "",
+          valueAfterDiscount,
+          "",
+          shippingTypeLabel, // Always show shipping type label
+          i === 0 ? formatDateExtended(order.receivedDate) : "",
+          "",
+          "",
+          order.shippingCode || "",
+          ""
+        ])
+
+        // Set row height
+        row.height = 27
+
+        // Apply Times New Roman font size 12
+        row.font = { name: "Times New Roman", size: 12 }
+        row.alignment = {
+          vertical: "middle",
+          horizontal: "left",
+          wrapText: true
+        }
+
+        // Ngày - right align
+        row.getCell(1).alignment = {
+          vertical: "middle",
+          horizontal: "right",
+          wrapText: true
+        }
+
+        // 客户（省份）NPP - center, red, bold
+        row.getCell(2).alignment = {
+          vertical: "middle",
+          horizontal: "center",
+          wrapText: true
+        }
+        row.getCell(2).font = {
+          name: "Times New Roman",
+          size: 12,
+          bold: true,
+          color: { argb: "FFFF0000" }
+        }
+
+        // Mã - left align
+        row.getCell(3).alignment = {
+          vertical: "middle",
+          horizontal: "left",
+          wrapText: true
+        }
+
+        // Sản phẩm - left align
+        row.getCell(4).alignment = {
+          vertical: "middle",
+          horizontal: "left",
+          wrapText: true
+        }
+
+        // Giá bán - right align, number format
+        if (item) {
+          row.getCell(6).alignment = {
+            vertical: "middle",
+            horizontal: "right",
+            wrapText: true
+          }
+          row.getCell(6).numFmt = "#,##0"
+        }
+
+        // Thành tiền - right align, number format
+        if (item) {
+          row.getCell(7).alignment = {
+            vertical: "middle",
+            horizontal: "right",
+            wrapText: true
+          }
+          row.getCell(7).numFmt = "#,##0"
+        }
+
+        // Thuế - number format
+        if (i === 0 && order.shippingType === "shipping_vtp") {
+          row.getCell(8).numFmt = "#,##0"
+        }
+
+        // Tiền ship - number format
+        if (i === 0) {
+          row.getCell(9).numFmt = "#,##0"
+        }
+
+        // Thu tiền - number format
+        if (item || discountForRow > 0) {
+          row.getCell(10).numFmt = "#,##0"
+        }
+
+        // Chiết khấu - number format
+        if (discountForRow > 0) {
+          row.getCell(11).numFmt = "#,##0"
+        }
+
+        // Giá trị sau chiết khấu - number format (only first row)
+        if (i === 0) {
+          row.getCell(12).numFmt = "#,##0"
+        }
+
+        // 备注 NPP (shippingType) - beige background
+        row.getCell(14).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFEF2C9" }
+        }
+
+        // Add borders to cells within the table (columns 1-18 only)
+        for (let colNum = 1; colNum <= 18; colNum++) {
+          row.getCell(colNum).border = {
+            top: { style: "thin", color: { argb: "FF000000" } },
+            left: { style: "thin", color: { argb: "FF000000" } },
+            bottom: { style: "thin", color: { argb: "FF000000" } },
+            right: { style: "thin", color: { argb: "FF000000" } }
+          }
+        }
+
+        currentRow++
+      }
+
+      // Update totals
+      totals.quantity += order.items.reduce(
+        (sum: number, item: any) => sum + item.quantity,
+        0
+      )
+      totals.thanhTien += order.total
+      totals.tax += taxValue
+      totals.shipping += order.shippingCost || 0
+      totals.discount += totalDiscount
+      totals.valueAfterDiscount += order.total - totalDiscount
+      totals.collected +=
+        order.total + taxValue + (order.shippingCost || 0) - totalDiscount
+
+      // Add separator row (beige)
+      const separatorRow = worksheet.addRow(Array(19).fill(""))
+      separatorRow.height = 27
+      for (let colNum = 1; colNum <= 18; colNum++) {
+        separatorRow.getCell(colNum).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFEF2C9" }
+        }
+        separatorRow.getCell(colNum).border = {
+          top: { style: "thin", color: { argb: "FF000000" } },
+          left: { style: "thin", color: { argb: "FF000000" } },
+          bottom: { style: "thin", color: { argb: "FF000000" } },
+          right: { style: "thin", color: { argb: "FF000000" } }
+        }
+      }
+      currentRow++
+    }
+
+    // 1) Add cargo orders (always separate each order)
+    cargoOrders.forEach((order) => addOrderRows(order, cargoTotals))
+
+    // Add summary row for cargo immediately after cargo orders
+    if (cargoOrders.length > 0) {
+      const cargoSummaryRow = worksheet.addRow([
+        "Ngày",
+        "",
+        "",
+        "",
+        cargoTotals.quantity,
+        "",
+        cargoTotals.thanhTien,
+        Math.round(cargoTotals.tax),
+        cargoTotals.shipping,
+        Math.round(cargoTotals.collected),
+        cargoTotals.discount,
+        cargoTotals.valueAfterDiscount,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ])
+
+      cargoSummaryRow.height = 42
+
+      // Merge cells for "TỔNG CỘNG ĐI CHÀNH"
+      worksheet.mergeCells(currentRow, 2, currentRow, 4)
+      worksheet.getCell(currentRow, 2).value = "TỔNG CỘNG ĐI CHÀNH"
+
+      cargoSummaryRow.font = {
+        name: "Times New Roman",
+        size: 12,
+        bold: true,
+        color: { argb: "FFFF0000" }
+      }
+      cargoSummaryRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFA8E9E3" }
+      }
+      cargoSummaryRow.alignment = { vertical: "middle", horizontal: "center" }
+
+      cargoSummaryRow.getCell(5).numFmt = "#,##0"
+      cargoSummaryRow.getCell(7).numFmt = "#,##0"
+      cargoSummaryRow.getCell(8).numFmt = "#,##0"
+      cargoSummaryRow.getCell(9).numFmt = "#,##0"
+      cargoSummaryRow.getCell(10).numFmt = "#,##0"
+      cargoSummaryRow.getCell(11).numFmt = "#,##0"
+      cargoSummaryRow.getCell(12).numFmt = "#,##0"
+
+      for (let colNum = 1; colNum <= 18; colNum++) {
+        cargoSummaryRow.getCell(colNum).border = {
+          top: { style: "thin", color: { argb: "FF000000" } },
+          left: { style: "thin", color: { argb: "FF000000" } },
+          bottom: { style: "thin", color: { argb: "FF000000" } },
+          right: { style: "thin", color: { argb: "FF000000" } }
+        }
+      }
+
+      currentRow++
+    }
+
+    // 2) Add VTP orders (separator only when date changes)
+    vtpOrders.forEach((order, index) => {
+      const currentDate = formatDateExtended(order.date)
+
+      const nextOrder = vtpOrders[index + 1]
+      const shouldAddSeparator =
+        !nextOrder || formatDateExtended(nextOrder.date) !== currentDate
+
+      if (shouldAddSeparator) {
+        addOrderRows(order, vtpTotals)
+      } else {
+        // Manual add without adding separator row
+        const funnel = order.salesFunnelId as any
+        const funnelName = funnel?.name || ""
+        let provinceName = funnel?.province?.name || ""
+        provinceName = provinceName.replace(/^(Tỉnh|Thành phố)\s+/i, "")
+
+        const customerInfo = `Shipcod (${funnelName} - ${provinceName})`
+        const shippingTypeLabel = "VIETTEL POST"
+        const taxValue = Math.round(order.total * 0.0075)
+
+        const discountValues: number[] = []
+        if (order.orderDiscount && order.orderDiscount > 0) {
+          discountValues.push(order.orderDiscount)
+        }
+        if (order.otherDiscount && order.otherDiscount > 0) {
+          discountValues.push(order.otherDiscount)
+        }
+        if (order.deposit && order.deposit > 0) {
+          discountValues.push(order.deposit)
+        }
+
+        const totalDiscount =
+          (order.orderDiscount || 0) +
+          (order.otherDiscount || 0) +
+          (order.deposit || 0)
+
+        const totalRowsNeeded = Math.max(
+          order.items.length,
+          discountValues.length
+        )
+
+        for (let i = 0; i < totalRowsNeeded; i++) {
+          const item = i < order.items.length ? order.items[i] : null
+          const thanhTien = item ? item.price * item.quantity : 0
+          const taxForRow = i === 0 ? taxValue : 0
+          const shippingForRow = i === 0 ? order.shippingCost || 0 : 0
+          const discountForRow =
+            i < discountValues.length ? discountValues[i] : 0
+
+          const valueAfterDiscount = i === 0 ? order.total - totalDiscount : ""
+
+          const thuTien = item
+            ? Math.round(
+                thanhTien + taxForRow + shippingForRow - discountForRow
+              )
+            : discountForRow > 0
+              ? -discountForRow
+              : 0
+
+          const row = worksheet.addRow([
+            formatDateExtended(order.date),
+            customerInfo,
+            item ? item.code : "",
+            item ? item.name : "",
+            item ? item.quantity : "",
+            item ? item.price : "",
+            item ? thanhTien : "",
+            i === 0 ? taxValue : "",
+            i === 0 ? order.shippingCost || 0 : "",
+            thuTien || "",
+            discountForRow || "",
+            valueAfterDiscount,
+            "",
+            shippingTypeLabel,
+            i === 0 ? formatDateExtended(order.receivedDate) : "",
+            "",
+            "",
+            order.shippingCode || "",
+            ""
+          ])
+
+          row.height = 27
+          row.font = { name: "Times New Roman", size: 12 }
+          row.alignment = {
+            vertical: "middle",
+            horizontal: "left",
+            wrapText: true
+          }
+          row.getCell(1).alignment = {
+            vertical: "middle",
+            horizontal: "right",
+            wrapText: true
+          }
+          row.getCell(2).alignment = {
+            vertical: "middle",
+            horizontal: "center",
+            wrapText: true
+          }
+          row.getCell(2).font = {
+            name: "Times New Roman",
+            size: 12,
+            bold: true,
+            color: { argb: "FFFF0000" }
+          }
+          row.getCell(3).alignment = {
+            vertical: "middle",
+            horizontal: "left",
+            wrapText: true
+          }
+          row.getCell(4).alignment = {
+            vertical: "middle",
+            horizontal: "left",
+            wrapText: true
+          }
+
+          if (item) {
+            row.getCell(6).alignment = {
+              vertical: "middle",
+              horizontal: "right",
+              wrapText: true
+            }
+            row.getCell(6).numFmt = "#,##0"
+
+            row.getCell(7).alignment = {
+              vertical: "middle",
+              horizontal: "right",
+              wrapText: true
+            }
+            row.getCell(7).numFmt = "#,##0"
+          }
+
+          if (i === 0) row.getCell(8).numFmt = "#,##0"
+          if (i === 0) row.getCell(9).numFmt = "#,##0"
+          if (item || discountForRow > 0) row.getCell(10).numFmt = "#,##0"
+          if (discountForRow > 0) row.getCell(11).numFmt = "#,##0"
+          if (i === 0) row.getCell(12).numFmt = "#,##0"
+
+          row.getCell(14).fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFFEF2C9" }
+          }
+
+          for (let colNum = 1; colNum <= 18; colNum++) {
+            row.getCell(colNum).border = {
+              top: { style: "thin", color: { argb: "FF000000" } },
+              left: { style: "thin", color: { argb: "FF000000" } },
+              bottom: { style: "thin", color: { argb: "FF000000" } },
+              right: { style: "thin", color: { argb: "FF000000" } }
+            }
+          }
+          currentRow++
+        }
+
+        vtpTotals.quantity += order.items.reduce(
+          (sum: number, item: any) => sum + item.quantity,
+          0
+        )
+        vtpTotals.thanhTien += order.total
+        vtpTotals.tax += taxValue
+        vtpTotals.shipping += order.shippingCost || 0
+        vtpTotals.discount += totalDiscount
+        vtpTotals.valueAfterDiscount += order.total - totalDiscount
+        vtpTotals.collected +=
+          order.total + taxValue + (order.shippingCost || 0) - totalDiscount
+      }
+    })
+
+    // Add summary row for VTP
+    if (vtpOrders.length > 0) {
+      const vtpSummaryRow = worksheet.addRow([
+        "",
+        "",
+        "",
+        "",
+        vtpTotals.quantity,
+        "",
+        vtpTotals.thanhTien,
+        Math.round(vtpTotals.tax),
+        vtpTotals.shipping,
+        Math.round(vtpTotals.collected),
+        vtpTotals.discount,
+        vtpTotals.valueAfterDiscount,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ])
+
+      vtpSummaryRow.height = 42
+
+      worksheet.mergeCells(currentRow, 1, currentRow, 4)
+      worksheet.getCell(currentRow, 1).value = "TỔNG CỘNG VIETTEL POST"
+
+      vtpSummaryRow.font = {
+        name: "Times New Roman",
+        size: 12,
+        bold: true,
+        color: { argb: "FFFF0000" }
+      }
+      vtpSummaryRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFA8E9E3" }
+      }
+      vtpSummaryRow.alignment = { vertical: "middle", horizontal: "center" }
+
+      vtpSummaryRow.getCell(5).numFmt = "#,##0"
+      vtpSummaryRow.getCell(7).numFmt = "#,##0"
+      vtpSummaryRow.getCell(8).numFmt = "#,##0"
+      vtpSummaryRow.getCell(9).numFmt = "#,##0"
+      vtpSummaryRow.getCell(10).numFmt = "#,##0"
+      vtpSummaryRow.getCell(11).numFmt = "#,##0"
+      vtpSummaryRow.getCell(12).numFmt = "#,##0"
+
+      for (let colNum = 1; colNum <= 18; colNum++) {
+        vtpSummaryRow.getCell(colNum).border = {
+          top: { style: "thin", color: { argb: "FF000000" } },
+          left: { style: "thin", color: { argb: "FF000000" } },
+          bottom: { style: "thin", color: { argb: "FF000000" } },
+          right: { style: "thin", color: { argb: "FF000000" } }
+        }
+      }
+
+      currentRow++
+    }
+
+    // 3) Add OTHER orders (always separate each order, similar to cargo)
+    otherOrders.forEach((order) => addOrderRows(order, otherTotals))
+
+    // Add summary row for OTHER immediately after other orders
+    if (otherOrders.length > 0) {
+      const otherSummaryRow = worksheet.addRow([
+        "Ngày",
+        "",
+        "",
+        "",
+        otherTotals.quantity,
+        "",
+        otherTotals.thanhTien,
+        Math.round(otherTotals.tax),
+        otherTotals.shipping,
+        Math.round(otherTotals.collected),
+        otherTotals.discount,
+        otherTotals.valueAfterDiscount,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ])
+
+      otherSummaryRow.height = 42
+
+      worksheet.mergeCells(currentRow, 2, currentRow, 4)
+      worksheet.getCell(currentRow, 2).value = "TỔNG CỘNG KHÁC"
+
+      otherSummaryRow.font = {
+        name: "Times New Roman",
+        size: 12,
+        bold: true,
+        color: { argb: "FFFF0000" }
+      }
+      otherSummaryRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFA8E9E3" }
+      }
+      otherSummaryRow.alignment = { vertical: "middle", horizontal: "center" }
+
+      otherSummaryRow.getCell(5).numFmt = "#,##0"
+      otherSummaryRow.getCell(7).numFmt = "#,##0"
+      otherSummaryRow.getCell(8).numFmt = "#,##0"
+      otherSummaryRow.getCell(9).numFmt = "#,##0"
+      otherSummaryRow.getCell(10).numFmt = "#,##0"
+      otherSummaryRow.getCell(11).numFmt = "#,##0"
+      otherSummaryRow.getCell(12).numFmt = "#,##0"
+
+      for (let colNum = 1; colNum <= 18; colNum++) {
+        otherSummaryRow.getCell(colNum).border = {
+          top: { style: "thin", color: { argb: "FF000000" } },
+          left: { style: "thin", color: { argb: "FF000000" } },
+          bottom: { style: "thin", color: { argb: "FF000000" } },
+          right: { style: "thin", color: { argb: "FF000000" } }
+        }
+      }
+
+      currentRow++
+    }
+
+    // 4) Grand total row
+    const grandTotalRow = worksheet.addRow([
+      "",
+      "",
+      "",
+      "",
+      cargoTotals.quantity + vtpTotals.quantity + otherTotals.quantity,
+      "",
+      cargoTotals.thanhTien + vtpTotals.thanhTien + otherTotals.thanhTien,
+      Math.round(cargoTotals.tax + vtpTotals.tax + otherTotals.tax),
+      cargoTotals.shipping + vtpTotals.shipping + otherTotals.shipping,
+      Math.round(
+        cargoTotals.collected + vtpTotals.collected + otherTotals.collected
+      ),
+      cargoTotals.discount + vtpTotals.discount + otherTotals.discount,
+      cargoTotals.valueAfterDiscount +
+        vtpTotals.valueAfterDiscount +
+        otherTotals.valueAfterDiscount,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ])
+
+    grandTotalRow.height = 42
+
+    worksheet.mergeCells(currentRow, 1, currentRow, 4)
+    worksheet.getCell(currentRow, 1).value = "TỔNG CỘNG"
+
+    grandTotalRow.font = {
+      name: "Times New Roman",
+      size: 12,
+      bold: true,
+      color: { argb: "FFFF0000" }
+    }
+    grandTotalRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF4B7BE" }
+    }
+    grandTotalRow.alignment = { vertical: "middle", horizontal: "center" }
+
+    grandTotalRow.getCell(5).numFmt = "#,##0"
+    grandTotalRow.getCell(7).numFmt = "#,##0"
+    grandTotalRow.getCell(8).numFmt = "#,##0"
+    grandTotalRow.getCell(9).numFmt = "#,##0"
+    grandTotalRow.getCell(10).numFmt = "#,##0"
+    grandTotalRow.getCell(11).numFmt = "#,##0"
+    grandTotalRow.getCell(12).numFmt = "#,##0"
+
+    for (let colNum = 1; colNum <= 18; colNum++) {
+      grandTotalRow.getCell(colNum).border = {
+        top: { style: "thin", color: { argb: "FF000000" } },
+        left: { style: "thin", color: { argb: "FF000000" } },
+        bottom: { style: "thin", color: { argb: "FF000000" } },
+        right: { style: "thin", color: { argb: "FF000000" } }
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    return Buffer.from(buffer as ArrayBuffer)
+  }
 }
