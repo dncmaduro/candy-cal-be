@@ -392,6 +392,48 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Get("export/xlsx/accounting")
+  @HttpCode(HttpStatus.OK)
+  async exportOrdersToExcelForAccounting(
+    @Query("salesFunnelId") salesFunnelId?: string,
+    @Query("userId") userId?: string,
+    @Query("channelId") channelId?: string,
+    @Query("returning") returning?: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("searchText") searchText?: string,
+    @Query("shippingType") shippingType?: SalesOrderShippingType,
+    @Query("status") status?: SalesOrderStatus,
+    @Res() res?: Response
+  ): Promise<void> {
+    const buffer =
+      await this.salesOrdersService.exportOrdersToExcelForAccounting({
+        salesFunnelId,
+        userId,
+        channelId,
+        returning:
+          returning === "true"
+            ? true
+            : returning === "false"
+              ? false
+              : undefined,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        searchText,
+        shippingType,
+        status
+      })
+
+    const filename = `orders_accounting_${new Date().getTime()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
+  }
+
   @Roles("admin", "sales-emp")
   @Patch(":id/convert-official")
   @HttpCode(HttpStatus.OK)
