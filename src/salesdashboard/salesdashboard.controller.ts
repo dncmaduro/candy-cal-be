@@ -16,7 +16,7 @@ import { SalesDashboardService } from "./salesdashboard.service"
 export class SalesDashboardController {
   constructor(private readonly salesDashboardService: SalesDashboardService) {}
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("revenue-stats")
   @HttpCode(HttpStatus.OK)
   async getRevenueStats(
@@ -31,7 +31,7 @@ export class SalesDashboardController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("monthly-metrics")
   @HttpCode(HttpStatus.OK)
   async getMonthlyMetrics(
@@ -46,7 +46,7 @@ export class SalesDashboardController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("top-customers")
   @HttpCode(HttpStatus.OK)
   async getTopCustomersByRevenue(
