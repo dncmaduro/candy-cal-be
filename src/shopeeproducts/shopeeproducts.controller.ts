@@ -134,11 +134,23 @@ export class ShopeeProductsController {
   async searchShopeeProducts(
     @Query("searchText") searchText: string,
     @Query("page") page: string,
-    @Query("limit") limit: string
+    @Query("limit") limit: string,
+    @Query("deleted") deleted?: string
   ): Promise<{ data: ShopeeProduct[]; total: number }> {
     const p = Number(page) || 1
     const l = Number(limit) || 10
-    return this.shopeeService.searchShopeeProducts(searchText, p, l)
+    let deletedFilter: boolean | undefined = undefined
+    if (deleted === "true") {
+      deletedFilter = true
+    } else if (deleted === "false") {
+      deletedFilter = false
+    }
+    return this.shopeeService.searchShopeeProducts(
+      searchText,
+      p,
+      l,
+      deletedFilter
+    )
   }
 
   @Roles("admin", "order-emp")

@@ -7,6 +7,7 @@ export interface DeliveredRequestItem {
 
 export interface DeliveredRequest {
   date: Date
+  channel?: Types.ObjectId
   items: DeliveredRequestItem[]
   note?: string
   accepted?: boolean
@@ -26,6 +27,11 @@ const DeliveredRequestItemSchema = new Schema<DeliveredRequestItem>({
 
 export const DeliveredRequestSchema = new Schema<DeliveredRequest>({
   date: { type: Date, required: true },
+  channel: {
+    type: Schema.Types.ObjectId,
+    ref: "livestreamchannels",
+    required: false
+  },
   items: { type: [DeliveredRequestItemSchema], required: true },
   note: { type: String, required: false },
   accepted: { type: Boolean, required: false, default: false },

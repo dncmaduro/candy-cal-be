@@ -34,13 +34,19 @@ export interface DailyLogOrder {
 
 export interface DailyLog extends Document {
   date: Date
+  channel?: Types.ObjectId
   items: DailyLogItem[]
   orders: DailyLogOrder[]
   updatedAt: Date
 }
 
 export const DailyLogSchema = new Schema<DailyLog>({
-  date: { type: Date, required: true, unique: true },
+  date: { type: Date, required: true },
+  channel: {
+    type: Schema.Types.ObjectId,
+    ref: "livestreamchannels",
+    required: false
+  },
   items: [
     {
       _id: { type: Schema.Types.ObjectId, ref: "Item", required: true },
@@ -79,6 +85,8 @@ export const DailyLogSchema = new Schema<DailyLog>({
   ],
   updatedAt: { type: Date, default: Date.now }
 })
+
+DailyLogSchema.index({ date: 1, channel: 1 }, { unique: true })
 
 export const DailyLogModel = model<DailyLog>("DailyLog", DailyLogSchema)
 export default DailyLogModel
