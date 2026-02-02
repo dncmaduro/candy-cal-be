@@ -291,28 +291,34 @@ export class LivestreamperformanceService {
         // Determine income value based on baseOnRealIncome parameter
         let incomeValue: number
         if (baseOnRealIncome === true) {
-          // Use realIncome only (even if 0)
-          incomeValue = snapshot.realIncome ?? 0
+          // Use realIncome if > 0, otherwise fallback to income
+          incomeValue = snapshot.realIncome
         } else {
           // Use realIncome if available, otherwise use income (default behavior)
           incomeValue = snapshot.realIncome ?? snapshot.income
         }
 
-        console.log(snapshot, incomeValue)
+        if (snapshot.income === 4049405) {
+          console.log("snapshot", snapshot)
+        }
 
-        if (!incomeValue || incomeValue === 0) {
-          snapshotsSkipped++
-          details.push({
-            snapshotId: snapshot._id?.toString() || "",
-            userId: snapshot.assignee?.toString() || "",
-            userName: "",
-            income: incomeValue || 0,
-            salaryPerHour: 0,
-            bonusPercentage: 0,
-            total: 0,
-            status: "skipped"
-          })
-          continue
+        // if (!incomeValue || incomeValue === 0) {
+        //   snapshotsSkipped++
+        //   details.push({
+        //     snapshotId: snapshot._id?.toString() || "",
+        //     userId: snapshot.assignee?.toString() || "",
+        //     userName: "",
+        //     income: incomeValue || 0,
+        //     salaryPerHour: 0,
+        //     bonusPercentage: 0,
+        //     total: 0,
+        //     status: "skipped"
+        //   })
+        //   continue
+        // }
+
+        if (snapshot.income === 4049405) {
+          console.log("here:")
         }
 
         // Determine which user to calculate salary for
