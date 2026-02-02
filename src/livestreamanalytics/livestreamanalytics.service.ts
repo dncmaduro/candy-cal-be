@@ -6,6 +6,7 @@ import {
   LivestreamSnapshotEmbedded
 } from "../database/mongoose/schemas/Livestream"
 import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
+import { User } from "../database/mongoose/schemas/User"
 
 @Injectable()
 export class LivestreamanalyticsService {
@@ -13,7 +14,9 @@ export class LivestreamanalyticsService {
     @InjectModel("livestreams")
     private readonly livestreamModel: Model<Livestream>,
     @InjectModel("livestreammonthgoals")
-    private readonly livestreamMonthGoalModel: Model<LivestreamMonthGoal>
+    private readonly livestreamMonthGoalModel: Model<LivestreamMonthGoal>,
+    @InjectModel("users")
+    private readonly userModel: Model<User>
   ) {}
 
   // Get monthly totals for orders, income and ads
@@ -425,7 +428,23 @@ export class LivestreamanalyticsService {
         (a, b) => b.totalRevenue - a.totalRevenue
       )
 
-      return { rankings }
+      // Filter to only include users with role 'livestream-emp'
+      const filteredRankings = []
+      for (const ranking of rankings) {
+        // Skip "other" entries or check user role
+        if (ranking.hostId === "other") {
+          // Skip "other" entries as they don't have a user account
+          continue
+        }
+
+        // Check if user has 'livestream-emp' role
+        const user = await this.userModel.findById(ranking.hostId).exec()
+        if (user && user.roles.includes("livestream-emp")) {
+          filteredRankings.push(ranking)
+        }
+      }
+
+      return { rankings: filteredRankings }
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error
@@ -728,7 +747,23 @@ export class LivestreamanalyticsService {
         (a, b) => b.totalRevenue - a.totalRevenue
       )
 
-      return { rankings }
+      // Filter to only include users with role 'livestream-emp'
+      const filteredRankings = []
+      for (const ranking of rankings) {
+        // Skip "other" entries or check user role
+        if (ranking.hostId === "other") {
+          // Skip "other" entries as they don't have a user account
+          continue
+        }
+
+        // Check if user has 'livestream-emp' role
+        const user = await this.userModel.findById(ranking.hostId).exec()
+        if (user && user.roles.includes("livestream-emp")) {
+          filteredRankings.push(ranking)
+        }
+      }
+
+      return { rankings: filteredRankings }
     } catch (error) {
       console.error(error)
       if (error instanceof HttpException) throw error
