@@ -99,12 +99,14 @@ export class DeliveredRequestsController {
   @HttpCode(HttpStatus.OK)
   async searchRequests(
     @Req() req,
+    @Query("channelId") channelId?: string,
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ requests: DeliveredRequest[]; total: number }> {
     const res = await this.deliveredRequestsService.searchRequests(
+      channelId,
       startDate,
       endDate,
       page,
@@ -116,7 +118,7 @@ export class DeliveredRequestsController {
         action: "search",
         entity: "delivered_request",
         result: "success",
-        meta: { startDate, endDate, page, limit }
+        meta: { channelId, startDate, endDate, page, limit }
       },
       req.user.userId
     )
@@ -127,9 +129,10 @@ export class DeliveredRequestsController {
   @Get(":requestId")
   @HttpCode(HttpStatus.OK)
   async getRequest(
-    @Param("requestId") requestId: string
+    @Param("requestId") requestId: string,
+    @Query("channelId") channelId?: string
   ): Promise<DeliveredRequest> {
-    return this.deliveredRequestsService.getRequest(requestId)
+    return this.deliveredRequestsService.getRequest(requestId, channelId)
   }
 
   @Roles("admin", "accounting-emp")

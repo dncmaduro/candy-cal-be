@@ -4,7 +4,7 @@ import {
   InternalServerErrorException
 } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model } from "mongoose"
+import { Model, Types } from "mongoose"
 import { DeliveredRequest } from "../database/mongoose/schemas/DeliveredRequest"
 import { DeliveredRequestDto } from "./dto/deliveredrequests.dto"
 import { startOfDay, endOfDay } from "date-fns"
@@ -25,8 +25,11 @@ export class DeliveredRequestsService {
     const start = startOfDay(new Date(request.date))
     const end = endOfDay(new Date(request.date))
 
+    const baseQuery: any = { date: { $gte: start, $lte: end } }
+    if (request.channelId) baseQuery.channel = request.channelId
+
     const existed = await this.deliveredRequestModel.findOne({
-      date: { $gte: start, $lte: end },
+      ...baseQuery,
       accepted: true
     })
 
@@ -36,18 +39,21 @@ export class DeliveredRequestsService {
       )
     }
 
-    const newRequest = await this.deliveredRequestModel.findOneAndUpdate(
-      { date: { $gte: start, $lte: end } },
-      {
-        $set: {
-          items: request.items,
-          note: request.note,
-          date: request.date,
-          updatedAt: Date.now()
-        }
-      },
-      { upsert: true, new: true }
-    )
+    const newRequest = await this.deliveredRequestModel
+      .findOneAndUpdate(
+        baseQuery,
+        {
+          $set: {
+            items: request.items,
+            note: request.note,
+            date: request.date,
+            ...(request.channelId ? { channel: request.channelId } : {}),
+            updatedAt: Date.now()
+          }
+        },
+        { upsert: true, new: true }
+      )
+      .populate("channel")
 
     const notification: NotificationDto = {
       title: "Yêu cầu xuất kho cho vận đơn",
@@ -75,11 +81,13 @@ export class DeliveredRequestsService {
     }
   ): Promise<DeliveredRequest> {
     try {
-      const updated = await this.deliveredRequestModel.findByIdAndUpdate(
-        requestId,
-        { $push: { comments: comment } },
-        { new: true }
-      )
+      const updated = await this.deliveredRequestModel
+        .findByIdAndUpdate(
+          requestId,
+          { $push: { comments: comment } },
+          { new: true }
+        )
+        .populate("channel")
       if (!updated) throw new BadRequestException("Không tìm thấy yêu cầu")
       return updated
     } catch (error) {
@@ -90,13 +98,24 @@ export class DeliveredRequestsService {
 
   async acceptRequest(requestId: string): Promise<DeliveredRequest> {
     try {
-      const req = await this.deliveredRequestModel.findById(requestId)
+      const req = await this.deliveredRequestModel
+        .findById(requestId)
+        .populate("channel")
       if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
       if (req.accepted) throw new BadRequestException("Đã được chấp nhận rồi")
 
       req.accepted = true
       req.updatedAt = new Date()
       await req.save()
+
+      // Determine tag based on channel platform
+      let tag = "deliver-shopee" // default
+      if (req.channel) {
+        const channel = req.channel as any
+        if (channel.platform === "tiktokshop") {
+          tag = "deliver-tiktokshop"
+        }
+      }
 
       // Create single storage log with all items instead of multiple logs
       await this.storageLogsService.createRequest({
@@ -107,7 +126,8 @@ export class DeliveredRequestsService {
         status: "delivered",
         date: req.date,
         note: req.note,
-        deliveredRequestId: requestId
+        deliveredRequestId: requestId,
+        tag
       })
 
       return req
@@ -118,6 +138,7 @@ export class DeliveredRequestsService {
   }
 
   async searchRequests(
+    channelId?: string,
     startDate?: string,
     endDate?: string,
     page = 1,
@@ -125,6 +146,8 @@ export class DeliveredRequestsService {
   ): Promise<{ requests: DeliveredRequest[]; total: number }> {
     try {
       const query: any = {}
+
+      if (channelId) query.channel = channelId
 
       if (startDate && endDate) {
         query.date = { $gte: new Date(startDate), $lte: new Date(endDate) }
@@ -139,6 +162,7 @@ export class DeliveredRequestsService {
       const [requests, total] = await Promise.all([
         this.deliveredRequestModel
           .find(query)
+          .populate("channel")
           .sort({ date: -1 })
           .skip(skip)
           .limit(limit)
@@ -153,14 +177,28 @@ export class DeliveredRequestsService {
     }
   }
 
-  async getRequest(date: string): Promise<DeliveredRequest> {
+  async getRequest(
+    idOrDate: string,
+    channelId?: string
+  ): Promise<DeliveredRequest> {
     try {
-      const start = startOfDay(new Date(date))
-      const end = endOfDay(new Date(date))
+      if (Types.ObjectId.isValid(idOrDate)) {
+        const request = await this.deliveredRequestModel
+          .findById(idOrDate)
+          .populate("channel")
+        if (!request) throw new BadRequestException("Không tìm thấy yêu cầu")
+        return request
+      }
 
-      const request = await this.deliveredRequestModel.findOne({
-        date: { $gte: start, $lte: end }
-      })
+      const start = startOfDay(new Date(idOrDate))
+      const end = endOfDay(new Date(idOrDate))
+
+      const query: any = { date: { $gte: start, $lte: end } }
+      if (channelId) query.channel = channelId
+
+      const request = await this.deliveredRequestModel
+        .findOne(query)
+        .populate("channel")
 
       if (!request) {
         throw new BadRequestException("Không tìm thấy yêu cầu")
@@ -176,7 +214,9 @@ export class DeliveredRequestsService {
 
   async undoAcceptRequest(requestId: string): Promise<DeliveredRequest> {
     try {
-      const req = await this.deliveredRequestModel.findById(requestId)
+      const req = await this.deliveredRequestModel
+        .findById(requestId)
+        .populate("channel")
       if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
       if (!req.accepted) throw new BadRequestException("Chưa được chấp nhận")
 
