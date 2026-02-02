@@ -101,14 +101,14 @@ export class SalesChannelsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getChannelById(@Param("id") id: string): Promise<SalesChannel | null> {
     return this.salesChannelsService.getChannelById(id)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchChannels(
