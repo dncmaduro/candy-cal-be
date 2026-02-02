@@ -223,7 +223,10 @@ export class LivestreamperformanceService {
   }
 
   // 6. Calculate and save performance for all snapshots in a date
-  async calculateDailyPerformance(date: Date): Promise<{
+  async calculateDailyPerformance(
+    date: Date,
+    baseOnRealIncome?: boolean
+  ): Promise<{
     livestreamId: string
     date: Date
     snapshotsUpdated: number
@@ -285,8 +288,16 @@ export class LivestreamperformanceService {
 
       // Process each snapshot
       for (const snapshot of livestream.snapshots) {
-        // Use realIncome if available, otherwise use income
-        const incomeValue = snapshot.realIncome ?? snapshot.income
+        // Determine income value based on baseOnRealIncome parameter
+        let incomeValue: number
+        if (baseOnRealIncome === true) {
+          // Use realIncome only (even if 0)
+          incomeValue = snapshot.realIncome ?? 0
+        } else {
+          // Use realIncome if available, otherwise use income (default behavior)
+          incomeValue = snapshot.realIncome ?? snapshot.income
+        }
+
         console.log(snapshot, incomeValue)
 
         if (!incomeValue || incomeValue === 0) {

@@ -99,12 +99,15 @@ export class LivestreamperformanceController {
 
   @Roles("admin", "livestream-leader")
   @Post("calculate-daily")
-  async calculateDailyPerformance(@Body() payload: { date: string }) {
+  async calculateDailyPerformance(
+    @Body() payload: { date: string; baseOnRealIncome?: boolean }
+  ) {
     if (!payload.date) {
       return { error: "Date is required" }
     }
     return this.livestreamperformanceService.calculateDailyPerformance(
-      new Date(payload.date)
+      new Date(payload.date),
+      payload.baseOnRealIncome
     )
   }
 
@@ -152,11 +155,12 @@ export class LivestreamperformanceController {
       return
     }
 
-    const buffer = await this.livestreamperformanceService.exportMonthlySalaryToXlsx(
-      Number(year),
-      Number(month),
-      channelId
-    )
+    const buffer =
+      await this.livestreamperformanceService.exportMonthlySalaryToXlsx(
+        Number(year),
+        Number(month),
+        channelId
+      )
 
     const safeMonth = String(Number(month)).padStart(2, "0")
     const filename = `LuongLivestream_${year}_${safeMonth}${
