@@ -16,6 +16,7 @@ import { Response } from "express"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { format as formatDateFns } from "date-fns"
 import { OWN_USERS } from "../constants/own-users"
+import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 
 @Injectable()
 export class IncomeService {
@@ -26,7 +27,9 @@ export class IncomeService {
     private readonly monthGoalModel: Model<MonthGoal>,
     private readonly packingRulesService: PackingRulesService,
     @InjectModel("dailyads")
-    private readonly dailyAdsModel: Model<DailyAds>
+    private readonly dailyAdsModel: Model<DailyAds>,
+    @InjectModel("livestreamchannels")
+    private readonly livestreamChannelModel: Model<LivestreamChannel>
   ) {}
 
   /** @deprecated */
@@ -1739,6 +1742,21 @@ export class IncomeService {
       await this.updateIncomesBox(new Date(dto.date))
 
       // ====== 2) Xử lý file affiliate: update source (FIX RACE + IDEMPOTENT) ======
+      const channelDoc = await this.livestreamChannelModel
+        .findById(dto.channel, { usernames: 1, username: 1 })
+        .lean()
+      const channelUsernames = new Set(
+        [
+          ...(channelDoc?.usernames || []),
+          ...(channelDoc?.username ? [channelDoc.username] : [])
+        ]
+          .map((name) => String(name || "").trim().toLowerCase())
+          .filter(Boolean)
+      )
+
+      const normalizeCreator = (value: unknown) =>
+        String(value || "").trim().toLowerCase()
+
       const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
         type: "buffer"
       })
@@ -1760,7 +1778,7 @@ export class IncomeService {
         if (!orderId || !code || !Number.isFinite(quantity)) continue
 
         const creator = line["Tên người dùng nhà sáng tạo"]
-        const nextSource = OWN_USERS.includes(String(creator))
+        const nextSource = channelUsernames.has(normalizeCreator(creator))
           ? "ads"
           : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
               !line["Tỷ lệ hoa hồng tiêu chuẩn"]

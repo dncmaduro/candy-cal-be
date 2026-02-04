@@ -8,13 +8,15 @@ import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 import { DailyAdsSchema } from "../database/mongoose/schemas/DailyAds"
 import { NotificationsModule } from "../notifications/notifications.module"
+import { LivestreamChannelSchema } from "../database/mongoose/schemas/LivestreamChannel"
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: "incomes", schema: IncomeSchema },
       { name: "monthgoals", schema: MonthGoalSchema },
-      { name: "dailyads", schema: DailyAdsSchema }
+      { name: "dailyads", schema: DailyAdsSchema },
+      { name: "livestreamchannels", schema: LivestreamChannelSchema }
     ]),
     PackingRulesModule,
     SystemLogsModule,
