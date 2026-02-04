@@ -3,6 +3,7 @@ import { Document, model, Schema, Types } from "mongoose"
 export interface LivestreamChannel extends Document {
   name: string
   username: string
+  usernames: string[]
   link: string
   platform: "tiktokshop" | "shopee"
 }
@@ -10,6 +11,7 @@ export interface LivestreamChannel extends Document {
 export const LivestreamChannelSchema = new Schema<LivestreamChannel>({
   name: { type: String, required: true },
   username: { type: String, required: true },
+  usernames: { type: [String], default: [] },
   link: { type: String, required: true },
   platform: {
     type: String,

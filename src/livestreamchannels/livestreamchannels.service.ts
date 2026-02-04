@@ -13,6 +13,7 @@ export class LivestreamchannelsService {
   async createLivestreamChannel(payload: {
     name: string
     username: string
+    usernames?: string[]
     link: string
   }): Promise<LivestreamChannel> {
     try {
@@ -24,7 +25,17 @@ export class LivestreamchannelsService {
           "Channel already exists",
           HttpStatus.BAD_REQUEST
         )
-      const created = new this.livestreamChannelModel(payload)
+      const normalizedUsernames = Array.from(
+        new Set(
+          (payload.usernames?.length ? payload.usernames : [payload.username])
+            .map((name) => String(name || "").trim())
+            .filter(Boolean)
+        )
+      )
+      const created = new this.livestreamChannelModel({
+        ...payload,
+        usernames: normalizedUsernames
+      })
       return await created.save()
     } catch (error) {
       console.error(error)
@@ -47,7 +58,7 @@ export class LivestreamchannelsService {
       const filter: any = {}
       if (typeof searchText === "string" && searchText.trim() !== "") {
         const regex = new RegExp(searchText.trim(), "i")
-        filter.$or = [{ name: regex }, { username: regex }]
+        filter.$or = [{ name: regex }, { username: regex }, { usernames: regex }]
       }
       const [data, total] = await Promise.all([
         this.livestreamChannelModel
@@ -84,13 +95,27 @@ export class LivestreamchannelsService {
 
   async updateLivestreamChannel(
     id: string,
-    payload: { name?: string; username?: string; link?: string }
+    payload: {
+      name?: string
+      username?: string
+      usernames?: string[]
+      link?: string
+    }
   ): Promise<LivestreamChannel> {
     try {
       const updateObj: any = {}
       if (typeof payload.name !== "undefined") updateObj.name = payload.name
       if (typeof payload.username !== "undefined")
         updateObj.username = payload.username
+      if (typeof payload.usernames !== "undefined") {
+        updateObj.usernames = Array.from(
+          new Set(
+            payload.usernames
+              .map((name) => String(name || "").trim())
+              .filter(Boolean)
+          )
+        )
+      }
       if (typeof payload.link !== "undefined") updateObj.link = payload.link
 
       const updated = await this.livestreamChannelModel

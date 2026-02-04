@@ -34,6 +34,7 @@ export class LivestreamchannelsController {
     payload: {
       name: string
       username: string
+      usernames?: string[]
       link: string
     },
     @Req() req
@@ -95,7 +96,13 @@ export class LivestreamchannelsController {
   @HttpCode(HttpStatus.OK)
   async updateLivestreamChannel(
     @Param("id") id: string,
-    @Body() payload: { name?: string; username?: string; link?: string },
+    @Body()
+    payload: {
+      name?: string
+      username?: string
+      usernames?: string[]
+      link?: string
+    },
     @Req() req
   ) {
     const updated =
