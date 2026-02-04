@@ -137,6 +137,10 @@ export class LivestreamanalyticsService {
     kpi: number
   }> {
     try {
+      // add startDate and endDate 7 hours
+      startDate.setHours(startDate.getHours() + 7)
+      endDate.setHours(endDate.getHours() + 7)
+
       const start = new Date(startDate)
       start.setHours(0, 0, 0, 0)
       const end = new Date(endDate)
