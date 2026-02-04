@@ -3248,15 +3248,14 @@ export class SalesOrdersService {
       if (order.otherDiscount && order.otherDiscount > 0) {
         discountValues.push(order.otherDiscount)
       }
-      if (order.deposit && order.deposit > 0) {
-        discountValues.push(order.deposit)
-      }
+
+      // if (order.deposit && order.deposit > 0) {
+      //   discountValues.push(order.deposit)
+      // }
 
       // Calculate total discount
       const totalDiscount =
-        (order.orderDiscount || 0) +
-        (order.otherDiscount || 0) +
-        (order.deposit || 0)
+        (order.orderDiscount || 0) + (order.otherDiscount || 0)
 
       // Calculate total rows needed (max of items count and discount values count)
       const totalRowsNeeded = Math.max(
@@ -3541,14 +3540,12 @@ export class SalesOrdersService {
         if (order.otherDiscount && order.otherDiscount > 0) {
           discountValues.push(order.otherDiscount)
         }
-        if (order.deposit && order.deposit > 0) {
-          discountValues.push(order.deposit)
-        }
+        // if (order.deposit && order.deposit > 0) {
+        //   discountValues.push(order.deposit)
+        // }
 
         const totalDiscount =
-          (order.orderDiscount || 0) +
-          (order.otherDiscount || 0) +
-          (order.deposit || 0)
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
 
         const totalRowsNeeded = Math.max(
           order.items.length,
