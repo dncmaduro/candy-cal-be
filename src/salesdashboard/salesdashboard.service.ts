@@ -36,6 +36,7 @@ export interface RevenueByUser {
 
 export interface RevenueStatsResponse {
   totalRevenue: number
+  totalRevenueBeforeDiscount: number
   totalOrders: number
   totalQuantity: number
   totalTax: number
@@ -128,6 +129,10 @@ export class SalesDashboardService {
       }
 
       // Calculate total revenue and total orders
+      const totalRevenueBeforeDiscount = orders.reduce(
+        (sum, order) => sum + order.total,
+        0
+      )
       const totalRevenue = orders.reduce((sum, order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
@@ -290,6 +295,7 @@ export class SalesDashboardService {
 
       return {
         totalRevenue,
+        totalRevenueBeforeDiscount,
         totalOrders,
         totalQuantity,
         totalTax,
