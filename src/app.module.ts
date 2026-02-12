@@ -49,6 +49,7 @@ import { AppController } from "./app.controller"
 import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.module"
 import { GreetModule } from "./greet/greet.module"
 import { ShopeeIncomesModule } from "./shopeeincomes/shopeeincomes.module"
+import { AiModule } from "./ai/ai.module"
 
 @Module({
   imports: [
@@ -99,6 +100,7 @@ import { ShopeeIncomesModule } from "./shopeeincomes/shopeeincomes.module"
     SalesDailyReportsModule,
     GreetModule,
     ShopeeIncomesModule,
+    AiModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
