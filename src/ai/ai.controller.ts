@@ -25,10 +25,13 @@ export class AiController {
     @Body() body: AskAiDto,
     @Req() req: any
   ): Promise<{ answer: string; conversationId: string }> {
+    const debug =
+      String(req?.headers?.["x-ai-debug"] || "").toLowerCase() === "true"
     return this.aiService.ask(
       body.question,
       req.user?.userId,
-      body.conversationId
+      body.conversationId,
+      debug
     )
   }
 

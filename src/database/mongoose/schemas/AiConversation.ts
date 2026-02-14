@@ -9,6 +9,9 @@ export interface AiConversationMessage {
 export interface AiConversation extends Document {
   conversationId: string
   title?: string
+  pendingSelection?: {
+    options: Array<{ index: number; code?: string; name?: string }>
+  }
   userId: Types.ObjectId
   messages: AiConversationMessage[]
   expireAt: Date
@@ -29,6 +32,7 @@ export const AiConversationSchema = new Schema<AiConversation>(
   {
     conversationId: { type: String, required: true, index: true },
     title: { type: String, default: "" },
+    pendingSelection: { type: Object, required: false, default: null },
     userId: {
       type: Schema.Types.ObjectId,
       required: true,
