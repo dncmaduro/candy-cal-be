@@ -5,7 +5,8 @@ import {
   InternalServerErrorException
 } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model, Types, isValidObjectId } from "mongoose"
+import { InjectConnection } from "@nestjs/mongoose"
+import { Connection, Model, Types, isValidObjectId } from "mongoose"
 import axios from "axios"
 import { StorageItem } from "../database/mongoose/schemas/StorageItem"
 import { AiUsage } from "../database/mongoose/schemas/AiUsage"
@@ -20,6 +21,7 @@ import {
   AI_ROUTING_TABLES,
   RoutingSource
 } from "./ai.routing.context"
+import { AI_DB_TABLES } from "./ai.db.context"
 
 type OpenAiUsage = {
   prompt_tokens?: number
@@ -73,6 +75,7 @@ export class AiService {
     private readonly productModel: Model<Product>,
     @InjectModel("storagelogs")
     private readonly storageLogModel: Model<StorageLog>,
+    @InjectConnection() private readonly connection: Connection,
     @InjectModel("aiusages")
     private readonly aiUsageModel: Model<AiUsage>,
     @InjectModel("aiuserusages")
@@ -84,7 +87,8 @@ export class AiService {
   async ask(
     question: string,
     userId?: string,
-    conversationId?: string
+    conversationId?: string,
+    debug = false
   ): Promise<{ answer: string; conversationId: string }> {
     if (!question || !question.trim()) {
       throw new BadRequestException("Question is required")
@@ -121,20 +125,51 @@ export class AiService {
       safeConversationId,
       question
     )
-    const routing = await this.routeQuestion(question)
-    const facts =
-      routing.source === "storageitems"
-        ? await this.buildFacts(question)
-        : routing.source === "products"
-        ? await this.buildProductFacts(question)
-        : routing.source === "storagelogs"
-        ? await this.buildStorageLogFacts(question)
-        : { type: "unknown", message: "Khong xac dinh duoc bang du lieu" }
+    const resolved = this.resolveAmbiguitySelection(question, conversation)
+    if (resolved.question !== question) {
+      console.info("[ai] resolvedQuestion", { from: question, to: resolved.question })
+    }
+    let queryPlan = resolved.plan
+      ? resolved.plan
+      : await this.planDataFetch(resolved.question, conversation)
+    if (!queryPlan?.tables?.length) {
+      const direct =
+        this.buildDirectPlan(resolved.question, conversation) ||
+        this.buildFallbackPlanFromContext(resolved.question)
+      if (direct) queryPlan = direct
+    }
+    const fetchedResult = await this.fetchDataByPlan(queryPlan, debug)
+    const fetchedData = fetchedResult.data
+    console.info("[ai] plan", queryPlan)
+    console.info("[ai] fetched.keys", Object.keys(fetchedData))
+    console.info("[ai] fetched.meta", fetchedResult.meta)
+    const ambiguity = this.detectNameAmbiguity(queryPlan, fetchedResult)
+    if (ambiguity) {
+      await this.storePendingSelection(conversation, ambiguity.options)
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        {
+          role: "assistant",
+          content: ambiguity.message,
+          createdAt: new Date()
+        }
+      ])
+      return { answer: ambiguity.message, conversationId: safeConversationId }
+    }
+    const facts = {
+      plan: queryPlan,
+      data: fetchedData
+    }
     const systemPrompt =
       "Ban la tro ly tra loi dua tren du lieu duoc cung cap. " +
-      "Tra loi ngan gon 1-2 cau, chi du thong tin can thiet. " +
+      "Tra loi tu do, ro rang, dung du lieu. " +
+      "Neu co nhieu nguon du lieu hoac nhieu dong ket qua, hay tach rieng tung nguon/tung dong, khong gop chung. " +
+      "Neu data la danh sach (array) co nhieu phan tu, phai liet ke tung phan tu voi cac truong chinh. " +
       "Neu khong du du lieu hoac khong tim thay, noi ro. " +
-      "Khong tu suy doan."
+      "Khong tu suy doan. " +
+      "Neu hoi ve so thung: so thung = floor(ton kho / so luong moi thung), so du le = ton kho % so luong moi thung. " +
+      "Neu hoi ve tong so luong trong nhat ky kho, tong = sum(quantity) cua cac log. " +
+      "Bat buoc liet ke DAY DU tat ca phan tu trong cac mang du lieu; khong duoc chon 1 phan tu."
     const userPrompt =
       `Cau hoi: ${question}\n` + `Du lieu: ${JSON.stringify(facts)}`
 
@@ -162,8 +197,9 @@ export class AiService {
       userPrompt,
       historyMessages
     )
+    console.info("[ai] answer.raw", responseText)
     await this.appendConversationMessages(conversation, [
-      { role: "user", content: question, createdAt: new Date() },
+      { role: "user", content: resolved.question, createdAt: new Date() },
       { role: "assistant", content: responseText.trim(), createdAt: new Date() }
     ])
     return { answer: responseText.trim(), conversationId: safeConversationId }
@@ -596,6 +632,543 @@ export class AiService {
         return null
       }
     }
+  }
+
+  private async planDataFetch(
+    question: string,
+    conversation?: AiConversation | null
+  ): Promise<{
+    tables: Array<{
+      collection: string
+      filter?: Record<string, any>
+      projection?: string[]
+      sort?: Record<string, 1 | -1>
+      limit?: number
+    }>
+    reason?: string
+  }> {
+    const directPlan = this.buildDirectPlan(question, conversation)
+    if (directPlan) return directPlan
+
+    const context = AI_DB_TABLES.map((t) => ({
+      collection: t.collection,
+      description: t.description,
+      keyFields: t.keyFields
+    }))
+    const systemPrompt =
+      "Ban la bo lap ke hoach truy van du lieu. " +
+      "Dua vao cau hoi va mo ta bang, chon cac bang can truy van. " +
+      "Tra ve dung JSON: {\"tables\":[{\"collection\":\"...\",\"filter\":{...},\"projection\":[...],\"sort\":{...},\"limit\":number}],\"reason\":\"...\"}. " +
+      "Chi chon cac bang can thiet (toi da 3). " +
+      "Neu khong chac, de tables rong. " +
+      "Moi cau hoi ve ton kho bat buoc truy van bang storageitems."
+    const lastUserQuestion = conversation
+      ? [...conversation.messages]
+          .reverse()
+          .find((m) => m.role === "user")?.content
+      : undefined
+    const pendingSelection = conversation?.pendingSelection?.options?.length
+      ? conversation.pendingSelection.options
+      : null
+    const pendingContext = pendingSelection
+      ? pendingSelection
+          .map((o) => {
+            const code = o.code ? ` (ma: ${o.code})` : ""
+            const name = o.name || "Khong ro ten"
+            return `${o.index}. ${name}${code}`
+          })
+          .join("\n")
+      : ""
+    const userPrompt =
+      `Cau hoi: ${question}\n` +
+      (lastUserQuestion ? `Cau hoi truoc do: ${lastUserQuestion}\n` : "") +
+      (pendingContext
+        ? `Dang cho nguoi dung chon 1 trong cac ket qua:\n${pendingContext}\n`
+        : "") +
+      `Mo ta bang:\n${JSON.stringify(context)}`
+
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const parsed = this.safeParseRoute(raw)
+      if (!parsed || !Array.isArray(parsed.tables)) return { tables: [] }
+      const tables = parsed.tables
+        .map((t: any) => {
+          if (typeof t === "string") return { collection: t }
+          return t
+        })
+        .filter((t: any) => t && typeof t.collection === "string")
+      return {
+        tables,
+        reason: typeof parsed.reason === "string" ? parsed.reason : undefined
+      }
+    } catch {
+      return { tables: [] }
+    }
+  }
+
+  private buildDirectPlan(question: string, conversation?: AiConversation | null) {
+    const trimmed = question.trim()
+    const codeMatch = trimmed.match(/^(ma|mã)\s+([a-z0-9_-]+)/i)
+    if (codeMatch?.[2]) {
+      const code = codeMatch[2].toUpperCase()
+      return {
+        tables: [
+          {
+            collection: "storageitems",
+            filter: { code },
+            projection: ["code", "name", "restQuantity", "quantityPerBox"],
+            limit: 1
+          }
+        ],
+        reason: "Truy van storageitems theo ma hang."
+      }
+    }
+
+    const nameMatch = trimmed.match(/^(mat hang|mặt hàng)\s+(.+)/i)
+    if (nameMatch?.[2]) {
+      const name = nameMatch[2].trim()
+      return {
+        tables: [
+          {
+            collection: "storageitems",
+            filter: { name },
+            projection: ["code", "name", "restQuantity", "quantityPerBox"],
+            limit: 99
+          }
+        ],
+        reason: "Truy van storageitems theo ten mat hang."
+      }
+    }
+    const tonKhoName = this.extractNameAfterTonKho(trimmed)
+    if (tonKhoName) {
+      return {
+        tables: [
+          {
+            collection: "storageitems",
+            filter: { name: tonKhoName },
+            projection: ["code", "name", "restQuantity", "quantityPerBox"],
+            limit: 99
+          }
+        ],
+        reason: "Cau hoi ton kho: truy van storageitems theo ten mat hang."
+      }
+    }
+    const lower = trimmed
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    if (/^(ket\\s*qua|ket qua|kq|chon|option)\\s*\\d+$/.test(lower)) {
+      const lastUserQuestion = conversation
+        ? [...conversation.messages]
+            .reverse()
+            .find((m) => m.role === "user")?.content
+        : undefined
+      if (lastUserQuestion && /ton kho|tồn kho/.test(lastUserQuestion)) {
+        return {
+          tables: [
+            {
+              collection: "storageitems",
+              filter: {},
+              projection: ["code", "name", "restQuantity", "quantityPerBox"],
+              limit: 99
+            }
+          ],
+          reason: "Ngu canh truoc do la ton kho; can truy van storageitems."
+        }
+      }
+    }
+    return null
+  }
+
+  private async fetchDataByPlan(
+    plan: {
+    tables: Array<{
+      collection: string
+      filter?: Record<string, any>
+      projection?: string[]
+      sort?: Record<string, 1 | -1>
+      limit?: number
+    }>
+  },
+    debug = false
+  ) {
+    const result: Record<string, any> = {}
+    const meta: Record<
+      string,
+      {
+        filter: Record<string, any>
+        projection?: Record<string, 1>
+        sort?: Record<string, 1 | -1>
+        limit: number
+        count: number
+        sample: any[]
+      }
+    > = {}
+    const tables = Array.isArray(plan.tables) ? plan.tables.slice(0, 3) : []
+
+    for (const table of tables) {
+      if (!table?.collection) continue
+      let model: Model<any>
+      try {
+        model = this.connection.model(table.collection)
+      } catch {
+        continue
+      }
+
+      let filter =
+        table.filter && typeof table.filter === "object" ? table.filter : {}
+      filter = this.applyLikeFilters(filter)
+      let projection =
+        Array.isArray(table.projection) && table.projection.length
+          ? table.projection.reduce((acc: Record<string, 1>, f: string) => {
+              if (typeof f === "string" && f.trim()) acc[f.trim()] = 1
+              return acc
+            }, {})
+          : undefined
+      if (table.collection === "storageitems") {
+        projection = projection || {}
+        projection.code = 1
+        projection.name = 1
+        projection.restQuantity = 1
+        projection.quantityPerBox = 1
+      }
+      const sort =
+        table.sort && typeof table.sort === "object" ? table.sort : undefined
+      const limitRaw = Number(table.limit || 20)
+      let limit = Math.max(1, Math.min(200, limitRaw))
+      const hasRegex = Object.values(filter).some(
+        (v) => v && typeof v === "object" && "$regex" in v
+      )
+      if (hasRegex && limit < 99) {
+        limit = 99
+      }
+
+      const query = model.find(filter, projection).limit(limit)
+      if (sort) query.sort(sort)
+      const docs = await query.lean().exec()
+      result[table.collection] = docs
+      meta[table.collection] = {
+        filter,
+        projection,
+        sort,
+        limit,
+        count: docs.length,
+        sample: docs.slice(0, 2)
+      }
+    }
+
+    return { data: result, meta }
+  }
+
+  private detectNameAmbiguity(
+    plan: {
+      tables: Array<{
+        collection: string
+        filter?: Record<string, any>
+      }>
+    },
+    fetchedResult: { data: Record<string, any>; meta: Record<string, any> }
+  ): { message: string; options: Array<{ index: number; code?: string; name?: string }> } | null {
+    const tables = Array.isArray(plan.tables) ? plan.tables : []
+    for (const table of tables) {
+      const filter = table?.filter || {}
+      const nameFilter = filter?.name
+      const usedName =
+        (nameFilter && typeof nameFilter === "object" && "$regex" in nameFilter) ||
+        (typeof nameFilter === "string" && nameFilter.trim())
+      if (!usedName) continue
+
+      const rows = fetchedResult.data?.[table.collection]
+      if (Array.isArray(rows) && rows.length > 1) {
+        const opts = rows.map((r: any, idx: number) => ({
+          index: idx + 1,
+          code: r?.code,
+          name: r?.name
+        }))
+        const options = opts
+          .map((o) => {
+            const code = o.code ? ` (ma: ${o.code})` : ""
+            const name = o.name || "Khong ro ten"
+            return `${o.index}. ${name}${code}`
+          })
+          .join("\n")
+        return {
+          message:
+            "Co nhieu ket qua phu hop. " +
+            "Ban muon AI tra loi theo ket qua nao?\n" +
+            options,
+          options: opts
+        }
+      }
+    }
+    return null
+  }
+
+  private async storePendingSelection(
+    conversation: AiConversation | null,
+    options: Array<{ index: number; code?: string; name?: string }>
+  ) {
+    if (!conversation?._id) return
+    await this.aiConversationModel.updateOne(
+      { _id: conversation._id },
+      { $set: { pendingSelection: { options } } }
+    )
+  }
+
+  private resolveAmbiguitySelection(
+    question: string,
+    conversation: AiConversation | null
+  ): { question: string; plan?: { tables: Array<any>; reason?: string } } {
+    const trimmed = question.trim()
+    const normalizeText = (value: string) =>
+      value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+    const normalized = normalizeText(trimmed)
+    const directNumber = normalized.match(/^\d+$/)
+    const phraseNumber = normalized.match(
+      /(?:ket\\s*qua|ket qua|ket qua so|kq|chon|option)\\s*(\\d+)/i
+    )
+    const ordinalNumber = normalized.match(/(?:thu|thứ)\\s*(\\d+)/i)
+    const anyNumber = normalized.match(/(\\d+)/)
+    const choiceText =
+      directNumber?.[0] ||
+      phraseNumber?.[1] ||
+      ordinalNumber?.[1] ||
+      anyNumber?.[1]
+    const choiceIndex = choiceText ? Number(choiceText) : NaN
+    if (conversation?.pendingSelection?.options?.length) {
+      const option = Number.isFinite(choiceIndex)
+        ? conversation.pendingSelection.options.find(
+            (o) => o.index === choiceIndex
+          )
+        : undefined
+      if (option?.code || option?.name) {
+        const code = option?.code?.toUpperCase()
+        if (conversation?._id) {
+          this.aiConversationModel.updateOne(
+            { _id: conversation._id },
+            { $unset: { pendingSelection: "" } }
+          )
+        }
+        if (code) {
+          return {
+            question: `ma ${code}`,
+            plan: {
+              tables: [
+                {
+                  collection: "storageitems",
+                  filter: { code },
+                  projection: ["code", "name", "restQuantity", "quantityPerBox"],
+                  limit: 1
+                }
+              ],
+              reason: "Truy van storageitems theo ma hang (chon tu danh sach)."
+            }
+          }
+        }
+        return {
+          question: `mat hang ${option.name}`,
+          plan: {
+            tables: [
+              {
+                collection: "storageitems",
+                filter: { name: option.name },
+                projection: ["code", "name", "restQuantity", "quantityPerBox"],
+                limit: 99
+              }
+            ],
+            reason: "Truy van storageitems theo ten (chon tu danh sach)."
+          }
+        }
+      }
+
+      const normalizedQuestion = normalized
+      const codeMatch = conversation.pendingSelection.options.find(
+        (o) =>
+          o.code &&
+          normalizedQuestion.includes(normalizeText(String(o.code)))
+      )
+      if (codeMatch?.code) {
+        const code = codeMatch.code.toUpperCase()
+        if (conversation?._id) {
+          this.aiConversationModel.updateOne(
+            { _id: conversation._id },
+            { $unset: { pendingSelection: "" } }
+          )
+        }
+        return {
+          question: `ma ${code}`,
+          plan: {
+            tables: [
+              {
+                collection: "storageitems",
+                filter: { code },
+                projection: ["code", "name", "restQuantity", "quantityPerBox"],
+                limit: 1
+              }
+            ],
+            reason: "Truy van storageitems theo ma hang (chon tu danh sach)."
+          }
+        }
+      }
+
+      const nameMatch = conversation.pendingSelection.options.find(
+        (o) =>
+          o.name &&
+          normalizedQuestion.includes(normalizeText(String(o.name)))
+      )
+      if (nameMatch?.name) {
+        const code = nameMatch.code?.toUpperCase()
+        if (conversation?._id) {
+          this.aiConversationModel.updateOne(
+            { _id: conversation._id },
+            { $unset: { pendingSelection: "" } }
+          )
+        }
+        if (code) {
+          return {
+            question: `ma ${code}`,
+            plan: {
+              tables: [
+                {
+                  collection: "storageitems",
+                  filter: { code },
+                  projection: ["code", "name", "restQuantity", "quantityPerBox"],
+                  limit: 1
+                }
+              ],
+              reason: "Truy van storageitems theo ma hang (chon tu danh sach)."
+            }
+          }
+        }
+        return {
+          question: `mat hang ${nameMatch.name}`,
+          plan: {
+            tables: [
+              {
+                collection: "storageitems",
+                filter: { name: nameMatch.name },
+                projection: ["code", "name", "restQuantity", "quantityPerBox"],
+                limit: 99
+              }
+            ],
+            reason: "Truy van storageitems theo ten (chon tu danh sach)."
+          }
+        }
+      }
+    } else if (!choiceText) {
+      return { question }
+    }
+
+    if (!conversation?.messages?.length) return { question }
+    const assistantMessages = [...conversation.messages]
+      .reverse()
+      .filter((m) => m.role === "assistant" && m.content)
+    if (!assistantMessages.length) return { question }
+
+    let optionLines: string[] = []
+    for (const msg of assistantMessages) {
+      const lines = msg.content.split("\n")
+      const candidates = lines.filter((l) => /^\s*\d+\.\s+/.test(l))
+      if (candidates.length) {
+        optionLines = candidates
+        break
+      }
+    }
+    if (!optionLines.length) return { question }
+    const selected = optionLines.find((l) =>
+      new RegExp(`^\\s*${choiceIndex}\\.\\s+`).test(l)
+    )
+    if (!selected) return { question }
+
+    const codeMatch = selected.match(/\(ma:\s*([A-Za-z0-9_-]+)\)/i)
+    const nameMatch = selected
+      .replace(/^\s*\d+\.\s+/, "")
+      .replace(/\s*\(ma:.*\)$/i, "")
+      .trim()
+    if (codeMatch?.[1]) {
+      const code = codeMatch[1].toUpperCase()
+      return {
+        question: `ma ${code}`,
+        plan: {
+          tables: [
+            {
+              collection: "storageitems",
+              filter: { code },
+              projection: ["code", "name", "restQuantity", "quantityPerBox"],
+              limit: 1
+            }
+          ],
+          reason: "Truy van storageitems theo ma hang (chon tu danh sach)."
+        }
+      }
+    }
+    if (nameMatch) {
+      return {
+        question: `mat hang ${nameMatch}`,
+        plan: {
+          tables: [
+            {
+              collection: "storageitems",
+              filter: { name: nameMatch },
+              projection: ["code", "name", "restQuantity", "quantityPerBox"],
+              limit: 99
+            }
+          ],
+          reason: "Truy van storageitems theo ten (chon tu danh sach)."
+        }
+      }
+    }
+    return { question }
+  }
+
+  private applyLikeFilters(filter: Record<string, any>) {
+    const out: Record<string, any> = { ...filter }
+    const likeKeys = new Set(["name", "code"])
+    for (const key of Object.keys(out)) {
+      const value = out[key]
+      if (likeKeys.has(key) && typeof value === "string" && value.trim()) {
+        const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        out[key] = { $regex: escaped, $options: "i" }
+      }
+    }
+    return out
+  }
+
+  private extractNameAfterTonKho(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const match = normalized.match(/ton kho\\s*(cua|của)?\\s*(mat hang|mặt hàng)?\\s*([^?!.]+)/i)
+    if (!match?.[3]) return null
+    let name = match[3].trim()
+    name = name.replace(/(la bao nhieu|bao nhieu|hien tai la bao nhieu|hien tai|la gi)$/i, "").trim()
+    return name || null
+  }
+
+  private buildFallbackPlanFromContext(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    if (/ton kho|tồn kho/.test(normalized)) {
+      const name = this.extractNameAfterTonKho(question)
+      return {
+        tables: [
+          {
+            collection: "storageitems",
+            filter: name ? { name } : {},
+            projection: ["code", "name", "restQuantity", "quantityPerBox"],
+            limit: 99
+          }
+        ],
+        reason: "Fallback theo context: cau hoi ve ton kho => storageitems."
+      }
+    }
+    return null
   }
 
   private extractCode(question: string) {
