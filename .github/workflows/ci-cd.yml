@@ -37,11 +37,25 @@ jobs:
             PORT=${{ secrets.PORT }}
             DATABASE_URL=${{ secrets.DATABASE_URL }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}
+            OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
 
   deploy:
     needs: build-and-push
     runs-on: self-hosted
     steps:
+      - name: Write runtime .env
+        run: |
+          cat > /opt/candy-cal-be/.env << 'EOF'
+          PORT=${{ secrets.PORT }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}
+          OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
+          EOF
+
       - name: Pull image & restart container
         run: |
           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/candy-cal-be:latest
