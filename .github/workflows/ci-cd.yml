@@ -39,7 +39,6 @@ jobs:
             JWT_SECRET=${{ secrets.JWT_SECRET }}
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}
-            OPENAI_BASE_URL=${{ secrets.OPENAI_BASE_URL }}
 
   deploy:
     needs: build-and-push
