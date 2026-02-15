@@ -39,7 +39,7 @@ export class AiService {
   private readonly temperature = Number(process.env.AI_TEMPERATURE || "0.2")
   private readonly timeoutMs = Number(process.env.AI_TIMEOUT_MS || "15000")
   private readonly maxOutputTokens = Number(
-    process.env.AI_MAX_OUTPUT_TOKENS || "120"
+    process.env.AI_MAX_OUTPUT_TOKENS || "0"
   )
   private readonly maxQuestionChars = Number(
     process.env.AI_MAX_QUESTION_CHARS || "1000"
@@ -196,7 +196,9 @@ export class AiService {
     )
     const estimatedCost =
       this.costForInputTokens(estimatedInputTokens) +
-      this.costForOutputTokens(this.maxOutputTokens)
+      this.costForOutputTokens(
+        this.maxOutputTokens > 0 ? this.maxOutputTokens : 2048
+      )
     if (remainingBudget < estimatedCost) {
       throw new ForbiddenException("AI budget too low for this request")
     }
@@ -225,7 +227,9 @@ export class AiService {
         {
           model: this.model,
           temperature: this.temperature,
-          max_tokens: this.maxOutputTokens,
+          ...(this.maxOutputTokens > 0
+            ? { max_tokens: this.maxOutputTokens }
+            : {}),
           messages: [
             { role: "system", content: systemPrompt },
             ...history,
@@ -670,7 +674,9 @@ export class AiService {
       "Tra ve dung JSON: {\"tables\":[{\"collection\":\"...\",\"filter\":{...},\"projection\":[...],\"sort\":{...},\"limit\":number}],\"reason\":\"...\"}. " +
       "Chi chon cac bang can thiet (toi da 3). " +
       "Neu khong chac, de tables rong. " +
-      "Moi cau hoi ve ton kho bat buoc truy van bang storageitems."
+      "Moi cau hoi ve ton kho bat buoc truy van bang storageitems. " +
+      "Cau hoi ve SKU Tiktok Shop bat buoc truy van bang products. " +
+      "Cau hoi ve SKU Shopee bat buoc truy van bang shopeeproducts."
     const lastUserQuestion = conversation
       ? [...conversation.messages]
           .reverse()
@@ -717,6 +723,33 @@ export class AiService {
 
   private buildDirectPlan(question: string, conversation?: AiConversation | null) {
     const trimmed = question.trim()
+    const skuChannel = this.detectSkuChannel(trimmed, conversation)
+    if (skuChannel === "tiktok") {
+      return {
+        tables: [
+          {
+            collection: "products",
+            filter: { deletedAt: null },
+            projection: ["name", "items"],
+            limit: 200
+          }
+        ],
+        reason: "Cau hoi ve SKU Tiktok Shop: truy van products."
+      }
+    }
+    if (skuChannel === "shopee") {
+      return {
+        tables: [
+          {
+            collection: "shopeeproducts",
+            filter: { deletedAt: null },
+            projection: ["name", "items"],
+            limit: 200
+          }
+        ],
+        reason: "Cau hoi ve SKU Shopee: truy van shopeeproducts."
+      }
+    }
     const codeMatch = trimmed.match(/^(ma|mã)\s+([a-z0-9_-]+)/i)
     if (codeMatch?.[2]) {
       const code = codeMatch[2].toUpperCase()
@@ -789,6 +822,37 @@ export class AiService {
     return null
   }
 
+  private detectSkuChannel(
+    question: string,
+    conversation?: AiConversation | null
+  ): "tiktok" | "shopee" | null {
+    const normalize = (value: string) =>
+      value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+    const normalized = normalize(question)
+    const hasSkuSignal = /(sku|ma sku|danh sach sku|cac sku)/.test(normalized)
+    const hasTiktok = /(tiktok|tik tok)/.test(normalized)
+    const hasShopee = /shopee/.test(normalized)
+    if (hasSkuSignal && hasTiktok) return "tiktok"
+    if (hasSkuSignal && hasShopee) return "shopee"
+    const lastUserQuestion = conversation
+      ? [...conversation.messages]
+          .reverse()
+          .find((m) => m.role === "user")?.content
+      : ""
+    const prev = normalize(lastUserQuestion || "")
+    const prevHasSkuSignal = /(sku|ma sku|danh sach sku|cac sku)/.test(prev)
+    if (prevHasSkuSignal && hasTiktok) return "tiktok"
+    if (prevHasSkuSignal && hasShopee) return "shopee"
+    if (hasSkuSignal) {
+      if (/(tiktok|tik tok)/.test(prev)) return "tiktok"
+      if (/shopee/.test(prev)) return "shopee"
+    }
+    return null
+  }
+
   private async fetchDataByPlan(
     plan: {
     tables: Array<{
@@ -855,18 +919,75 @@ export class AiService {
       const query = model.find(filter, projection).limit(limit)
       if (sort) query.sort(sort)
       const docs = await query.lean().exec()
-      result[table.collection] = docs
+      const normalizedDocs =
+        table.collection === "products" || table.collection === "shopeeproducts"
+          ? await this.normalizeSkuProductRows(docs)
+          : docs
+      result[table.collection] = normalizedDocs
       meta[table.collection] = {
         filter,
         projection,
         sort,
         limit,
-        count: docs.length,
-        sample: docs.slice(0, 2)
+        count: normalizedDocs.length,
+        sample: normalizedDocs.slice(0, 2)
       }
     }
 
     return { data: result, meta }
+  }
+
+  private async normalizeSkuProductRows(rows: any[]) {
+    if (!Array.isArray(rows)) return []
+    const storageIdSet = new Set<string>()
+    for (const row of rows) {
+      const items = Array.isArray(row?.items) ? row.items : []
+      for (const item of items) {
+        const storageId = item?._id
+        if (storageId) storageIdSet.add(String(storageId))
+      }
+    }
+
+    let storageMap = new Map<string, { code?: string; name?: string }>()
+    if (storageIdSet.size) {
+      let storageModel: Model<any> | null = null
+      try {
+        storageModel = this.connection.model("storageitems")
+      } catch {
+        storageModel = null
+      }
+      if (storageModel) {
+        const storageRows = await storageModel
+          .find(
+            { _id: { $in: Array.from(storageIdSet) } },
+            { code: 1, name: 1 }
+          )
+          .lean()
+          .exec()
+        storageMap = new Map(
+          storageRows.map((row: any) => [
+            String(row._id),
+            { code: row.code, name: row.name }
+          ])
+        )
+      }
+    }
+
+    return rows.map((row) => ({
+      _id: row?._id,
+      name: row?.name,
+      deletedAt: row?.deletedAt ?? null,
+      items: Array.isArray(row?.items)
+        ? row.items.map((item: any) => {
+            const storage = storageMap.get(String(item?._id || ""))
+            return {
+              code: storage?.code,
+              name: storage?.name,
+              quantity: item?.quantity ?? 0
+            }
+          })
+        : []
+    }))
   }
 
   private detectNameAmbiguity(
