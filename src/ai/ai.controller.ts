@@ -8,10 +8,13 @@ import {
   UseGuards,
   Req,
   Query,
-  Delete
+  Delete,
+  Patch
 } from "@nestjs/common"
 import { AiService } from "./ai.service"
 import { AskAiDto } from "./dto/ask.dto"
+import { CreateAiFeedbackDto } from "./dto/feedback.dto"
+import { UpdateConversationTitleDto } from "./dto/update-conversation-title.dto"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 
 @Controller("ai")
@@ -109,6 +112,56 @@ export class AiController {
     await this.aiService.clearConversationHistory(
       req.user?.userId,
       conversationId
+    )
+  }
+
+  @Patch("conversations/title")
+  @HttpCode(HttpStatus.OK)
+  async updateConversationTitle(
+    @Req() req: any,
+    @Body() body: UpdateConversationTitleDto
+  ): Promise<{ conversationId: string; title: string }> {
+    return this.aiService.updateConversationTitle(
+      req.user?.userId,
+      body.conversationId,
+      body.title
+    )
+  }
+
+  @Post("feedback")
+  @HttpCode(HttpStatus.CREATED)
+  async createFeedback(
+    @Req() req: any,
+    @Body() body: CreateAiFeedbackDto
+  ): Promise<{
+    feedbackId: string
+    conversationId: string
+    createdAt: Date
+  }> {
+    return this.aiService.createFeedback(req.user?.userId, body)
+  }
+
+  @Get("feedback")
+  @HttpCode(HttpStatus.OK)
+  async listFeedback(
+    @Req() req: any,
+    @Query("conversationId") conversationId?: string,
+    @Query("limit") limit?: string
+  ): Promise<{
+    data: Array<{
+      feedbackId: string
+      conversationId: string
+      description: string
+      expected?: string
+      actual?: string
+      rating?: number
+      createdAt: Date
+    }>
+  }> {
+    return this.aiService.listFeedback(
+      req.user?.userId,
+      conversationId,
+      Number(limit) || 20
     )
   }
 }

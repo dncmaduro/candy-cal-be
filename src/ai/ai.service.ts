@@ -15,6 +15,7 @@ import {
   AiConversation,
   AiConversationMessage
 } from "../database/mongoose/schemas/AiConversation"
+import { AiFeedback } from "../database/mongoose/schemas/AiFeedback"
 import { Product } from "../database/mongoose/schemas/Product"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import {
@@ -81,7 +82,9 @@ export class AiService {
     @InjectModel("aiuserusages")
     private readonly aiUserUsageModel: Model<AiUserUsage>,
     @InjectModel("aiconversations")
-    private readonly aiConversationModel: Model<AiConversation>
+    private readonly aiConversationModel: Model<AiConversation>,
+    @InjectModel("aifeedbacks")
+    private readonly aiFeedbackModel: Model<AiFeedback>
   ) {}
 
   async ask(
@@ -106,10 +109,12 @@ export class AiService {
       throw new BadRequestException("User is required")
     }
 
+    const isNewConversationRequest = !conversationId || !conversationId.trim()
     const safeConversationId =
       conversationId && conversationId.trim()
         ? conversationId.trim()
         : new Types.ObjectId().toString()
+    await this.ensureConversationOwnership(userId, safeConversationId)
 
     await this.assertDailyLimit(userId)
 
@@ -119,11 +124,15 @@ export class AiService {
     if (remainingBudget <= 0) {
       throw new ForbiddenException("AI budget reached for this month")
     }
+    const initialConversationTitle = isNewConversationRequest
+      ? await this.generateConversationTitle(question)
+      : undefined
 
     const conversation = await this.getOrCreateConversation(
       userId,
       safeConversationId,
-      question
+      question,
+      initialConversationTitle
     )
     const resolved = this.resolveAmbiguitySelection(question, conversation)
     if (resolved.question !== question) {
@@ -1482,17 +1491,37 @@ export class AiService {
     )
   }
 
+  private async ensureConversationOwnership(userId: string, conversationId: string) {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException("Invalid user")
+    }
+    if (!conversationId?.trim()) {
+      throw new BadRequestException("ConversationId is required")
+    }
+    const userObjectId = new Types.ObjectId(userId)
+    const existing = await this.aiConversationModel
+      .findOne({ conversationId })
+      .select({ userId: 1 })
+      .lean()
+      .exec()
+    if (existing && String(existing.userId) !== String(userObjectId)) {
+      throw new ForbiddenException("Conversation does not belong to user")
+    }
+  }
+
   private async getOrCreateConversation(
     userId: string,
     conversationId: string,
-    firstQuestion?: string
+    firstQuestion?: string,
+    initialTitle?: string
   ) {
     if (!isValidObjectId(userId)) {
       throw new BadRequestException("Invalid user")
     }
     const userObjectId = new Types.ObjectId(userId)
     const expireAt = this.computeConversationExpireAt()
-    const title = this.buildConversationTitle(firstQuestion)
+    const title =
+      initialTitle?.trim() || this.buildConversationTitle(firstQuestion)
     const convo = await this.aiConversationModel
       .findOneAndUpdate(
         { userId: userObjectId, conversationId },
@@ -1511,6 +1540,112 @@ export class AiService {
       .exec()
 
     return convo
+  }
+
+  private async generateConversationTitle(question: string) {
+    const fallback = this.buildConversationTitle(question)
+    const systemPrompt =
+      "Ban la tro ly dat tieu de doan chat. " +
+      "Tom tat cau hoi thanh tieu de ngan gon, toi da 8 tu, khong dau cau. " +
+      "Chi tra ve duy nhat tieu de."
+    const userPrompt = `Cau hoi dau tien: ${question}`
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const title = this.normalizeConversationTitle(raw)
+      return title || fallback
+    } catch {
+      return fallback
+    }
+  }
+
+  private normalizeConversationTitle(raw: string) {
+    if (!raw) return ""
+    const maxLen = 80
+    const oneLine = raw
+      .split("\n")[0]
+      .replace(/^["'`\-\d\.\)\s]+/, "")
+      .replace(/["'`]$/g, "")
+      .trim()
+    if (!oneLine) return ""
+    return oneLine.length > maxLen ? oneLine.slice(0, maxLen).trim() : oneLine
+  }
+
+  async createFeedback(
+    userId?: string,
+    payload?: {
+      conversationId: string
+      description: string
+      expected?: string
+      actual?: string
+      rating?: number
+    }
+  ) {
+    if (!userId || !isValidObjectId(userId)) {
+      throw new BadRequestException("Invalid user")
+    }
+    if (!payload?.conversationId?.trim()) {
+      throw new BadRequestException("ConversationId is required")
+    }
+    if (!payload?.description?.trim()) {
+      throw new BadRequestException("Description is required")
+    }
+
+    const userObjectId = new Types.ObjectId(userId)
+    const conversationId = payload.conversationId.trim()
+    const conversation = await this.aiConversationModel
+      .findOne({ userId: userObjectId, conversationId })
+      .select({ _id: 1, conversationId: 1 })
+      .lean()
+      .exec()
+    if (!conversation) {
+      throw new BadRequestException("Conversation not found")
+    }
+
+    const created = await this.aiFeedbackModel.create({
+      userId: userObjectId,
+      conversationId,
+      conversationObjectId: conversation._id,
+      description: payload.description.trim(),
+      ...(payload.expected?.trim() ? { expected: payload.expected.trim() } : {}),
+      ...(payload.actual?.trim() ? { actual: payload.actual.trim() } : {}),
+      ...(typeof payload.rating === "number" ? { rating: payload.rating } : {})
+    })
+
+    return {
+      feedbackId: String(created._id),
+      conversationId: created.conversationId,
+      createdAt: created.createdAt
+    }
+  }
+
+  async listFeedback(userId?: string, conversationId?: string, limit = 20) {
+    if (!userId || !isValidObjectId(userId)) {
+      throw new BadRequestException("Invalid user")
+    }
+    const safeLimit = Math.max(1, Math.min(100, limit || 20))
+    const userObjectId = new Types.ObjectId(userId)
+    const filter: Record<string, any> = { userId: userObjectId }
+    if (conversationId?.trim()) {
+      filter.conversationId = conversationId.trim()
+    }
+    const rows = await this.aiFeedbackModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(safeLimit)
+      .lean()
+      .exec()
+
+    return {
+      data: rows.map((item: any) => ({
+        feedbackId: String(item._id),
+        conversationId: item.conversationId,
+        description: item.description,
+        expected: item.expected,
+        actual: item.actual,
+        rating: item.rating,
+        createdAt: item.createdAt
+      }))
+    }
   }
 
   private async appendConversationMessages(
@@ -1651,6 +1786,33 @@ export class AiService {
     if (!res.matchedCount) {
       throw new BadRequestException("Conversation not found")
     }
+  }
+
+  async updateConversationTitle(
+    userId?: string,
+    conversationId?: string,
+    title?: string
+  ) {
+    if (!userId || !isValidObjectId(userId)) {
+      throw new BadRequestException("Invalid user")
+    }
+    if (!conversationId || !conversationId.trim()) {
+      throw new BadRequestException("ConversationId is required")
+    }
+    if (!title || !title.trim()) {
+      throw new BadRequestException("Title is required")
+    }
+    const maxLen = 80
+    const nextTitle = title.trim().slice(0, maxLen)
+    const userObjectId = new Types.ObjectId(userId)
+    const res = await this.aiConversationModel.updateOne(
+      { userId: userObjectId, conversationId: conversationId.trim() },
+      { $set: { title: nextTitle } }
+    )
+    if (!res.matchedCount) {
+      throw new BadRequestException("Conversation not found")
+    }
+    return { conversationId: conversationId.trim(), title: nextTitle }
   }
 
   private async ensureUsageDoc(monthKey: string) {
