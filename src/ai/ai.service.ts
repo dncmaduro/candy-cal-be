@@ -968,10 +968,31 @@ export class AiService {
     for (const pattern of patterns) {
       const match = question.match(pattern)
       if (match?.[1]) {
-        return match[1].trim().replace(/[?!.]+$/g, "")
+        const cleaned = this.cleanIncomeChannelName(match[1])
+        if (cleaned) return cleaned
       }
     }
     return null
+  }
+
+  private cleanIncomeChannelName(raw: string) {
+    let value = String(raw || "").trim().replace(/[?!.]+$/g, "")
+    if (!value) return null
+
+    const stopPatterns = [
+      /\bng(?:a|à)y\b[\s\S]*$/i,
+      /\bt(?:u|ừ)\s*ng(?:a|à)y\b[\s\S]*$/i,
+      /\b(?:d|đ)(?:e|ế)n\s*ng(?:a|à)y\b[\s\S]*$/i,
+      /\btrong\s*kho(?:a|ả)ng\b[\s\S]*$/i,
+      /\bkho(?:a|ả)ng\s*th(?:o|ờ)i\s*gian\b[\s\S]*$/i
+    ]
+    for (const pattern of stopPatterns) {
+      value = value.replace(pattern, "").trim()
+    }
+
+    value = value.replace(/\d{1,2}\/\d{1,2}\/\d{4}[\s\S]*$/i, "").trim()
+    value = value.replace(/[,:;\-]+$/g, "").trim()
+    return value || null
   }
 
   private isRangeStatsQuestion(question: string) {
