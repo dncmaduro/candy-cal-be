@@ -9,9 +9,11 @@ import { AiConversationSchema } from "../database/mongoose/schemas/AiConversatio
 import { AiFeedbackSchema } from "../database/mongoose/schemas/AiFeedback"
 import { ProductSchema } from "../database/mongoose/schemas/Product"
 import { StorageLogSchema } from "../database/mongoose/schemas/StorageLog"
+import { IncomeModule } from "../income/income.module"
 
 @Module({
   imports: [
+    IncomeModule,
     MongooseModule.forFeature([
       { name: "aiusages", schema: AiUsageSchema },
       { name: "aiuserusages", schema: AiUserUsageSchema },
