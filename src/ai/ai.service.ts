@@ -1066,9 +1066,17 @@ export class AiService {
         : Date.UTC(y, m, d, 0, 0, 0, 0)
       return new Date(utcMs - tzOffsetHours * 60 * 60 * 1000)
     }
+    const isSameDayInput =
+      dateRange.start.getUTCFullYear() === dateRange.end.getUTCFullYear() &&
+      dateRange.start.getUTCMonth() === dateRange.end.getUTCMonth() &&
+      dateRange.start.getUTCDate() === dateRange.end.getUTCDate()
+    const start = toUtcBoundary(dateRange.start, false)
+    const end = isSameDayInput
+      ? new Date(start.getTime() + 2 * 60 * 60 * 1000 - 1)
+      : toUtcBoundary(dateRange.end, true)
     return {
-      start: toUtcBoundary(dateRange.start, false),
-      end: toUtcBoundary(dateRange.end, true)
+      start,
+      end
     }
   }
 
