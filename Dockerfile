@@ -22,7 +22,7 @@ COPY --from=builder /app/dist ./dist
 
 # (Tùy chọn) copy package.json để debug/versioning, không bắt buộc
 COPY --from=builder /app/package.json ./package.json
-COPY .env.production .env
+# COPY .env.production .env
 
 EXPOSE 3333
 CMD ["node", "dist/main.js"]
