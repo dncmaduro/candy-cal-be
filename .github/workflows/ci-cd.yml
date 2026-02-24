@@ -33,17 +33,21 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/candy-cal-be:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/candy-cal-be:${{ github.sha }}
-          build-args: |
-            PORT=${{ secrets.PORT }}
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}
 
   deploy:
     needs: build-and-push
     runs-on: self-hosted
     steps:
+      - name: Write production env file
+        run: |
+          cat > /opt/candy-cal-be/.env <<EOF
+          PORT=${{ secrets.PORT }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}
+          EOF
+
       - name: Pull image & restart container
         run: |
           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/candy-cal-be:latest
