@@ -23,6 +23,7 @@ import {
   RoutingSource
 } from "./ai.routing.context"
 import { AI_DB_TABLES } from "./ai.db.context"
+import { IncomeService } from "../income/income.service"
 
 type OpenAiUsage = {
   prompt_tokens?: number
@@ -84,7 +85,8 @@ export class AiService {
     @InjectModel("aiconversations")
     private readonly aiConversationModel: Model<AiConversation>,
     @InjectModel("aifeedbacks")
-    private readonly aiFeedbackModel: Model<AiFeedback>
+    private readonly aiFeedbackModel: Model<AiFeedback>,
+    private readonly incomeService: IncomeService
   ) {}
 
   async ask(
@@ -138,22 +140,87 @@ export class AiService {
     if (resolved.question !== question) {
       console.info("[ai] resolvedQuestion", { from: question, to: resolved.question })
     }
+    const isIncomeRequest = this.isIncomeQuestion(resolved.question)
+    const rangeStatsFacts = await this.tryBuildRangeStatsFacts(
+      resolved.question,
+      isIncomeRequest
+    )
+    if (isIncomeRequest && !rangeStatsFacts) {
+      const missingArgsMessage =
+        "De tra loi doanh thu, he thong bat buoc goi API incomes/range-stats. " +
+        "Ban vui long cung cap day du ten kenh va khoang ngay theo dinh dang dd/mm/yyyy. " +
+        "Vi du: doanh thu cua kenh ABC tu ngay 01/02/2026 den ngay 24/02/2026."
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        {
+          role: "assistant",
+          content: missingArgsMessage,
+          createdAt: new Date()
+        }
+      ])
+      return { answer: missingArgsMessage, conversationId: safeConversationId }
+    }
     let queryPlan = resolved.plan
       ? resolved.plan
       : await this.planDataFetch(resolved.question, conversation)
-    if (!queryPlan?.tables?.length) {
-      const direct =
-        this.buildDirectPlan(resolved.question, conversation) ||
-        this.buildFallbackPlanFromContext(resolved.question)
-      if (direct) queryPlan = direct
+    let fetchedData: Record<string, any> = {}
+    let fetchedMeta: Record<string, any> = {}
+    if (rangeStatsFacts) {
+      queryPlan = {
+        tables: [
+          {
+            collection: "incomes",
+            filter: {
+              channelId: rangeStatsFacts.channelId,
+              date: {
+                $gte: rangeStatsFacts.startDate,
+                $lte: rangeStatsFacts.endDate
+              }
+            },
+            limit: 1
+          }
+        ],
+        reason: "Cau hoi thong ke range: goi incomes/range-stats de lay nhanh."
+      }
+      fetchedData = {
+        rangeStats: {
+          channelId: rangeStatsFacts.channelId,
+          channelName: rangeStatsFacts.channelName,
+          startDate: rangeStatsFacts.startDate,
+          endDate: rangeStatsFacts.endDate,
+          stats: rangeStatsFacts.stats
+        }
+      }
+      fetchedMeta = {
+        rangeStats: {
+          via: "incomes/range-stats",
+          channelId: rangeStatsFacts.channelId,
+          startDate: rangeStatsFacts.startDate,
+          endDate: rangeStatsFacts.endDate
+        }
+      }
+    } else {
+      if (!queryPlan?.tables?.length) {
+        const direct =
+          this.buildDirectPlan(resolved.question, conversation) ||
+          this.buildFallbackPlanFromContext(resolved.question)
+        if (direct) queryPlan = direct
+      }
+      const fetchedResult = await this.fetchDataByPlan(queryPlan, debug)
+      fetchedData = fetchedResult.data
+      fetchedMeta = fetchedResult.meta
     }
-    const fetchedResult = await this.fetchDataByPlan(queryPlan, debug)
-    const fetchedData = fetchedResult.data
     console.info("[ai] plan", queryPlan)
     console.info("[ai] fetched.keys", Object.keys(fetchedData))
-    console.info("[ai] fetched.meta", fetchedResult.meta)
-    const ambiguity = this.detectNameAmbiguity(queryPlan, fetchedResult)
-    if (ambiguity) {
+    console.info("[ai] fetched.meta", fetchedMeta)
+    const ambiguity =
+      !rangeStatsFacts
+        ? this.detectNameAmbiguity(queryPlan, {
+            data: fetchedData,
+            meta: fetchedMeta
+          })
+        : null
+    if (ambiguity && !rangeStatsFacts) {
       await this.storePendingSelection(conversation, ambiguity.options)
       await this.appendConversationMessages(conversation, [
         { role: "user", content: resolved.question, createdAt: new Date() },
@@ -675,6 +742,7 @@ export class AiService {
       "Chi chon cac bang can thiet (toi da 3). " +
       "Neu khong chac, de tables rong. " +
       "Moi cau hoi ve ton kho bat buoc truy van bang storageitems. " +
+      "Moi cau hoi ve doanh thu bat buoc truy van bang incomes. " +
       "Cau hoi ve SKU Tiktok Shop bat buoc truy van bang products. " +
       "Cau hoi ve SKU Shopee bat buoc truy van bang shopeeproducts."
     const lastUserQuestion = conversation
@@ -723,6 +791,37 @@ export class AiService {
 
   private buildDirectPlan(question: string, conversation?: AiConversation | null) {
     const trimmed = question.trim()
+    if (this.isIncomeQuestion(trimmed)) {
+      const dateRange = this.extractDateRange(trimmed)
+      const channelName = this.extractIncomeChannelName(trimmed)
+      const filter: Record<string, any> = {}
+      if (dateRange) {
+        filter.date = { $gte: dateRange.start, $lte: dateRange.end }
+      }
+      if (channelName) {
+        filter.channelName = channelName
+      }
+      return {
+        tables: [
+          {
+            collection: "incomes",
+            filter,
+            projection: [
+              "orderId",
+              "customer",
+              "province",
+              "shippingProvider",
+              "channel",
+              "date",
+              "products"
+            ],
+            sort: { date: -1 as const },
+            limit: 200
+          }
+        ],
+        reason: "Cau hoi doanh thu: truy van incomes."
+      }
+    }
     const skuChannel = this.detectSkuChannel(trimmed, conversation)
     if (skuChannel === "tiktok") {
       return {
@@ -853,16 +952,155 @@ export class AiService {
     return null
   }
 
+  private isIncomeQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(doanh thu|revenue|thu nhap|tong thu)/.test(normalized)
+  }
+
+  private extractIncomeChannelName(question: string) {
+    const patterns = [
+      /c(?:ua|của)\s*k(?:e|ê)nh\s*([^\n\r?!.]+)/i,
+      /k(?:e|ê)nh\s*([^\n\r?!.]+)/i
+    ]
+    for (const pattern of patterns) {
+      const match = question.match(pattern)
+      if (match?.[1]) {
+        return match[1].trim().replace(/[?!.]+$/g, "")
+      }
+    }
+    return null
+  }
+
+  private isRangeStatsQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasKeyword =
+      /(doanh thu|revenue|kpi|chi phi ads|chi phi quang cao|ads|don vi van chuyen|van chuyen|quy cach dong hop|dong hop|luong sku ban ra|sku ban ra|san luong sku)/.test(
+        normalized
+      )
+    const hasDateSignal =
+      /\d{1,2}\/\d{1,2}\/\d{4}/.test(normalized) ||
+      /(tu ngay|den ngay|trong khoang|khoang thoi gian)/.test(normalized)
+    return hasKeyword && hasDateSignal
+  }
+
+  private async tryBuildRangeStatsFacts(
+    question: string,
+    forceForIncome = false
+  ) {
+    if (!forceForIncome && !this.isRangeStatsQuestion(question)) return null
+    const dateRange = this.extractDateRange(question)
+    if (!dateRange) return null
+    const normalizedRange = this.normalizeRangeStatsDateRange(dateRange)
+    const channelName = this.extractIncomeChannelName(question)
+    if (!channelName) return null
+    const channelId = await this.findLivestreamChannelId(channelName)
+    if (!channelId) return null
+    console.info("[ai][api:req] incomes/range-stats", {
+      startDate: normalizedRange.start,
+      endDate: normalizedRange.end,
+      channelId,
+      comparePrevious: true
+    })
+    const stats = await this.incomeService.getRangeStats(
+      normalizedRange.start,
+      normalizedRange.end,
+      channelId,
+      true
+    )
+    console.info("[ai][api:res] incomes/range-stats", {
+      ok: true,
+      period: stats?.period,
+      current: stats?.current
+        ? {
+            beforeDiscount: stats.current.beforeDiscount,
+            afterDiscount: stats.current.afterDiscount,
+            ads: stats.current.ads,
+            discounts: stats.current.discounts
+          }
+        : undefined
+    })
+    return {
+      channelId,
+      channelName,
+      startDate: normalizedRange.start,
+      endDate: normalizedRange.end,
+      stats
+    }
+  }
+
+  private normalizeRangeStatsDateRange(dateRange: { start: Date; end: Date }) {
+    const tzOffsetHours = 7
+    const toUtcBoundary = (date: Date, endOfDay: boolean) => {
+      const y = date.getUTCFullYear()
+      const m = date.getUTCMonth()
+      const d = date.getUTCDate()
+      const utcMs = endOfDay
+        ? Date.UTC(y, m, d, 23, 59, 59, 999)
+        : Date.UTC(y, m, d, 0, 0, 0, 0)
+      return new Date(utcMs - tzOffsetHours * 60 * 60 * 1000)
+    }
+    return {
+      start: toUtcBoundary(dateRange.start, false),
+      end: toUtcBoundary(dateRange.end, true)
+    }
+  }
+
+  private async findLivestreamChannelId(channelKeyword: string) {
+    if (!channelKeyword.trim()) return null
+    let channelModel: Model<any>
+    try {
+      channelModel = this.connection.model("livestreamchannels")
+    } catch {
+      return null
+    }
+    const escaped = channelKeyword.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const regex = { $regex: escaped, $options: "i" }
+    const channel: any = await channelModel
+      .findOne(
+        { $or: [{ name: regex }, { username: regex }, { usernames: regex }] },
+        { _id: 1 }
+      )
+      .lean()
+      .exec()
+    if (channel?._id) return String(channel._id)
+
+    const normalize = (value: string) =>
+      String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim()
+    const target = normalize(channelKeyword)
+    if (!target) return null
+
+    const candidates: any[] = await channelModel
+      .find({}, { _id: 1, name: 1, username: 1, usernames: 1 })
+      .limit(500)
+      .lean()
+      .exec()
+    const matched = candidates.find((c) => {
+      const fields = [c?.name, c?.username, ...(Array.isArray(c?.usernames) ? c.usernames : [])]
+      return fields.some((f) => normalize(f).includes(target))
+    })
+    return matched?._id ? String(matched._id) : null
+  }
+
   private async fetchDataByPlan(
     plan: {
-    tables: Array<{
-      collection: string
-      filter?: Record<string, any>
-      projection?: string[]
-      sort?: Record<string, 1 | -1>
-      limit?: number
-    }>
-  },
+      tables: Array<{
+        collection: string
+        filter?: Record<string, any>
+        projection?: string[]
+        sort?: Record<string, 1 | -1>
+        limit?: number
+      }>
+    },
     debug = false
   ) {
     const result: Record<string, any> = {}
@@ -881,6 +1119,15 @@ export class AiService {
 
     for (const table of tables) {
       if (!table?.collection) continue
+      if (table.collection === "incomes") {
+        const incomeResult = await this.fetchIncomesViaApi(table)
+        result[table.collection] = incomeResult.rows
+        meta[table.collection] = {
+          ...incomeResult.meta,
+          sample: incomeResult.rows.slice(0, 2)
+        }
+        continue
+      }
       let model: Model<any>
       try {
         model = this.connection.model(table.collection)
@@ -937,6 +1184,147 @@ export class AiService {
     return { data: result, meta }
   }
 
+  private async fetchIncomesViaApi(table: {
+    collection: string
+    filter?: Record<string, any>
+    projection?: string[]
+    sort?: Record<string, 1 | -1>
+    limit?: number
+  }) {
+    let filter =
+      table.filter && typeof table.filter === "object" ? table.filter : {}
+    filter = await this.resolveIncomeFilter(filter)
+    filter = this.applyLikeFilters(filter)
+
+    const projection =
+      Array.isArray(table.projection) && table.projection.length
+        ? table.projection.reduce((acc: Record<string, 1>, f: string) => {
+            if (typeof f === "string" && f.trim()) acc[f.trim()] = 1
+            return acc
+          }, {})
+        : undefined
+    const sort =
+      table.sort && typeof table.sort === "object" ? table.sort : undefined
+    const limitRaw = Number(table.limit || 20)
+    const limit = Math.max(1, Math.min(200, limitRaw))
+
+    const dateFilter = filter?.date && typeof filter.date === "object" ? filter.date : {}
+    const startDate = dateFilter?.$gte
+      ? new Date(dateFilter.$gte)
+      : new Date("2000-01-01T00:00:00.000Z")
+    const endDate = dateFilter?.$lte
+      ? new Date(dateFilter.$lte)
+      : new Date()
+
+    const channelIds = this.extractIncomeChannelIds(filter?.channel)
+    const rows: any[] = []
+    for (const channelId of channelIds) {
+      const first = await this.incomeService.getIncomesByDateRange(
+        startDate,
+        endDate,
+        1,
+        limit,
+        typeof filter?.orderId === "string" ? filter.orderId : undefined,
+        typeof filter?.["products.code"] === "string" ? filter["products.code"] : undefined,
+        typeof filter?.["products.source"] === "string"
+          ? filter["products.source"]
+          : undefined,
+        channelId
+      )
+
+      let incomes = Array.isArray(first?.incomes) ? first.incomes : []
+      const needsLastPage =
+        (sort?.date === -1 || sort?._id === -1) && Number(first?.total || 0) > limit
+      if (needsLastPage) {
+        const lastPage = Math.max(1, Math.ceil(Number(first.total) / limit))
+        const last = await this.incomeService.getIncomesByDateRange(
+          startDate,
+          endDate,
+          lastPage,
+          limit,
+          typeof filter?.orderId === "string" ? filter.orderId : undefined,
+          typeof filter?.["products.code"] === "string" ? filter["products.code"] : undefined,
+          typeof filter?.["products.source"] === "string"
+            ? filter["products.source"]
+            : undefined,
+          channelId
+        )
+        incomes = Array.isArray(last?.incomes) ? last.incomes : incomes
+      }
+      rows.push(...incomes)
+    }
+
+    const uniqueRows = this.uniqueIncomesById(rows)
+    const normalized = await this.normalizeIncomeRows(uniqueRows)
+    const sorted = this.sortIncomeRows(normalized, sort)
+    const projected = projection ? this.pickFields(sorted, Object.keys(projection)) : sorted
+    const sliced = projected.slice(0, limit)
+
+    return {
+      rows: sliced,
+      meta: {
+        via: "incomes/api",
+        filter,
+        projection,
+        sort,
+        limit,
+        count: sliced.length
+      }
+    }
+  }
+
+  private extractIncomeChannelIds(channelFilter: any): Array<string | undefined> {
+    if (typeof channelFilter === "string" && channelFilter.trim()) {
+      return [channelFilter.trim()]
+    }
+    if (channelFilter && typeof channelFilter === "object" && Array.isArray(channelFilter.$in)) {
+      const ids = channelFilter.$in
+        .map((id: any) => String(id || "").trim())
+        .filter((id: string) => id.length > 0)
+      return ids.length ? ids : [undefined]
+    }
+    return [undefined]
+  }
+
+  private uniqueIncomesById(rows: any[]) {
+    const map = new Map<string, any>()
+    for (const row of rows) {
+      const key = String(row?._id || row?.orderId || "")
+      if (!key) continue
+      map.set(key, row)
+    }
+    return Array.from(map.values())
+  }
+
+  private sortIncomeRows(rows: any[], sort?: Record<string, 1 | -1>) {
+    if (!Array.isArray(rows) || !sort) return Array.isArray(rows) ? rows : []
+    const entries = Object.entries(sort).filter(
+      ([k, v]) => (k === "date" || k === "_id") && (v === 1 || v === -1)
+    )
+    if (!entries.length) return rows
+    const sorted = [...rows]
+    sorted.sort((a, b) => {
+      for (const [key, dir] of entries) {
+        const av = key === "date" ? new Date(a?.date || 0).getTime() : String(a?._id || "")
+        const bv = key === "date" ? new Date(b?.date || 0).getTime() : String(b?._id || "")
+        if (av < bv) return -1 * dir
+        if (av > bv) return 1 * dir
+      }
+      return 0
+    })
+    return sorted
+  }
+
+  private pickFields(rows: any[], fields: string[]) {
+    if (!Array.isArray(rows) || !fields.length) return rows
+    return rows.map((row) =>
+      fields.reduce((acc: Record<string, any>, field: string) => {
+        if (field in row) acc[field] = row[field]
+        return acc
+      }, {})
+    )
+  }
+
   private async normalizeSkuProductRows(rows: any[]) {
     if (!Array.isArray(rows)) return []
     const storageIdSet = new Set<string>()
@@ -988,6 +1376,88 @@ export class AiService {
           })
         : []
     }))
+  }
+
+  private async resolveIncomeFilter(filter: Record<string, any>) {
+    const out: Record<string, any> = { ...(filter || {}) }
+    const channelKeywordRaw =
+      typeof out.channelName === "string" && out.channelName.trim()
+        ? out.channelName.trim()
+        : typeof out.channel === "string"
+          ? out.channel.trim()
+          : ""
+    if (!channelKeywordRaw) return out
+
+    delete out.channelName
+    if (out.channel === channelKeywordRaw) {
+      delete out.channel
+    }
+
+    let channelModel: Model<any>
+    try {
+      channelModel = this.connection.model("livestreamchannels")
+    } catch {
+      return out
+    }
+
+    const escaped = channelKeywordRaw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const regex = { $regex: escaped, $options: "i" }
+    const channels = await channelModel
+      .find(
+        { $or: [{ name: regex }, { username: regex }, { usernames: regex }] },
+        { _id: 1 }
+      )
+      .lean()
+      .exec()
+
+    const channelIds = channels.map((c: any) => c._id).filter(Boolean)
+    out.channel = channelIds.length ? { $in: channelIds } : { $in: [] }
+    return out
+  }
+
+  private async normalizeIncomeRows(rows: any[]) {
+    if (!Array.isArray(rows) || !rows.length) return []
+    const channelIdSet = new Set<string>()
+    for (const row of rows) {
+      if (row?.channel) channelIdSet.add(String(row.channel))
+    }
+
+    let channelMap = new Map<string, { name?: string; username?: string; platform?: string }>()
+    if (channelIdSet.size) {
+      try {
+        const channelModel = this.connection.model("livestreamchannels")
+        const channels = await channelModel
+          .find(
+            { _id: { $in: Array.from(channelIdSet) } },
+            { name: 1, username: 1, platform: 1 }
+          )
+          .lean()
+          .exec()
+        channelMap = new Map(
+          channels.map((c: any) => [
+            String(c._id),
+            { name: c.name, username: c.username, platform: c.platform }
+          ])
+        )
+      } catch {
+        // Best-effort enrichment only.
+      }
+    }
+
+    return rows.map((row: any) => {
+      const channelInfo = row?.channel ? channelMap.get(String(row.channel)) : undefined
+      return {
+        ...row,
+        channel: channelInfo
+          ? {
+              _id: row.channel,
+              name: channelInfo.name,
+              username: channelInfo.username,
+              platform: channelInfo.platform
+            }
+          : row.channel
+      }
+    })
   }
 
   private detectNameAmbiguity(
