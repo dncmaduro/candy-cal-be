@@ -10,10 +10,14 @@ import { AiFeedbackSchema } from "../database/mongoose/schemas/AiFeedback"
 import { ProductSchema } from "../database/mongoose/schemas/Product"
 import { StorageLogSchema } from "../database/mongoose/schemas/StorageLog"
 import { IncomeModule } from "../income/income.module"
+import { LivestreamanalyticsModule } from "../livestreamanalytics/livestreamanalytics.module"
+import { LivestreammonthgoalsModule } from "../livestreammonthgoals/livestreammonthgoals.module"
 
 @Module({
   imports: [
     IncomeModule,
+    LivestreamanalyticsModule,
+    LivestreammonthgoalsModule,
     MongooseModule.forFeature([
       { name: "aiusages", schema: AiUsageSchema },
       { name: "aiuserusages", schema: AiUserUsageSchema },

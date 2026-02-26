@@ -32,6 +32,7 @@ export class AiController {
       String(req?.headers?.["x-ai-debug"] || "").toLowerCase() === "true"
     return this.aiService.ask(
       body.question,
+      body.module,
       req.user?.userId,
       body.conversationId,
       debug
