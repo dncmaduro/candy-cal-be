@@ -141,11 +141,20 @@ export class AiService {
       console.info("[ai] resolvedQuestion", { from: question, to: resolved.question })
     }
     const isIncomeRequest = this.isIncomeQuestion(resolved.question)
+    const isIncomeBySourceRequest = this.isIncomeBySourceQuestion(
+      resolved.question
+    )
+    const isIncomeProductsRequest = this.isIncomeProductsQuantityQuestion(
+      resolved.question
+    )
+    const shouldUseRangeStats =
+      isIncomeRequest || isIncomeBySourceRequest || isIncomeProductsRequest
     const rangeStatsFacts = await this.tryBuildRangeStatsFacts(
       resolved.question,
-      isIncomeRequest
+      shouldUseRangeStats,
+      conversation
     )
-    if (isIncomeRequest && !rangeStatsFacts) {
+    if (shouldUseRangeStats && !rangeStatsFacts) {
       const missingArgsMessage =
         "De tra loi doanh thu, he thong bat buoc goi API incomes/range-stats. " +
         "Ban vui long cung cap day du ten kenh va khoang ngay theo dinh dang dd/mm/yyyy. " +
@@ -232,13 +241,36 @@ export class AiService {
       ])
       return { answer: ambiguity.message, conversationId: safeConversationId }
     }
+    const isIncomeBySourceQuestion = isIncomeBySourceRequest
+    const isIncomeProductsQuestion = isIncomeProductsRequest
+    const isIncomeOverviewQuestion =
+      isIncomeRequest && !isIncomeBySourceQuestion && !isIncomeProductsQuestion
+    const responseMode = isIncomeProductsQuestion
+      ? "income_products_quantity"
+      : isIncomeBySourceQuestion
+        ? "income_by_source"
+      : isIncomeOverviewQuestion
+        ? "income_overview"
+        : "general"
+    const factsData = isIncomeOverviewQuestion
+      ? this.buildIncomeOverviewFactsOnly(fetchedData)
+      : isIncomeProductsQuestion
+      ? this.buildIncomeProductsQuantityFactsOnly(fetchedData)
+      : isIncomeBySourceQuestion
+        ? this.buildIncomeSourceFactsOnly(fetchedData)
+      : fetchedData
     const facts = {
       plan: queryPlan,
-      data: fetchedData
+      data: factsData
     }
     const systemPrompt =
       "Ban la tro ly tra loi dua tren du lieu duoc cung cap. " +
       "Tra loi tu do, ro rang, dung du lieu. " +
+      "Chi tra loi ket qua cuoi cung, ngan gon. " +
+      "Khong giai thich ky thuat truy van va khong giai thich logic ngay thang/khung gio. " +
+      "Neu cau hoi ve ma/SKU/san pham da ban trong ngay/khoang ngay, bat buoc su dung field productsQuantity de tra loi. " +
+      "Neu cau hoi la doanh thu theo nguon, chi duoc tra loi cac so lieu theo nguon (ads, affiliate, affiliateAds, other) va tong theo nguon; khong tra loi cac muc khac. " +
+      "Neu cau hoi la doanh thu tong quan (khong theo nguon), bat buoc neu day du 2 phan: Truoc chiet khau va Sau chiet khau; moi phan gom it nhat tong doanh thu, doanh thu live, doanh thu video va doanh thu khac. Tuyet doi khong liet ke theo nguon trong mode nay. " +
       "Neu co nhieu nguon du lieu hoac nhieu dong ket qua, hay tach rieng tung nguon/tung dong, khong gop chung. " +
       "Neu data la danh sach (array) co nhieu phan tu, phai liet ke tung phan tu voi cac truong chinh. " +
       "Neu khong du du lieu hoac khong tim thay, noi ro. " +
@@ -247,7 +279,28 @@ export class AiService {
       "Neu hoi ve tong so luong trong nhat ky kho, tong = sum(quantity) cua cac log. " +
       "Bat buoc liet ke DAY DU tat ca phan tu trong cac mang du lieu; khong duoc chon 1 phan tu."
     const userPrompt =
-      `Cau hoi: ${question}\n` + `Du lieu: ${JSON.stringify(facts)}`
+      `Response mode: ${responseMode}\n` +
+      `Cau hoi: ${question}\n` +
+      `Du lieu: ${JSON.stringify(facts)}`
+    const askedDateLabel = this.extractQuestionDateLabel(resolved.question)
+
+    const deterministicAnswer = this.tryBuildDeterministicIncomeAnswer(
+      responseMode,
+      factsData,
+      askedDateLabel
+    )
+    if (deterministicAnswer) {
+      console.info("[ai] answer.deterministic", { responseMode })
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        {
+          role: "assistant",
+          content: deterministicAnswer,
+          createdAt: new Date()
+        }
+      ])
+      return { answer: deterministicAnswer, conversationId: safeConversationId }
+    }
 
     const historyMessages = (conversation?.messages || [])
       .slice(-this.conversationMaxMessages)
@@ -960,6 +1013,211 @@ export class AiService {
     return /(doanh thu|revenue|thu nhap|tong thu)/.test(normalized)
   }
 
+  private isIncomeBySourceQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasIncomeSignal = /(doanh thu|revenue|thu nhap|tong thu)/.test(
+      normalized
+    )
+    const hasSourceSignal =
+      /(theo nguon|tach.*nguon|chi tiet.*nguon|nguon doanh thu|co cau nguon|ads|affiliate)/.test(
+        normalized
+      )
+    return hasIncomeSignal && hasSourceSignal
+  }
+
+  private isIncomeProductsQuantityQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasIncomeSignal =
+      /(doanh thu|revenue|ban ra|don hang|ban duoc|ban chay|nhieu nhat|top)/.test(
+        normalized
+      )
+    const hasProductSignal =
+      /(ma|sku|san pham|mat hang|hang ban|duoc ban|ban trong)/.test(
+        normalized
+      )
+    const hasDateSignal =
+      /\d{1,2}\/\d{1,2}\/\d{4}/.test(normalized) ||
+      /(ngay|khoang|tu ngay|den ngay)/.test(normalized)
+    return hasIncomeSignal && hasProductSignal && hasDateSignal
+  }
+
+  private buildIncomeSourceFactsOnly(fetchedData: Record<string, any>) {
+    const range = fetchedData?.rangeStats
+    if (!range?.stats?.current) return fetchedData
+    return {
+      rangeStats: {
+        channelId: range.channelId,
+        channelName: range.channelName,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        stats: {
+          period: range.stats.period,
+          current: {
+            beforeDiscount: {
+              totalIncome: range.stats.current.beforeDiscount?.totalIncome ?? 0,
+              sources: range.stats.current.beforeDiscount?.sources || {}
+            },
+            afterDiscount: {
+              totalIncome: range.stats.current.afterDiscount?.totalIncome ?? 0,
+              sources: range.stats.current.afterDiscount?.sources || {}
+            }
+          },
+          changes: range.stats.changes
+            ? {
+                beforeDiscount: {
+                  sources: range.stats.changes.beforeDiscount?.sources || {}
+                },
+                afterDiscount: {
+                  sources: range.stats.changes.afterDiscount?.sources || {}
+                }
+              }
+            : undefined
+        }
+      }
+    }
+  }
+
+  private buildIncomeOverviewFactsOnly(fetchedData: Record<string, any>) {
+    const range = fetchedData?.rangeStats
+    if (!range?.stats?.current) return fetchedData
+    return {
+      rangeStats: {
+        channelId: range.channelId,
+        channelName: range.channelName,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        stats: {
+          period: range.stats.period,
+          current: {
+            beforeDiscount: {
+              totalIncome: range.stats.current.beforeDiscount?.totalIncome ?? 0,
+              liveIncome: range.stats.current.beforeDiscount?.liveIncome ?? 0,
+              videoIncome: range.stats.current.beforeDiscount?.videoIncome ?? 0,
+              otherIncome: range.stats.current.beforeDiscount?.otherIncome ?? 0
+            },
+            afterDiscount: {
+              totalIncome: range.stats.current.afterDiscount?.totalIncome ?? 0,
+              liveIncome: range.stats.current.afterDiscount?.liveIncome ?? 0,
+              videoIncome: range.stats.current.afterDiscount?.videoIncome ?? 0,
+              otherIncome: range.stats.current.afterDiscount?.otherIncome ?? 0
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private tryBuildDeterministicIncomeAnswer(
+    responseMode: string,
+    factsData: Record<string, any>,
+    askedDateLabel?: string | null
+  ) {
+    const range = factsData?.rangeStats
+    const current = range?.stats?.current
+    if (!current) return null
+
+    const fmt = (value: any) => Number(value || 0).toLocaleString("vi-VN")
+    const titleDate =
+      askedDateLabel ||
+      this.formatDateRangeLabel(range.startDate, range.endDate)
+    const titleLine = `Kênh ${range.channelName || ""} (${titleDate})`
+
+    if (responseMode === "income_by_source") {
+      const b = current.beforeDiscount || {}
+      const a = current.afterDiscount || {}
+      return [
+        titleLine,
+        "",
+        "Trước chiết khấu:",
+        `- Quảng cáo: ${fmt(b?.sources?.ads)} VNĐ`,
+        `- Affiliate: ${fmt(b?.sources?.affiliate)} VNĐ`,
+        `- Affiliate Ads: ${fmt(b?.sources?.affiliateAds)} VNĐ`,
+        `- Khác: ${fmt(b?.sources?.other)} VNĐ`,
+        `- Tổng: ${fmt(b?.totalIncome)} VNĐ`,
+        "",
+        "Sau chiết khấu:",
+        `- Quảng cáo: ${fmt(a?.sources?.ads)} VNĐ`,
+        `- Affiliate: ${fmt(a?.sources?.affiliate)} VNĐ`,
+        `- Affiliate Ads: ${fmt(a?.sources?.affiliateAds)} VNĐ`,
+        `- Khác: ${fmt(a?.sources?.other)} VNĐ`,
+        `- Tổng: ${fmt(a?.totalIncome)} VNĐ`
+      ].join("\n")
+    }
+
+    if (responseMode === "income_overview") {
+      const b = current.beforeDiscount || {}
+      const a = current.afterDiscount || {}
+      return [
+        titleLine,
+        "",
+        "Trước chiết khấu:",
+        `- Tổng doanh thu: ${fmt(b?.totalIncome)} VNĐ`,
+        `- Doanh thu live: ${fmt(b?.liveIncome)} VNĐ`,
+        `- Doanh thu video: ${fmt(b?.videoIncome)} VNĐ`,
+        `- Doanh thu khác: ${fmt(b?.otherIncome)} VNĐ`,
+        "",
+        "Sau chiết khấu:",
+        `- Tổng doanh thu: ${fmt(a?.totalIncome)} VNĐ`,
+        `- Doanh thu live: ${fmt(a?.liveIncome)} VNĐ`,
+        `- Doanh thu video: ${fmt(a?.videoIncome)} VNĐ`,
+        `- Doanh thu khác: ${fmt(a?.otherIncome)} VNĐ`
+      ].join("\n")
+    }
+    return null
+  }
+
+  private formatDateRangeLabel(startDate: any, endDate: any) {
+    const toLabel = (value: any) => {
+      const d = new Date(value)
+      if (Number.isNaN(d.getTime())) return ""
+      return `${String(d.getUTCDate()).padStart(2, "0")}/${String(
+        d.getUTCMonth() + 1
+      ).padStart(2, "0")}/${d.getUTCFullYear()}`
+    }
+    const start = toLabel(startDate)
+    const end = toLabel(endDate)
+    if (start && end && start !== end) return `${start} - ${end}`
+    return start || end || "không rõ thời gian"
+  }
+
+  private extractQuestionDateLabel(question: string) {
+    const range = this.extractDateRange(question)
+    if (!range) return null
+    const fmt = (date: Date) =>
+      `${String(date.getUTCDate()).padStart(2, "0")}/${String(
+        date.getUTCMonth() + 1
+      ).padStart(2, "0")}/${date.getUTCFullYear()}`
+    const start = fmt(range.start)
+    const end = fmt(range.end)
+    if (start === end) return start
+    return `${start} - ${end}`
+  }
+
+  private buildIncomeProductsQuantityFactsOnly(fetchedData: Record<string, any>) {
+    const range = fetchedData?.rangeStats
+    if (!range?.stats?.current) return fetchedData
+    return {
+      rangeStats: {
+        channelId: range.channelId,
+        channelName: range.channelName,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        stats: {
+          period: range.stats.period,
+          current: {
+            productsQuantity: range.stats.current.productsQuantity || {}
+          }
+        }
+      }
+    }
+  }
+
   private extractIncomeChannelName(question: string) {
     const patterns = [
       /c(?:ua|của)\s*k(?:e|ê)nh\s*([^\n\r?!.]+)/i,
@@ -1012,13 +1270,16 @@ export class AiService {
 
   private async tryBuildRangeStatsFacts(
     question: string,
-    forceForIncome = false
+    forceForIncome = false,
+    conversation?: AiConversation | null
   ) {
     if (!forceForIncome && !this.isRangeStatsQuestion(question)) return null
     const dateRange = this.extractDateRange(question)
     if (!dateRange) return null
     const normalizedRange = this.normalizeRangeStatsDateRange(dateRange)
-    const channelName = this.extractIncomeChannelName(question)
+    const channelName =
+      this.extractIncomeChannelName(question) ||
+      this.extractIncomeChannelNameFromConversation(conversation)
     if (!channelName) return null
     const channelId = await this.findLivestreamChannelId(channelName)
     if (!channelId) return null
@@ -1078,6 +1339,21 @@ export class AiService {
       start,
       end
     }
+  }
+
+  private extractIncomeChannelNameFromConversation(
+    conversation?: AiConversation | null
+  ) {
+    if (!conversation?.messages?.length) return null
+    const lastUserMessages = [...conversation.messages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.content)
+      .slice(0, 6)
+    for (const msg of lastUserMessages) {
+      const name = this.extractIncomeChannelName(msg.content)
+      if (name) return name
+    }
+    return null
   }
 
   private async findLivestreamChannelId(channelKeyword: string) {
@@ -2040,15 +2316,30 @@ export class AiService {
     const normalized = question
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-    const dateRegex = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g
+    const now = new Date()
+    const dateRegex = /(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/g
     const dates: Array<{ d: number; m: number; y: number }> = []
     let match: RegExpExecArray | null
     while ((match = dateRegex.exec(normalized))) {
       const d = Number(match[1])
       const m = Number(match[2])
-      const y = Number(match[3])
-      if (!Number.isNaN(d) && !Number.isNaN(m) && !Number.isNaN(y)) {
-        dates.push({ d, m, y })
+      const yRaw = match[3]
+      if (Number.isNaN(d) || Number.isNaN(m)) continue
+      if (yRaw) {
+        const y = Number(yRaw)
+        if (!Number.isNaN(y)) dates.push({ d, m, y })
+        continue
+      }
+      const inferredDayMonth = this.inferNearestPastDayMonth(d, m, now)
+      if (inferredDayMonth) dates.push(inferredDayMonth)
+    }
+    if (!dates.length) {
+      const dayOnlyRegex = /(?:^|\s)ngay\s*(\d{1,2})(?!\s*\/)/gi
+      while ((match = dayOnlyRegex.exec(normalized))) {
+        const d = Number(match[1])
+        if (Number.isNaN(d)) continue
+        const inferredDayOnly = this.inferNearestPastDayOnly(d, now)
+        if (inferredDayOnly) dates.push(inferredDayOnly)
       }
     }
     if (!dates.length) return null
@@ -2056,6 +2347,73 @@ export class AiService {
     const endDate = dates[1] || dates[0]
     const end = new Date(Date.UTC(endDate.y, endDate.m - 1, endDate.d, 23, 59, 59, 999))
     return { start, end }
+  }
+
+  private inferNearestPastDayMonth(
+    d: number,
+    m: number,
+    now: Date
+  ): { d: number; m: number; y: number } | null {
+    if (d < 1 || d > 31 || m < 1 || m > 12) return null
+    const nowMs = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      23,
+      59,
+      59,
+      999
+    )
+    const currentYear = now.getUTCFullYear()
+    const cur = new Date(Date.UTC(currentYear, m - 1, d, 0, 0, 0, 0))
+    const curValid =
+      cur.getUTCFullYear() === currentYear &&
+      cur.getUTCMonth() === m - 1 &&
+      cur.getUTCDate() === d
+    if (curValid && cur.getTime() <= nowMs) return { d, m, y: currentYear }
+
+    const prevYear = currentYear - 1
+    const prev = new Date(Date.UTC(prevYear, m - 1, d, 0, 0, 0, 0))
+    const prevValid =
+      prev.getUTCFullYear() === prevYear &&
+      prev.getUTCMonth() === m - 1 &&
+      prev.getUTCDate() === d
+    if (prevValid) return { d, m, y: prevYear }
+    return null
+  }
+
+  private inferNearestPastDayOnly(
+    d: number,
+    now: Date
+  ): { d: number; m: number; y: number } | null {
+    if (d < 1 || d > 31) return null
+    const nowMs = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      23,
+      59,
+      59,
+      999
+    )
+    let y = now.getUTCFullYear()
+    let m = now.getUTCMonth() + 1
+    for (let i = 0; i < 24; i += 1) {
+      const candidate = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0))
+      const valid =
+        candidate.getUTCFullYear() === y &&
+        candidate.getUTCMonth() === m - 1 &&
+        candidate.getUTCDate() === d
+      if (valid && candidate.getTime() <= nowMs) {
+        return { d, m, y }
+      }
+      m -= 1
+      if (m < 1) {
+        m = 12
+        y -= 1
+      }
+    }
+    return null
   }
 
   private isStorageLogQuestion(question: string) {
