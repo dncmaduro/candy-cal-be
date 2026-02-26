@@ -24,6 +24,8 @@ import {
 } from "./ai.routing.context"
 import { AI_DB_TABLES } from "./ai.db.context"
 import { IncomeService } from "../income/income.service"
+import { LivestreamanalyticsService } from "../livestreamanalytics/livestreamanalytics.service"
+import { LivestreammonthgoalsService } from "../livestreammonthgoals/livestreammonthgoals.service"
 
 type OpenAiUsage = {
   prompt_tokens?: number
@@ -86,11 +88,14 @@ export class AiService {
     private readonly aiConversationModel: Model<AiConversation>,
     @InjectModel("aifeedbacks")
     private readonly aiFeedbackModel: Model<AiFeedback>,
-    private readonly incomeService: IncomeService
+    private readonly incomeService: IncomeService,
+    private readonly livestreamanalyticsService: LivestreamanalyticsService,
+    private readonly livestreammonthgoalsService: LivestreammonthgoalsService
   ) {}
 
   async ask(
     question: string,
+    module: "storage" | "livestream",
     userId?: string,
     conversationId?: string,
     debug = false
@@ -100,6 +105,9 @@ export class AiService {
     }
     if (question.length > this.maxQuestionChars) {
       throw new BadRequestException("Question is too long")
+    }
+    if (module !== "storage" && module !== "livestream") {
+      throw new BadRequestException("Module is required: storage | livestream")
     }
     if (!this.apiKey) {
       throw new InternalServerErrorException("AI is not configured")
@@ -139,6 +147,112 @@ export class AiService {
     const resolved = this.resolveAmbiguitySelection(question, conversation)
     if (resolved.question !== question) {
       console.info("[ai] resolvedQuestion", { from: question, to: resolved.question })
+    }
+    const isLivestreamIntent = this.isLivestreamIntentQuestion(
+      resolved.question
+    )
+    if (module === "livestream") {
+      if (this.isLivestreamMonthKpiQuestion(resolved.question)) {
+        const monthKpiAnswer = await this.tryBuildLivestreamMonthKpiAnswer(
+          resolved.question,
+          conversation
+        )
+        if (monthKpiAnswer) {
+          await this.appendConversationMessages(conversation, [
+            { role: "user", content: resolved.question, createdAt: new Date() },
+            {
+              role: "assistant",
+              content: monthKpiAnswer,
+              createdAt: new Date()
+            }
+          ])
+          return { answer: monthKpiAnswer, conversationId: safeConversationId }
+        }
+        const missingKpiArgsMessage =
+          "Để lấy KPI tháng livestream, vui lòng cung cấp tên kênh."
+        await this.appendConversationMessages(conversation, [
+          { role: "user", content: resolved.question, createdAt: new Date() },
+          {
+            role: "assistant",
+            content: missingKpiArgsMessage,
+            createdAt: new Date()
+          }
+        ])
+        return {
+          answer: missingKpiArgsMessage,
+          conversationId: safeConversationId
+        }
+      }
+      if (this.isLivestreamAggregatedMetricsQuestion(resolved.question)) {
+        const livestreamRevenueAnswer =
+          await this.tryBuildLivestreamAggregatedMetricsAnswer(
+            resolved.question,
+            conversation
+          )
+        if (livestreamRevenueAnswer) {
+          await this.appendConversationMessages(conversation, [
+            { role: "user", content: resolved.question, createdAt: new Date() },
+            {
+              role: "assistant",
+              content: livestreamRevenueAnswer,
+              createdAt: new Date()
+            }
+          ])
+          return {
+            answer: livestreamRevenueAnswer,
+            conversationId: safeConversationId
+          }
+        }
+        const missingRevenueArgsMessage =
+          "Để lấy doanh thu livestream, vui lòng cung cấp tên kênh và ngày/khoảng ngày."
+        await this.appendConversationMessages(conversation, [
+          { role: "user", content: resolved.question, createdAt: new Date() },
+          {
+            role: "assistant",
+            content: missingRevenueArgsMessage,
+            createdAt: new Date()
+          }
+        ])
+        return {
+          answer: missingRevenueArgsMessage,
+          conversationId: safeConversationId
+        }
+      }
+      const livestreamScheduleAnswer = await this.tryBuildLivestreamScheduleAnswer(
+        resolved.question,
+        conversation
+      )
+      if (livestreamScheduleAnswer) {
+        await this.appendConversationMessages(conversation, [
+          { role: "user", content: resolved.question, createdAt: new Date() },
+          {
+            role: "assistant",
+            content: livestreamScheduleAnswer,
+            createdAt: new Date()
+          }
+        ])
+        return { answer: livestreamScheduleAnswer, conversationId: safeConversationId }
+      }
+      const unsupportedMessage =
+        "Module livestream chi ho tro cau hoi lien quan den live/livestream."
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        { role: "assistant", content: unsupportedMessage, createdAt: new Date() }
+      ])
+      return { answer: unsupportedMessage, conversationId: safeConversationId }
+    }
+    if (module === "storage" && isLivestreamIntent) {
+      const moduleMismatchMessage =
+        "Cau hoi live/livestream can gui voi module=livestream."
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        {
+          role: "assistant",
+          content: moduleMismatchMessage,
+          createdAt: new Date()
+        }
+      ])
+      return { answer: moduleMismatchMessage, conversationId: safeConversationId }
     }
     const isIncomeRequest = this.isIncomeQuestion(resolved.question)
     const isIncomeBySourceRequest = this.isIncomeBySourceQuestion(
@@ -1013,6 +1127,482 @@ export class AiService {
     return /(doanh thu|revenue|thu nhap|tong thu)/.test(normalized)
   }
 
+  private isLivestreamScheduleQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(lich livestream|lich live|ca livestream|ca live|hom nay livestream|livestream hom nay|hom nay.*ca live|gom nhung ai|nhung ai live|dang live|hien tai.*live)/.test(
+      normalized
+    )
+  }
+
+  private isLivestreamIntentQuestion(question: string) {
+    if (this.isLivestreamScheduleQuestion(question)) return true
+    const roleFilter = this.extractLivestreamRoleFilter(question)
+    if (roleFilter !== "all") return true
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(live|livestream)/.test(normalized)
+  }
+
+  private isLivestreamAggregatedMetricsQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasMetricsSignal =
+      /(doanh thu|chi phi ads|chi phi quang cao|ads|binh luan|comment|don hang|so don|kpi)/.test(
+        normalized
+      )
+    return hasMetricsSignal
+  }
+
+  private isLivestreamMonthKpiQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasKpi = /\bkpi\b/.test(normalized)
+    const hasMonthSignal = /(thang|month)/.test(normalized)
+    return hasKpi && hasMonthSignal
+  }
+
+  private async tryBuildLivestreamMonthKpiAnswer(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    const monthYear = this.extractMonthYear(question)
+    const channelKeyword =
+      this.extractIncomeChannelName(question) ||
+      this.extractIncomeChannelNameFromConversation(conversation)
+    if (!channelKeyword) return null
+    const channel = await this.findLivestreamChannel(channelKeyword)
+    if (!channel) return null
+
+    const apiMonth = monthYear.month - 1
+    console.info("[ai][api:req] livestreammonthgoals/kpis", {
+      month: apiMonth,
+      year: monthYear.year
+    })
+    const monthKpis = await this.livestreammonthgoalsService.getLivestreamMonthKpis(
+      apiMonth,
+      monthYear.year
+    )
+    const target = (monthKpis || []).find((item: any) => {
+      const id = String(item?.channel?._id || item?.channel || "")
+      return id === channel.id
+    })
+    console.info("[ai][api:res] livestreammonthgoals/kpis", {
+      ok: true,
+      count: Array.isArray(monthKpis) ? monthKpis.length : 0,
+      matched: Boolean(target)
+    })
+
+    if (!target) {
+      const resolvedChannelName = channel.name
+      return `Chưa có KPI tháng ${String(monthYear.month).padStart(
+        2,
+        "0"
+      )}/${monthYear.year} cho kênh ${resolvedChannelName}.`
+    }
+    const goalValue = Number((target as any)?.goal || 0)
+    const resolvedChannelName = String(
+      (target as any)?.channel?.name ||
+        (target as any)?.channel?.username ||
+        channel.name
+    ).trim()
+    return `KPI tháng ${String(monthYear.month).padStart(2, "0")}/${
+      monthYear.year
+    } của kênh ${resolvedChannelName}: ${goalValue.toLocaleString("vi-VN")} VNĐ.`
+  }
+
+  private extractMonthYear(question: string): { month: number; year: number } {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const now = new Date()
+
+    if (/(thang nay|month nay|this month)/.test(normalized)) {
+      return { month: now.getUTCMonth() + 1, year: now.getUTCFullYear() }
+    }
+
+    const monthYearMatch =
+      normalized.match(/thang\s*(\d{1,2})\s*\/\s*(\d{4})/) ||
+      normalized.match(/thang\s*(\d{1,2})\s*nam\s*(\d{4})/) ||
+      normalized.match(/month\s*(\d{1,2})\s*\/\s*(\d{4})/)
+    if (monthYearMatch) {
+      const month = Number(monthYearMatch[1])
+      const year = Number(monthYearMatch[2])
+      if (month >= 1 && month <= 12 && Number.isFinite(year)) {
+        return { month, year }
+      }
+    }
+
+    const monthOnlyMatch =
+      normalized.match(/thang\s*(\d{1,2})/) ||
+      normalized.match(/month\s*(\d{1,2})/)
+    if (monthOnlyMatch) {
+      const month = Number(monthOnlyMatch[1])
+      if (month >= 1 && month <= 12) {
+        return { month, year: now.getUTCFullYear() }
+      }
+    }
+
+    return { month: now.getUTCMonth() + 1, year: now.getUTCFullYear() }
+  }
+
+  private async tryBuildLivestreamAggregatedMetricsAnswer(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    const dateRange = this.extractLivestreamAggregatedDateRange(question)
+    if (!dateRange) return null
+    const channelKeyword =
+      this.extractIncomeChannelName(question) ||
+      this.extractIncomeChannelNameFromConversation(conversation)
+    if (!channelKeyword) return null
+    const channel = await this.findLivestreamChannel(channelKeyword)
+    if (!channel) return null
+
+    console.info("[ai][api:req] livestreamanalytics/aggregated-metrics", {
+      startDate: dateRange.start,
+      endDate: dateRange.end,
+      channel: channel.id
+    })
+    const metrics = await this.livestreamanalyticsService.getAggregatedMetrics(
+      dateRange.start,
+      dateRange.end,
+      channel.id
+    )
+    console.info("[ai][api:res] livestreamanalytics/aggregated-metrics", {
+      ok: true,
+      metrics
+    })
+
+    const fmt = (value: any) => Number(value || 0).toLocaleString("vi-VN")
+    const dateLabel =
+      this.extractQuestionDateLabel(question) ||
+      this.formatDateRangeLabel(dateRange.start, dateRange.end)
+    return [
+      `Doanh thu livestream kênh ${channel.name} (${dateLabel || "không rõ ngày"}):`,
+      `- Tổng doanh thu: ${fmt(metrics?.totalIncome)} VNĐ`,
+      `- Tổng chi phí ads: ${fmt(metrics?.totalAdsCost)} VNĐ`,
+      `- Tổng bình luận: ${fmt(metrics?.totalComments)}`,
+      `- Tổng đơn hàng: ${fmt(metrics?.totalOrders)}`,
+      `- KPI: ${fmt(metrics?.kpi)}`
+    ].join("\n")
+  }
+
+  private extractLivestreamAggregatedDateRange(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const now = new Date()
+    const todayMidnight = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+    )
+    const hasDateToken = /\d{1,2}\/\d{1,2}(?:\/\d{4})?/.test(normalized)
+    const hasTodayToken = /(hom nay|today)/.test(normalized)
+    const explicitRange = this.extractDateRange(question)
+    if (hasTodayToken && hasDateToken && explicitRange) {
+      const start = new Date(
+        Date.UTC(
+          explicitRange.start.getUTCFullYear(),
+          explicitRange.start.getUTCMonth(),
+          explicitRange.start.getUTCDate(),
+          0,
+          0,
+          0,
+          0
+        )
+      )
+      return { start, end: new Date(todayMidnight) }
+    }
+
+    if (hasTodayToken) {
+      return { start: new Date(todayMidnight), end: new Date(todayMidnight) }
+    }
+    if (/(hom qua|yesterday)/.test(normalized)) {
+      const d = new Date(todayMidnight)
+      d.setUTCDate(d.getUTCDate() - 1)
+      return { start: d, end: new Date(d) }
+    }
+    if (/(ngay mai|tomorrow)/.test(normalized)) {
+      const d = new Date(todayMidnight)
+      d.setUTCDate(d.getUTCDate() + 1)
+      return { start: d, end: new Date(d) }
+    }
+
+    const range = this.extractDateRange(question)
+    if (!range) return null
+    const toMidnight = (value: Date) =>
+      new Date(
+        Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0)
+      )
+    return {
+      start: toMidnight(range.start),
+      end: toMidnight(range.end)
+    }
+  }
+
+  private isLivestreamNowQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(dang live|hien tai|now|luc nay|bay gio)/.test(normalized)
+  }
+
+  private async tryBuildLivestreamScheduleAnswer(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    const roleFilter = this.extractLivestreamRoleFilter(question)
+    const isNowQuestion = this.isLivestreamNowQuestion(question)
+    const isScheduleQuestion =
+      this.isLivestreamScheduleQuestion(question) || isNowQuestion
+    let baseQuestion = question
+    if (!isScheduleQuestion) {
+      if (roleFilter === "all") return null
+      const lastScheduleQuestion =
+        this.findLastLivestreamScheduleQuestion(conversation)
+      if (!lastScheduleQuestion) return null
+      baseQuestion = lastScheduleQuestion
+    }
+
+    const day =
+      this.extractLivestreamScheduleDate(question) ||
+      this.extractLivestreamScheduleDate(baseQuestion)
+    const effectiveDay =
+      day ||
+      (isNowQuestion
+        ? new Date(
+            Date.UTC(
+              new Date().getUTCFullYear(),
+              new Date().getUTCMonth(),
+              new Date().getUTCDate()
+            )
+          )
+        : null)
+    if (!effectiveDay) return null
+
+    let livestreamModel: Model<any>
+    try {
+      livestreamModel = this.connection.model("livestreams")
+    } catch {
+      return null
+    }
+
+    const start = new Date(effectiveDay)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(effectiveDay)
+    end.setHours(23, 59, 59, 999)
+
+    const rows: any[] = await livestreamModel
+      .find({ date: { $gte: start, $lte: end } }, { date: 1, snapshots: 1 })
+      .populate("snapshots.assignee", "_id name username")
+      .populate("snapshots.altAssignee", "_id name username")
+      .populate("snapshots.period.channel", "_id name username platform")
+      .lean()
+      .exec()
+
+    const byChannel = new Map<
+      string,
+      Map<string, { startMin: number; endMin: number; hosts: Set<string>; assistants: Set<string> }>
+    >()
+    const toName = (person: any) =>
+      String(person?.name || person?.username || "").trim()
+    const toTimeLabel = (minute: number) =>
+      `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(
+        minute % 60
+      ).padStart(2, "0")}`
+    const nowMinutesVn = (() => {
+      const now = new Date()
+      const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+      return (utcMinutes + 7 * 60 + 24 * 60) % (24 * 60)
+    })()
+
+    for (const row of rows) {
+      const snapshots = Array.isArray(row?.snapshots) ? row.snapshots : []
+      for (const s of snapshots) {
+        const channelObj = s?.period?.channel
+        const channelName = String(
+          channelObj?.name || channelObj?.username || "Kênh không rõ"
+        ).trim()
+        if (!byChannel.has(channelName)) byChannel.set(channelName, new Map())
+        const channelSlots = byChannel.get(channelName)!
+
+        const startHour = Number(s?.period?.startTime?.hour)
+        const startMinute = Number(s?.period?.startTime?.minute)
+        const endHour = Number(s?.period?.endTime?.hour)
+        const endMinute = Number(s?.period?.endTime?.minute)
+        const hasStart =
+          Number.isFinite(startHour) && Number.isFinite(startMinute)
+        const hasEnd = Number.isFinite(endHour) && Number.isFinite(endMinute)
+        const startMin = hasStart ? startHour * 60 + startMinute : -1
+        const endMin = hasEnd ? endHour * 60 + endMinute : -1
+        const slotKey =
+          hasStart && hasEnd
+            ? `${startMin}-${endMin}`
+            : "unknown-time"
+        if (!channelSlots.has(slotKey)) {
+          channelSlots.set(slotKey, {
+            startMin,
+            endMin,
+            hosts: new Set(),
+            assistants: new Set()
+          })
+        }
+        const slot = channelSlots.get(slotKey)!
+
+        let personName = ""
+        if (s?.altAssignee === "other") {
+          personName = String(s?.altOtherAssignee || "").trim()
+        } else if (s?.altAssignee) {
+          personName = toName(s.altAssignee)
+        } else if (s?.assignee) {
+          personName = toName(s.assignee)
+        }
+        if (!personName) continue
+
+        if (s?.period?.for === "assistant") slot.assistants.add(personName)
+        else slot.hosts.add(personName)
+      }
+    }
+
+    const dateLabel =
+      this.extractQuestionDateLabel(question) ||
+      this.extractQuestionDateLabel(baseQuestion)
+    if (!byChannel.size) {
+      return `Lịch livestream ngày ${dateLabel || ""}: chưa có ca livestream.`
+    }
+
+    const lines: string[] = [`Lịch livestream ngày ${dateLabel || ""}:`]
+    let renderedSlots = 0
+    for (const [channelName, slots] of byChannel.entries()) {
+      const channelLines: string[] = []
+      const sortedSlots = Array.from(slots.values()).sort((a, b) => {
+        if (a.startMin === -1 && b.startMin === -1) return 0
+        if (a.startMin === -1) return 1
+        if (b.startMin === -1) return -1
+        return a.startMin - b.startMin
+      })
+      for (const slot of sortedSlots) {
+        const hosts = Array.from(slot.hosts)
+        const assistants = Array.from(slot.assistants)
+        if (isNowQuestion) {
+          const inCurrentSlot =
+            slot.startMin >= 0 &&
+            slot.endMin >= 0 &&
+            nowMinutesVn >= slot.startMin &&
+            nowMinutesVn < slot.endMin
+          if (!inCurrentSlot) continue
+        }
+        if (roleFilter === "host" && !hosts.length) continue
+        if (roleFilter === "assistant" && !assistants.length) continue
+        const timeLabel =
+          slot.startMin >= 0 && slot.endMin >= 0
+            ? `${toTimeLabel(slot.startMin)}-${toTimeLabel(slot.endMin)}`
+            : "Không rõ giờ"
+        const details: string[] = []
+        if (roleFilter !== "assistant" && hosts.length) {
+          details.push(`Host: ${hosts.join(", ")}`)
+        }
+        if (roleFilter !== "host" && assistants.length) {
+          details.push(`Trợ live: ${assistants.join(", ")}`)
+        }
+        if (!details.length && roleFilter === "all") {
+          details.push("Chưa phân công nhân sự")
+        }
+        if (!details.length) continue
+        channelLines.push(`- ${timeLabel} | ${details.join(" | ")}`)
+        renderedSlots += 1
+      }
+      if (channelLines.length) {
+        lines.push("")
+        lines.push(`Kênh ${channelName}:`)
+        lines.push(...channelLines)
+      }
+    }
+    if (!renderedSlots) {
+      if (isNowQuestion && roleFilter === "all") {
+        return "Hiện tại không có ai đang live."
+      }
+      if (isNowQuestion && roleFilter === "host") {
+        return "Hiện tại không có host nào đang live."
+      }
+      if (isNowQuestion && roleFilter === "assistant") {
+        return "Hiện tại không có trợ live nào đang live."
+      }
+      if (roleFilter === "host") {
+        return `Lịch livestream ngày ${dateLabel || ""}: không có ca host.`
+      }
+      if (roleFilter === "assistant") {
+        return `Lịch livestream ngày ${dateLabel || ""}: không có ca trợ live.`
+      }
+      return `Lịch livestream ngày ${dateLabel || ""}: chưa có ca livestream.`
+    }
+    return lines.join("\n")
+  }
+
+  private extractLivestreamRoleFilter(question: string): "host" | "assistant" | "all" {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasHost = /(host|nguoi dan|mc)/.test(normalized)
+    const hasAssistant = /(assistant|tro ly|tro live|tro stream|ho tro live)/.test(
+      normalized
+    )
+    if (hasHost && !hasAssistant) return "host"
+    if (hasAssistant && !hasHost) return "assistant"
+    return "all"
+  }
+
+  private findLastLivestreamScheduleQuestion(
+    conversation?: AiConversation | null
+  ) {
+    if (!conversation?.messages?.length) return null
+    const lastUserMessages = [...conversation.messages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.content)
+      .slice(0, 10)
+    for (const msg of lastUserMessages) {
+      if (this.isLivestreamScheduleQuestion(msg.content)) return msg.content
+    }
+    return null
+  }
+
+  private extractLivestreamScheduleDate(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const now = new Date()
+    if (/(hom nay|today)/.test(normalized)) {
+      return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+      )
+    }
+    if (/(hom qua|yesterday)/.test(normalized)) {
+      return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1)
+      )
+    }
+    if (/(ngay mai|tomorrow)/.test(normalized)) {
+      return new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+      )
+    }
+    const range = this.extractDateRange(question)
+    return range?.start || null
+  }
+
   private isIncomeBySourceQuestion(question: string) {
     const normalized = question
       .normalize("NFD")
@@ -1187,14 +1777,41 @@ export class AiService {
   }
 
   private extractQuestionDateLabel(question: string) {
-    const range = this.extractDateRange(question)
-    if (!range) return null
-    const fmt = (date: Date) =>
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const now = new Date()
+    const format = (date: Date) =>
       `${String(date.getUTCDate()).padStart(2, "0")}/${String(
         date.getUTCMonth() + 1
       ).padStart(2, "0")}/${date.getUTCFullYear()}`
-    const start = fmt(range.start)
-    const end = fmt(range.end)
+    if (/(hom nay|today)/.test(normalized)) {
+      return format(
+        new Date(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+        )
+      )
+    }
+    if (/(hom qua|yesterday)/.test(normalized)) {
+      const d = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+      )
+      d.setUTCDate(d.getUTCDate() - 1)
+      return format(d)
+    }
+    if (/(ngay mai|tomorrow)/.test(normalized)) {
+      const d = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+      )
+      d.setUTCDate(d.getUTCDate() + 1)
+      return format(d)
+    }
+
+    const range = this.extractDateRange(question)
+    if (!range) return null
+    const start = format(range.start)
+    const end = format(range.end)
     if (start === end) return start
     return `${start} - ${end}`
   }
@@ -1238,17 +1855,19 @@ export class AiService {
     if (!value) return null
 
     const stopPatterns = [
-      /\bng(?:a|à)y\b[\s\S]*$/i,
       /\bt(?:u|ừ)\s*ng(?:a|à)y\b[\s\S]*$/i,
       /\b(?:d|đ)(?:e|ế)n\s*ng(?:a|à)y\b[\s\S]*$/i,
       /\btrong\s*kho(?:a|ả)ng\b[\s\S]*$/i,
-      /\bkho(?:a|ả)ng\s*th(?:o|ờ)i\s*gian\b[\s\S]*$/i
+      /\bkho(?:a|ả)ng\s*th(?:o|ờ)i\s*gian\b[\s\S]*$/i,
+      /\bng(?:a|à)y\b[\s\S]*$/i
     ]
     for (const pattern of stopPatterns) {
       value = value.replace(pattern, "").trim()
     }
 
     value = value.replace(/\d{1,2}\/\d{1,2}\/\d{4}[\s\S]*$/i, "").trim()
+    value = value.replace(/\d{1,2}\/\d{1,2}[\s\S]*$/i, "").trim()
+    value = value.replace(/\b(tu|từ|den|đến|la|là)\b\s*$/i, "").trim()
     value = value.replace(/[,:;\-]+$/g, "").trim()
     return value || null
   }
@@ -1357,6 +1976,13 @@ export class AiService {
   }
 
   private async findLivestreamChannelId(channelKeyword: string) {
+    const channel = await this.findLivestreamChannel(channelKeyword)
+    return channel?.id || null
+  }
+
+  private async findLivestreamChannel(
+    channelKeyword: string
+  ): Promise<{ id: string; name: string } | null> {
     if (!channelKeyword.trim()) return null
     let channelModel: Model<any>
     try {
@@ -1369,11 +1995,14 @@ export class AiService {
     const channel: any = await channelModel
       .findOne(
         { $or: [{ name: regex }, { username: regex }, { usernames: regex }] },
-        { _id: 1 }
+        { _id: 1, name: 1, username: 1 }
       )
       .lean()
       .exec()
-    if (channel?._id) return String(channel._id)
+    if (channel?._id) {
+      const displayName = String(channel?.name || channel?.username || "").trim()
+      return { id: String(channel._id), name: displayName || channelKeyword.trim() }
+    }
 
     const normalize = (value: string) =>
       String(value || "")
@@ -1393,7 +2022,9 @@ export class AiService {
       const fields = [c?.name, c?.username, ...(Array.isArray(c?.usernames) ? c.usernames : [])]
       return fields.some((f) => normalize(f).includes(target))
     })
-    return matched?._id ? String(matched._id) : null
+    if (!matched?._id) return null
+    const displayName = String(matched?.name || matched?.username || "").trim()
+    return { id: String(matched._id), name: displayName || channelKeyword.trim() }
   }
 
   private async fetchDataByPlan(
