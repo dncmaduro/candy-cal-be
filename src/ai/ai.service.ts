@@ -26,6 +26,8 @@ import { AI_DB_TABLES } from "./ai.db.context"
 import { IncomeService } from "../income/income.service"
 import { LivestreamanalyticsService } from "../livestreamanalytics/livestreamanalytics.service"
 import { LivestreammonthgoalsService } from "../livestreammonthgoals/livestreammonthgoals.service"
+import { StorageLogsService } from "../storagelogs/storagelogs.service"
+import { MonthGoalService } from "../monthgoals/monthgoals.service"
 
 type OpenAiUsage = {
   prompt_tokens?: number
@@ -90,7 +92,9 @@ export class AiService {
     private readonly aiFeedbackModel: Model<AiFeedback>,
     private readonly incomeService: IncomeService,
     private readonly livestreamanalyticsService: LivestreamanalyticsService,
-    private readonly livestreammonthgoalsService: LivestreammonthgoalsService
+    private readonly livestreammonthgoalsService: LivestreammonthgoalsService,
+    private readonly storageLogsService: StorageLogsService,
+    private readonly monthGoalService: MonthGoalService
   ) {}
 
   async ask(
@@ -153,6 +157,9 @@ export class AiService {
     )
     if (module === "livestream") {
       if (this.isLivestreamMonthKpiQuestion(resolved.question)) {
+        console.log("[ai][kpi] route=livestream_month_kpi", {
+          question: resolved.question
+        })
         const monthKpiAnswer = await this.tryBuildLivestreamMonthKpiAnswer(
           resolved.question,
           conversation
@@ -254,6 +261,49 @@ export class AiService {
       ])
       return { answer: moduleMismatchMessage, conversationId: safeConversationId }
     }
+    const shouldHandleStorageKpi =
+      module === "storage" &&
+      (this.isStorageKpiQuestion(resolved.question) ||
+        this.isStorageKpiFollowUpQuestion(resolved.question, conversation))
+    if (shouldHandleStorageKpi) {
+      const storageKpiQuestion = this.resolveStorageKpiFollowUpQuestion(
+        resolved.question,
+        conversation
+      )
+      const storageKpiAnswer = await this.tryBuildStorageKpiAnswer(
+        storageKpiQuestion,
+        conversation
+      )
+      if (storageKpiAnswer) {
+        await this.appendConversationMessages(conversation, [
+          { role: "user", content: resolved.question, createdAt: new Date() },
+          {
+            role: "assistant",
+            content: storageKpiAnswer,
+            createdAt: new Date()
+          }
+        ])
+        return { answer: storageKpiAnswer, conversationId: safeConversationId }
+      }
+    }
+    const storageFollowUpQuestion = this.resolveStorageFollowUpQuestion(
+      resolved.question,
+      conversation
+    )
+    const storageMovementAnswer = await this.tryBuildStorageMovementAnswer(
+      storageFollowUpQuestion
+    )
+    if (storageMovementAnswer) {
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        {
+          role: "assistant",
+          content: storageMovementAnswer,
+          createdAt: new Date()
+        }
+      ])
+      return { answer: storageMovementAnswer, conversationId: safeConversationId }
+    }
     const isIncomeRequest = this.isIncomeQuestion(resolved.question)
     const isIncomeBySourceRequest = this.isIncomeBySourceQuestion(
       resolved.question
@@ -263,25 +313,33 @@ export class AiService {
     )
     const shouldUseRangeStats =
       isIncomeRequest || isIncomeBySourceRequest || isIncomeProductsRequest
-    const rangeStatsFacts = await this.tryBuildRangeStatsFacts(
+    const rangeStatsResolution = await this.tryBuildRangeStatsFacts(
       resolved.question,
       shouldUseRangeStats,
       conversation
     )
+    const rangeStatsFacts = rangeStatsResolution?.facts || null
     if (shouldUseRangeStats && !rangeStatsFacts) {
       const missingArgsMessage =
-        "De tra loi doanh thu, he thong bat buoc goi API incomes/range-stats. " +
-        "Ban vui long cung cap day du ten kenh va khoang ngay theo dinh dang dd/mm/yyyy. " +
-        "Vi du: doanh thu cua kenh ABC tu ngay 01/02/2026 den ngay 24/02/2026."
+        await this.generateIncomeRangeStatsMissingArgsMessage(
+          resolved.question,
+          rangeStatsResolution?.missing || []
+        )
+      const fallbackMessage = this.buildIncomeRangeStatsFallbackMessage(
+        rangeStatsResolution?.missing || []
+      )
       await this.appendConversationMessages(conversation, [
         { role: "user", content: resolved.question, createdAt: new Date() },
         {
           role: "assistant",
-          content: missingArgsMessage,
+          content: missingArgsMessage || fallbackMessage,
           createdAt: new Date()
         }
       ])
-      return { answer: missingArgsMessage, conversationId: safeConversationId }
+      return {
+        answer: missingArgsMessage || fallbackMessage,
+        conversationId: safeConversationId
+      }
     }
     let queryPlan = resolved.plan
       ? resolved.plan
@@ -344,16 +402,21 @@ export class AiService {
           })
         : null
     if (ambiguity && !rangeStatsFacts) {
+      const ambiguityMessage =
+        (await this.generateAmbiguityQuestionWithAi(
+          resolved.question,
+          ambiguity.options
+        )) || ambiguity.message
       await this.storePendingSelection(conversation, ambiguity.options)
       await this.appendConversationMessages(conversation, [
         { role: "user", content: resolved.question, createdAt: new Date() },
         {
           role: "assistant",
-          content: ambiguity.message,
+          content: ambiguityMessage,
           createdAt: new Date()
         }
       ])
-      return { answer: ambiguity.message, conversationId: safeConversationId }
+      return { answer: ambiguityMessage, conversationId: safeConversationId }
     }
     const isIncomeBySourceQuestion = isIncomeBySourceRequest
     const isIncomeProductsQuestion = isIncomeProductsRequest
@@ -397,11 +460,15 @@ export class AiService {
       `Cau hoi: ${question}\n` +
       `Du lieu: ${JSON.stringify(facts)}`
     const askedDateLabel = this.extractQuestionDateLabel(resolved.question)
+    const includeTrendInsights =
+      responseMode === "income_overview" &&
+      this.isIncomeTrendQuestion(resolved.question)
 
     const deterministicAnswer = this.tryBuildDeterministicIncomeAnswer(
       responseMode,
       factsData,
-      askedDateLabel
+      askedDateLabel,
+      includeTrendInsights
     )
     if (deterministicAnswer) {
       console.info("[ai] answer.deterministic", { responseMode })
@@ -1167,56 +1234,93 @@ export class AiService {
       .toLowerCase()
     const hasKpi = /\bkpi\b/.test(normalized)
     const hasMonthSignal = /(thang|month)/.test(normalized)
-    return hasKpi && hasMonthSignal
+    const hasCurrentSignal = /(hien tai|bay gio|luc nay|now|current)/.test(normalized)
+    return hasKpi && (hasMonthSignal || hasCurrentSignal)
   }
 
   private async tryBuildLivestreamMonthKpiAnswer(
     question: string,
     conversation?: AiConversation | null
   ) {
-    const monthYear = this.extractMonthYear(question)
-    const channelKeyword =
-      this.extractIncomeChannelName(question) ||
-      this.extractIncomeChannelNameFromConversation(conversation)
-    if (!channelKeyword) return null
-    const channel = await this.findLivestreamChannel(channelKeyword)
-    if (!channel) return null
+    try {
+      const taskPlan = [
+        "resolve_month_year",
+        "resolve_channel",
+        "fetch_month_kpis",
+        "pick_channel_target",
+        "format_answer"
+      ]
+      console.log("[ai][kpi] taskPlan", { taskPlan })
 
-    const apiMonth = monthYear.month - 1
-    console.info("[ai][api:req] livestreammonthgoals/kpis", {
-      month: apiMonth,
-      year: monthYear.year
-    })
-    const monthKpis = await this.livestreammonthgoalsService.getLivestreamMonthKpis(
-      apiMonth,
-      monthYear.year
-    )
-    const target = (monthKpis || []).find((item: any) => {
-      const id = String(item?.channel?._id || item?.channel || "")
-      return id === channel.id
-    })
-    console.info("[ai][api:res] livestreammonthgoals/kpis", {
-      ok: true,
-      count: Array.isArray(monthKpis) ? monthKpis.length : 0,
-      matched: Boolean(target)
-    })
+      console.log("[ai][kpi][task:start]", { task: "resolve_month_year" })
+      const monthYear = this.extractMonthYear(question)
+      console.log("[ai][kpi][task:done]", { task: "resolve_month_year", monthYear })
 
-    if (!target) {
-      const resolvedChannelName = channel.name
-      return `Chưa có KPI tháng ${String(monthYear.month).padStart(
-        2,
-        "0"
-      )}/${monthYear.year} cho kênh ${resolvedChannelName}.`
+      console.log("[ai][kpi][task:start]", { task: "resolve_channel" })
+      const channelKeyword =
+        this.extractIncomeChannelName(question) ||
+        this.extractIncomeChannelNameFromConversation(conversation)
+      if (!channelKeyword) return null
+      const channel = await this.findLivestreamChannel(channelKeyword)
+      if (!channel) return null
+      console.log("[ai][kpi][task:done]", {
+        task: "resolve_channel",
+        channel: { id: channel.id, name: channel.name }
+      })
+
+      console.log("[ai][kpi][task:start]", { task: "fetch_month_kpis" })
+      const apiMonth = monthYear.month - 1
+      console.info("[ai][api:req] livestreammonthgoals/kpis", {
+        month: apiMonth,
+        year: monthYear.year
+      })
+      const monthKpis = await this.livestreammonthgoalsService.getLivestreamMonthKpis(
+        apiMonth,
+        monthYear.year
+      )
+      console.info("[ai][api:res] livestreammonthgoals/kpis", {
+        ok: true,
+        count: Array.isArray(monthKpis) ? monthKpis.length : 0
+      })
+      console.log("[ai][kpi][task:done]", {
+        task: "fetch_month_kpis",
+        count: Array.isArray(monthKpis) ? monthKpis.length : 0
+      })
+
+      console.log("[ai][kpi][task:start]", { task: "pick_channel_target" })
+      const target = (monthKpis || []).find((item: any) => {
+        const id = String(item?.channel?._id || item?.channel || "")
+        return id === channel.id
+      })
+      console.log("[ai][kpi][task:done]", {
+        task: "pick_channel_target",
+        matched: Boolean(target)
+      })
+
+      if (!target) {
+        const resolvedChannelName = channel.name
+        return `Chưa có KPI tháng ${String(monthYear.month).padStart(
+          2,
+          "0"
+        )}/${monthYear.year} cho kênh ${resolvedChannelName}.`
+      }
+
+      console.log("[ai][kpi][task:start]", { task: "format_answer" })
+      const goalValue = Number((target as any)?.goal || 0)
+      const resolvedChannelName = String(
+        (target as any)?.channel?.name ||
+          (target as any)?.channel?.username ||
+          channel.name
+      ).trim()
+      const answer = `KPI tháng ${String(monthYear.month).padStart(2, "0")}/${
+        monthYear.year
+      } của kênh ${resolvedChannelName}: ${goalValue.toLocaleString("vi-VN")} VNĐ.`
+      console.log("[ai][kpi][task:done]", { task: "format_answer" })
+      return answer
+    } catch (error: any) {
+      console.error("[ai][kpi] failed", error?.message || error)
+      return "Hiện chưa lấy được KPI do lỗi hệ thống tạm thời. Bạn thử lại sau giúp mình."
     }
-    const goalValue = Number((target as any)?.goal || 0)
-    const resolvedChannelName = String(
-      (target as any)?.channel?.name ||
-        (target as any)?.channel?.username ||
-        channel.name
-    ).trim()
-    return `KPI tháng ${String(monthYear.month).padStart(2, "0")}/${
-      monthYear.year
-    } của kênh ${resolvedChannelName}: ${goalValue.toLocaleString("vi-VN")} VNĐ.`
   }
 
   private extractMonthYear(question: string): { month: number; year: number } {
@@ -1253,6 +1357,374 @@ export class AiService {
     }
 
     return { month: now.getUTCMonth() + 1, year: now.getUTCFullYear() }
+  }
+
+  private isStorageKpiQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /\bkpi\b/.test(normalized)
+  }
+
+  private isStorageKpiFollowUpQuestion(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasDiscountSignal =
+      /(truoc\s*chiet\s*khau|sau\s*chiet\s*khau|truoc\s*ck|sau\s*ck|chiet\s*khau)/.test(
+        normalized
+      )
+    if (!hasDiscountSignal) return false
+    if (!conversation?.messages?.length) return false
+    const recentUserMessages = [...conversation.messages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.content)
+      .slice(0, 6)
+    return recentUserMessages.some((m) => this.isStorageKpiQuestion(m.content))
+  }
+
+  private resolveStorageKpiFollowUpQuestion(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    if (this.isStorageKpiQuestion(question)) return question
+    if (!conversation?.messages?.length) return question
+    const recentUserMessages = [...conversation.messages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.content)
+      .slice(0, 8)
+    const base = recentUserMessages.find((m) => this.isStorageKpiQuestion(m.content))
+    if (!base) return question
+    const merged = `${base.content}. ${question}`.trim()
+    console.info("[ai][storage-kpi] followup_merged_question", {
+      baseQuestion: base.content,
+      followUp: question,
+      mergedQuestion: merged
+    })
+    return merged
+  }
+
+  private resolveStorageKpiDiscountMode(question: string): "before" | "after" | "both" {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const wantsBefore = /(truoc\s*chiet\s*khau|truoc\s*ck)/.test(normalized)
+    const wantsAfter = /(sau\s*chiet\s*khau|sau\s*ck)/.test(normalized)
+    if (wantsBefore && wantsAfter) return "both"
+    if (wantsBefore) return "before"
+    if (wantsAfter) return "after"
+    return "after"
+  }
+
+  private isStorageKpiTargetQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(de dat kpi|dat duoc kpi|can dat|ngay con lai|trung binh.*ngay|phai dat doanh so)/.test(
+      normalized
+    )
+  }
+
+  private async tryBuildStorageKpiAnswer(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    try {
+      console.log("[ai][storage-kpi] route=monthgoals", { question })
+      const monthYear = this.extractMonthYear(question)
+      const queryMonth = monthYear.month - 1
+      const channel = await this.resolveStorageKpiChannel(question, conversation)
+      let channelId = channel?.id
+
+      console.log("[ai][storage-kpi][task:start]", { task: "fetch_monthgoals" })
+      const goal = await this.monthGoalService.getGoal(
+        queryMonth,
+        monthYear.year,
+        channelId
+      )
+      console.log("[ai][storage-kpi][task:done]", {
+        task: "fetch_monthgoals",
+        monthQueried: queryMonth,
+        yearQueried: monthYear.year,
+        matchedMonth: Boolean(goal)
+      })
+
+      if (!goal) {
+        if (channel?.name) {
+          return `Chưa có KPI tháng ${String(monthYear.month).padStart(
+            2,
+            "0"
+          )}/${monthYear.year} cho kênh ${channel.name}.`
+        }
+        return `Chưa có KPI tháng ${String(monthYear.month).padStart(2, "0")}/${
+          monthYear.year
+        }.`
+      }
+
+      if (!channelId) {
+        const rawGoalChannelId =
+          (goal as any)?.channel?._id ||
+          (goal as any)?.channel?.id ||
+          (goal as any)?.channel
+        if (rawGoalChannelId) channelId = String(rawGoalChannelId)
+      }
+
+      const now = new Date()
+      const monthRange = this.buildMonthRange(monthYear.month, monthYear.year, now)
+      const normalizedRange = this.normalizeRangeStatsDateRange(monthRange)
+      const hasRangeStats = Boolean(channelId)
+      const discountMode = this.resolveStorageKpiDiscountMode(question)
+      let liveIncomeBeforeDiscount = 0
+      let shopIncomeBeforeDiscount = 0
+      let liveIncomeAfterDiscount = 0
+      let shopIncomeAfterDiscount = 0
+
+      if (hasRangeStats && channelId) {
+        console.log("[ai][storage-kpi][task:start]", {
+          task: "fetch_range_stats_income",
+          startDate: normalizedRange.start,
+          endDate: normalizedRange.end,
+          channelId
+        })
+        const stats = await this.incomeService.getRangeStats(
+          normalizedRange.start,
+          normalizedRange.end,
+          channelId,
+          false
+        )
+        liveIncomeBeforeDiscount = Number(
+          stats?.current?.beforeDiscount?.liveIncome || 0
+        )
+        shopIncomeBeforeDiscount = Number(
+          stats?.current?.beforeDiscount?.videoIncome || 0
+        )
+        liveIncomeAfterDiscount = Number(
+          stats?.current?.afterDiscount?.liveIncome || 0
+        )
+        shopIncomeAfterDiscount = Number(
+          stats?.current?.afterDiscount?.videoIncome || 0
+        )
+        console.log("[ai][storage-kpi][task:done]", {
+          task: "fetch_range_stats_income",
+          discountMode,
+          liveIncomeBeforeDiscount,
+          shopIncomeBeforeDiscount,
+          liveIncomeAfterDiscount,
+          shopIncomeAfterDiscount
+        })
+      } else {
+        console.log("[ai][storage-kpi][task:skip]", {
+          task: "fetch_range_stats_income",
+          reason: "missing_channel_id"
+        })
+      }
+
+      const fmt = (v: any) => Number(v || 0).toLocaleString("vi-VN")
+      const fmtPct = (v: number) =>
+        `${(Math.round(Number(v || 0) * 100) / 100).toLocaleString("vi-VN")}%`
+      const liveGoal = Number((goal as any)?.liveStreamGoal || 0)
+      const shopGoal = Number((goal as any)?.shopGoal || 0)
+      const liveIncomeForKpi =
+        discountMode === "before" ? liveIncomeBeforeDiscount : liveIncomeAfterDiscount
+      const shopIncomeForKpi =
+        discountMode === "before" ? shopIncomeBeforeDiscount : shopIncomeAfterDiscount
+      const liveKpiPct =
+        liveGoal > 0 ? Math.min((liveIncomeForKpi / liveGoal) * 100, 999) : 0
+      const shopKpiPct =
+        shopGoal > 0 ? Math.min((shopIncomeForKpi / shopGoal) * 100, 999) : 0
+      let channelName = String(
+        (goal as any)?.channel?.name || channel?.name || ""
+      ).trim()
+      if (!channelName && channelId) {
+        const channelById = await this.findLivestreamChannelById(channelId)
+        channelName = channelById?.name || ""
+      }
+      if (!channelName) channelName = "không rõ kênh"
+      const lines = [
+        `KPI tháng ${String(monthYear.month).padStart(2, "0")}/${
+          monthYear.year
+        } của kênh ${channelName}:`,
+        `- KPI LiveStream: ${fmt(liveGoal)}`,
+        `- KPI Shop: ${fmt(shopGoal)}`
+      ]
+      if (discountMode === "before" || discountMode === "both") {
+        lines.push(`- Doanh thu Live (trước CK): ${fmt(liveIncomeBeforeDiscount)}`)
+        lines.push(`- Doanh thu Shop (trước CK): ${fmt(shopIncomeBeforeDiscount)}`)
+      }
+      if (discountMode === "after" || discountMode === "both") {
+        lines.push(`- Doanh thu Live (sau CK): ${fmt(liveIncomeAfterDiscount)}`)
+        lines.push(`- Doanh thu Shop (sau CK): ${fmt(shopIncomeAfterDiscount)}`)
+      }
+      if (discountMode === "before") {
+        lines.push(`- KPI% Live (trước CK): ${fmtPct(liveKpiPct)}`)
+        lines.push(`- KPI% Shop (trước CK): ${fmtPct(shopKpiPct)}`)
+      } else if (discountMode === "both") {
+        const liveKpiAfter =
+          liveGoal > 0 ? Math.min((liveIncomeAfterDiscount / liveGoal) * 100, 999) : 0
+        const shopKpiAfter =
+          shopGoal > 0 ? Math.min((shopIncomeAfterDiscount / shopGoal) * 100, 999) : 0
+        lines.push(`- KPI% Live (trước CK): ${fmtPct(liveKpiPct)}`)
+        lines.push(`- KPI% Shop (trước CK): ${fmtPct(shopKpiPct)}`)
+        lines.push(`- KPI% Live (sau CK): ${fmtPct(liveKpiAfter)}`)
+        lines.push(`- KPI% Shop (sau CK): ${fmtPct(shopKpiAfter)}`)
+      } else {
+        lines.push(`- KPI% Live (sau CK): ${fmtPct(liveKpiPct)}`)
+        lines.push(`- KPI% Shop (sau CK): ${fmtPct(shopKpiPct)}`)
+      }
+
+      if (this.isStorageKpiTargetQuestion(question)) {
+        console.log("[ai][storage-kpi][task:start]", {
+          task: "compute_required_daily_revenue_for_kpi",
+          discountMode
+        })
+        const monthEnd = new Date(Date.UTC(monthYear.year, monthYear.month, 0, 23, 59, 59, 999))
+        const today = new Date()
+        const todayStart = new Date(
+          Date.UTC(
+            today.getUTCFullYear(),
+            today.getUTCMonth(),
+            today.getUTCDate(),
+            0,
+            0,
+            0,
+            0
+          )
+        )
+        const monthEndStart = new Date(
+          Date.UTC(
+            monthEnd.getUTCFullYear(),
+            monthEnd.getUTCMonth(),
+            monthEnd.getUTCDate(),
+            0,
+            0,
+            0,
+            0
+          )
+        )
+        const remainingDays =
+          monthEndStart.getTime() < todayStart.getTime()
+            ? 0
+            : Math.floor((monthEndStart.getTime() - todayStart.getTime()) / 86400000) + 1
+        const remainLive = Math.max(liveGoal - liveIncomeForKpi, 0)
+        const remainShop = Math.max(shopGoal - shopIncomeForKpi, 0)
+        const remainTotal = remainLive + remainShop
+        const requiredLivePerDay = remainingDays > 0 ? remainLive / remainingDays : 0
+        const requiredShopPerDay = remainingDays > 0 ? remainShop / remainingDays : 0
+        const requiredTotalPerDay = remainingDays > 0 ? remainTotal / remainingDays : 0
+        const modeLabel = discountMode === "before" ? "trước CK" : "sau CK"
+        lines.push("")
+        lines.push(`Cần đạt thêm để chạm KPI (${modeLabel}):`)
+        lines.push(`- Còn thiếu Live: ${fmt(remainLive)}`)
+        lines.push(`- Còn thiếu Shop: ${fmt(remainShop)}`)
+        lines.push(`- Còn lại ${remainingDays} ngày trong tháng`)
+        lines.push(
+          `- Trung bình/ngày cần đạt Live: ${fmt(requiredLivePerDay)}, Shop: ${fmt(
+            requiredShopPerDay
+          )}, Tổng: ${fmt(requiredTotalPerDay)}`
+        )
+        console.log("[ai][storage-kpi][task:done]", {
+          task: "compute_required_daily_revenue_for_kpi",
+          remainingDays,
+          remainLive,
+          remainShop,
+          requiredLivePerDay,
+          requiredShopPerDay,
+          requiredTotalPerDay
+        })
+      }
+
+      return lines.join("\n")
+    } catch (error: any) {
+      console.error("[ai][storage-kpi] failed", error?.message || error)
+      return "Hiện chưa lấy được KPI ở nhánh storage. Bạn thử lại sau giúp mình."
+    }
+  }
+
+  private async resolveStorageKpiChannel(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    const channelKeyword =
+      this.extractIncomeChannelName(question) ||
+      this.extractIncomeChannelNameFromConversation(conversation)
+    if (channelKeyword) {
+      const direct = await this.findLivestreamChannel(channelKeyword)
+      if (direct) return direct
+    }
+    const inferred = await this.findLivestreamChannelFromQuestion(question)
+    if (inferred) {
+      console.log("[ai][storage-kpi] inferred_channel_from_schema", inferred)
+      return inferred
+    }
+    return null
+  }
+
+  private async findLivestreamChannelFromQuestion(question: string) {
+    let channelModel: Model<any>
+    try {
+      channelModel = this.connection.model("livestreamchannels")
+    } catch {
+      return null
+    }
+    const normalize = (value: string) =>
+      String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .toLowerCase()
+        .trim()
+    const stop = new Set([
+      "hien",
+      "tai",
+      "kpi",
+      "kenh",
+      "la",
+      "bao",
+      "nhieu",
+      "roi",
+      "cho",
+      "cua",
+      "thang",
+      "nam"
+    ])
+    const tokens = normalize(question)
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t && t.length >= 2 && !stop.has(t))
+    if (!tokens.length) return null
+
+    const candidates: any[] = await channelModel
+      .find({}, { _id: 1, name: 1, username: 1, usernames: 1 })
+      .limit(500)
+      .lean()
+      .exec()
+    let best: { id: string; name: string; score: number } | null = null
+    for (const c of candidates) {
+      const fields = [
+        String(c?.name || ""),
+        String(c?.username || ""),
+        ...(Array.isArray(c?.usernames) ? c.usernames.map((u: any) => String(u || "")) : [])
+      ]
+      const haystack = normalize(fields.join(" "))
+      const score = tokens.reduce(
+        (acc, token) => (haystack.includes(token) ? acc + 1 : acc),
+        0
+      )
+      if (score <= 0) continue
+      if (!best || score > best.score) {
+        const name = String(c?.name || c?.username || "").trim()
+        best = { id: String(c?._id || ""), name, score }
+      }
+    }
+    if (!best || best.score < 2) return null
+    return { id: best.id, name: best.name || "Không rõ kênh" }
   }
 
   private async tryBuildLivestreamAggregatedMetricsAnswer(
@@ -1697,7 +2169,8 @@ export class AiService {
               videoIncome: range.stats.current.afterDiscount?.videoIncome ?? 0,
               otherIncome: range.stats.current.afterDiscount?.otherIncome ?? 0
             }
-          }
+          },
+          dailyTrend: range.stats.dailyTrend || []
         }
       }
     }
@@ -1706,7 +2179,8 @@ export class AiService {
   private tryBuildDeterministicIncomeAnswer(
     responseMode: string,
     factsData: Record<string, any>,
-    askedDateLabel?: string | null
+    askedDateLabel?: string | null,
+    includeTrendInsights = false
   ) {
     const range = factsData?.rangeStats
     const current = range?.stats?.current
@@ -1743,7 +2217,7 @@ export class AiService {
     if (responseMode === "income_overview") {
       const b = current.beforeDiscount || {}
       const a = current.afterDiscount || {}
-      return [
+      const lines = [
         titleLine,
         "",
         "Trước chiết khấu:",
@@ -1757,9 +2231,70 @@ export class AiService {
         `- Doanh thu live: ${fmt(a?.liveIncome)} VNĐ`,
         `- Doanh thu video: ${fmt(a?.videoIncome)} VNĐ`,
         `- Doanh thu khác: ${fmt(a?.otherIncome)} VNĐ`
-      ].join("\n")
+      ]
+      if (includeTrendInsights) {
+        const trendSummary = this.buildIncomeTrendSummary(
+          range?.stats?.dailyTrend
+        )
+        if (trendSummary.length) {
+          lines.push("", "Nhận xét xu hướng:", ...trendSummary)
+        }
+      }
+      return lines.join("\n")
     }
     return null
+  }
+
+  private isIncomeTrendQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(xu huong|tang|giam|bien dong|cao nhat|thap nhat|trend|peak)/.test(
+      normalized
+    )
+  }
+
+  private buildIncomeTrendSummary(dailyTrend: any) {
+    if (!Array.isArray(dailyTrend) || dailyTrend.length < 2) return []
+    const safeRows = dailyTrend
+      .map((row: any) => ({
+        date: new Date(row?.date),
+        before: Number(row?.beforeDiscountTotal || 0),
+        after: Number(row?.afterDiscountTotal || 0)
+      }))
+      .filter((row: any) => !Number.isNaN(row.date.getTime()))
+      .sort((a: any, b: any) => a.date.getTime() - b.date.getTime())
+    if (safeRows.length < 2) return []
+
+    const highAfter = safeRows.reduce((best: any, cur: any) =>
+      cur.after > best.after ? cur : best
+    )
+    const lowAfter = safeRows.reduce((best: any, cur: any) =>
+      cur.after < best.after ? cur : best
+    )
+    const first = safeRows[0]
+    const last = safeRows[safeRows.length - 1]
+    const changePct =
+      first.after === 0
+        ? last.after === 0
+          ? 0
+          : 100
+        : Math.round(((last.after - first.after) / first.after) * 10000) / 100
+    const trendDirection =
+      changePct > 1 ? "xu hướng tăng" : changePct < -1 ? "xu hướng giảm" : "dao động nhẹ"
+
+    return [
+      `- Tổng quan: ${trendDirection} (${changePct.toLocaleString("vi-VN")}%) so với đầu kỳ.`,
+      `- Ngày cao nhất (sau chiết khấu): ${this.formatDateForTrendLabel(highAfter.date)} với ${highAfter.after.toLocaleString("vi-VN")} VNĐ.`,
+      `- Ngày thấp nhất (sau chiết khấu): ${this.formatDateForTrendLabel(lowAfter.date)} với ${lowAfter.after.toLocaleString("vi-VN")} VNĐ.`
+    ]
+  }
+
+  private formatDateForTrendLabel(date: Date) {
+    return `${String(date.getUTCDate()).padStart(2, "0")}/${String(
+      date.getUTCMonth() + 1
+    ).padStart(2, "0")}/${date.getUTCFullYear()}`
   }
 
   private formatDateRangeLabel(startDate: any, endDate: any) {
@@ -1855,11 +2390,19 @@ export class AiService {
     if (!value) return null
 
     const stopPatterns = [
+      /\btrong\s*\d+\s*ng(?:a|à)y\b[\s\S]*$/i,
+      /\btrong\s*(?:\d+\s*)?(?:t(?:u|uầ)n|th(?:a|á)ng|n(?:a|ă)m)\b[\s\S]*$/i,
       /\bt(?:u|ừ)\s*ng(?:a|à)y\b[\s\S]*$/i,
       /\b(?:d|đ)(?:e|ế)n\s*ng(?:a|à)y\b[\s\S]*$/i,
       /\btrong\s*kho(?:a|ả)ng\b[\s\S]*$/i,
       /\bkho(?:a|ả)ng\s*th(?:o|ờ)i\s*gian\b[\s\S]*$/i,
-      /\bng(?:a|à)y\b[\s\S]*$/i
+      /\bng(?:a|à)y\b[\s\S]*$/i,
+      /\b(?:d|đ)u(?:o|ơ)c\s*bao\s*nhieu\b[\s\S]*$/i,
+      /\bbao\s*nhieu\b[\s\S]*$/i,
+      /\bda\s*dat\b[\s\S]*$/i,
+      /\bdat\s*duoc\b[\s\S]*$/i,
+      /\bthi\s*sao\b[\s\S]*$/i,
+      /\broi\b[\s\S]*$/i
     ]
     for (const pattern of stopPatterns) {
       value = value.replace(pattern, "").trim()
@@ -1891,17 +2434,69 @@ export class AiService {
     question: string,
     forceForIncome = false,
     conversation?: AiConversation | null
-  ) {
-    if (!forceForIncome && !this.isRangeStatsQuestion(question)) return null
-    const dateRange = this.extractDateRange(question)
-    if (!dateRange) return null
-    const normalizedRange = this.normalizeRangeStatsDateRange(dateRange)
+  ): Promise<{
+    facts: {
+      channelId: string
+      channelName: string
+      startDate: Date
+      endDate: Date
+      stats: any
+    } | null
+    missing: Array<"channel" | "dateRange">
+  }> {
+    if (!forceForIncome && !this.isRangeStatsQuestion(question)) {
+      return { facts: null, missing: [] }
+    }
+    const taskPlan = [
+      "resolve_date_range",
+      "resolve_channel_name",
+      "resolve_channel_id",
+      "fetch_range_stats"
+    ]
+    console.info("[ai][income] taskPlan", { taskPlan })
+
+    console.info("[ai][income][task:start]", { task: "resolve_date_range" })
+    const dateRange = await this.inferIncomeDateRangeWithAi(question)
+    console.info("[ai][income][task:done]", {
+      task: "resolve_date_range",
+      hasDateRange: Boolean(dateRange)
+    })
+
+    console.info("[ai][income][task:start]", { task: "resolve_channel_name" })
     const channelName =
       this.extractIncomeChannelName(question) ||
-      this.extractIncomeChannelNameFromConversation(conversation)
-    if (!channelName) return null
+      this.extractIncomeChannelNameFromConversation(conversation) ||
+      (await this.inferIncomeChannelNameWithAi(question, conversation))
+    console.info("[ai][income][task:done]", {
+      task: "resolve_channel_name",
+      channelName: channelName || null
+    })
+
+    const missing: Array<"channel" | "dateRange"> = []
+    if (!dateRange) missing.push("dateRange")
+    if (!channelName) missing.push("channel")
+    if (missing.length > 0) {
+      console.info("[ai][income][task:skip]", {
+        task: "resolve_channel_id",
+        reason: "missing_required_input"
+      })
+      console.info("[ai][income][task:skip]", {
+        task: "fetch_range_stats",
+        reason: "missing_required_input"
+      })
+      return { facts: null, missing }
+    }
+
+    const normalizedRange = this.normalizeRangeStatsDateRange(dateRange)
+    console.info("[ai][income][task:start]", { task: "resolve_channel_id" })
     const channelId = await this.findLivestreamChannelId(channelName)
-    if (!channelId) return null
+    console.info("[ai][income][task:done]", {
+      task: "resolve_channel_id",
+      found: Boolean(channelId)
+    })
+    if (!channelId) return { facts: null, missing: ["channel"] }
+
+    console.info("[ai][income][task:start]", { task: "fetch_range_stats" })
     console.info("[ai][api:req] incomes/range-stats", {
       startDate: normalizedRange.start,
       endDate: normalizedRange.end,
@@ -1913,6 +2508,11 @@ export class AiService {
       normalizedRange.end,
       channelId,
       true
+    )
+    const dailyTrend = await this.buildIncomeDailyTrend(
+      normalizedRange.start,
+      normalizedRange.end,
+      channelId
     )
     console.info("[ai][api:res] incomes/range-stats", {
       ok: true,
@@ -1926,12 +2526,249 @@ export class AiService {
           }
         : undefined
     })
+    console.info("[ai][income][task:done]", {
+      task: "fetch_range_stats",
+      ok: true
+    })
     return {
-      channelId,
-      channelName,
-      startDate: normalizedRange.start,
-      endDate: normalizedRange.end,
-      stats
+      facts: {
+        channelId,
+        channelName,
+        startDate: normalizedRange.start,
+        endDate: normalizedRange.end,
+        stats: {
+          ...stats,
+          dailyTrend
+        }
+      },
+      missing: []
+    }
+  }
+
+  private async buildIncomeDailyTrend(
+    startDate: Date,
+    endDate: Date,
+    channelId: string
+  ) {
+    const perDay = new Map<string, { beforeDiscountTotal: number; afterDiscountTotal: number }>()
+    const limit = 200
+    const first = await this.incomeService.getIncomesByDateRange(
+      startDate,
+      endDate,
+      1,
+      limit,
+      undefined,
+      undefined,
+      undefined,
+      channelId
+    )
+    const total = Number(first?.total || 0)
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    const allIncomes: any[] = [...(Array.isArray(first?.incomes) ? first.incomes : [])]
+    for (let page = 2; page <= totalPages; page++) {
+      const next = await this.incomeService.getIncomesByDateRange(
+        startDate,
+        endDate,
+        page,
+        limit,
+        undefined,
+        undefined,
+        undefined,
+        channelId
+      )
+      if (Array.isArray(next?.incomes) && next.incomes.length) {
+        allIncomes.push(...next.incomes)
+      }
+    }
+
+    for (const income of allIncomes) {
+      const d = new Date(income?.date)
+      if (Number.isNaN(d.getTime())) continue
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(d.getUTCDate()).padStart(2, "0")}`
+      const current = perDay.get(key) || {
+        beforeDiscountTotal: 0,
+        afterDiscountTotal: 0
+      }
+      for (const p of income?.products || []) {
+        const before = Number(p?.price || 0)
+        const sellerDiscount = Number(p?.sellerDiscount || 0)
+        current.beforeDiscountTotal += before
+        current.afterDiscountTotal += before - sellerDiscount
+      }
+      perDay.set(key, current)
+    }
+
+    return Array.from(perDay.entries())
+      .map(([day, totals]) => ({
+        date: new Date(`${day}T00:00:00.000Z`),
+        beforeDiscountTotal: totals.beforeDiscountTotal,
+        afterDiscountTotal: totals.afterDiscountTotal
+      }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+  }
+
+  private async generateIncomeRangeStatsMissingArgsMessage(
+    question: string,
+    missing: Array<"channel" | "dateRange">
+  ) {
+    const missingLabel =
+      missing.includes("channel") && missing.includes("dateRange")
+        ? "thiếu cả tên kênh và khoảng ngày"
+        : missing.includes("channel")
+          ? "thiếu tên kênh"
+          : missing.includes("dateRange")
+            ? "thiếu khoảng ngày"
+            : "thiếu thông tin"
+    const systemPrompt =
+      "Bạn là trợ lý nhắc người dùng bổ sung dữ liệu đầu vào cho truy vấn doanh thu. " +
+      "Viết 1 câu tiếng Việt có dấu, ngắn gọn, lịch sự (tối đa 22 từ), nêu đúng phần còn thiếu, không giải thích kỹ thuật."
+    const userPrompt =
+      `Câu hỏi người dùng: ${question}\n` +
+      `Tình trạng hiện tại: ${missingLabel}\n` +
+      "Nếu thiếu tên kênh, gợi ý ví dụ: My Candy. " +
+      "Nếu thiếu khoảng ngày, gợi ý: 30 ngày gần nhất."
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const content = String(raw || "").trim()
+      if (!content) return null
+      return content
+    } catch {
+      return null
+    }
+  }
+
+  private buildIncomeRangeStatsFallbackMessage(
+    missing: Array<"channel" | "dateRange">
+  ) {
+    if (missing.includes("channel") && missing.includes("dateRange")) {
+      return "Bạn cho mình tên kênh và khoảng ngày nhé, ví dụ: kênh My Candy trong 30 ngày gần nhất."
+    }
+    if (missing.includes("channel")) {
+      return "Bạn cho mình tên kênh nhé, ví dụ: My Candy."
+    }
+    if (missing.includes("dateRange")) {
+      return "Bạn cho mình khoảng ngày nhé, ví dụ: 30 ngày gần nhất hoặc từ ngày ... đến ngày ...."
+    }
+    return "Bạn bổ sung thêm tên kênh và khoảng ngày để mình trả kết quả chính xác nhé."
+  }
+
+  private async inferIncomeDateRangeWithAi(question: string) {
+    const now = new Date()
+    const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(now.getUTCDate()).padStart(2, "0")}`
+    const systemPrompt =
+      "Ban la bo phan suy luan khoang ngay cho cau hoi doanh thu. " +
+      'Tra ve dung JSON: {"start":"YYYY-MM-DD","end":"YYYY-MM-DD","confidence":0-1}. ' +
+      'Neu khong suy ra duoc thi tra ve {"start":null,"end":null,"confidence":0}. ' +
+      "Quy tac: " +
+      '"X ngay gan nhat" => end = hom nay, start = hom nay - (X-1) ngay. ' +
+      '"hom nay" => 1 ngay hom nay; "hom qua" => 1 ngay hom qua; "ngay mai" => 1 ngay ngay mai. ' +
+      '"thang nay" => tu ngay 01 den hom nay; "thang truoc" => tu ngay 01 den ngay cuoi thang truoc. ' +
+      '"thang N" => toan bo thang N gan nhat trong qua khu; "thang N/YYYY" => toan bo thang do. ' +
+      'Neu co 2 moc ngay ro rang (vi du "tu ngay ... den ngay ...") thi dung dung 2 moc do.'
+    const userPrompt =
+      `Hom nay (UTC): ${today}\n` +
+      `Cau hoi: ${question}\n` +
+      "Chi tra ve JSON."
+
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const parsed = this.safeParseRoute(raw)
+      const startRaw = typeof parsed?.start === "string" ? parsed.start : ""
+      const endRaw = typeof parsed?.end === "string" ? parsed.end : ""
+      const startMatch = startRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      const endMatch = endRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (!startMatch || !endMatch) return null
+
+      const start = new Date(
+        Date.UTC(
+          Number(startMatch[1]),
+          Number(startMatch[2]) - 1,
+          Number(startMatch[3]),
+          0,
+          0,
+          0,
+          0
+        )
+      )
+      const end = new Date(
+        Date.UTC(
+          Number(endMatch[1]),
+          Number(endMatch[2]) - 1,
+          Number(endMatch[3]),
+          23,
+          59,
+          59,
+          999
+        )
+      )
+      if (
+        Number.isNaN(start.getTime()) ||
+        Number.isNaN(end.getTime()) ||
+        start.getTime() > end.getTime()
+      ) {
+        return null
+      }
+      return { start, end }
+    } catch {
+      return null
+    }
+  }
+
+  private async inferIncomeChannelNameWithAi(
+    question: string,
+    conversation?: AiConversation | null
+  ) {
+    let channelModel: Model<any>
+    try {
+      channelModel = this.connection.model("livestreamchannels")
+    } catch {
+      return null
+    }
+    const channels: any[] = await channelModel
+      .find({}, { _id: 0, name: 1, username: 1 })
+      .limit(500)
+      .lean()
+      .exec()
+    const candidateNames = Array.from(
+      new Set(
+        channels
+          .flatMap((c) => [c?.name, c?.username])
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+      )
+    ).slice(0, 300)
+    if (!candidateNames.length) return null
+
+    const recentContext = (conversation?.messages || [])
+      .slice(-6)
+      .map((m) => `${m.role}: ${m.content}`)
+      .join("\n")
+    const systemPrompt =
+      "Ban la bo phan trich xuat ten kenh livestream trong cau hoi doanh thu. " +
+      'Tra ve dung JSON: {"channelName":"...","confidence":0-1}. ' +
+      'Neu khong xac dinh duoc thi tra ve {"channelName":null,"confidence":0}. ' +
+      "Chi chon ten kenh tu danh sach duoc cung cap."
+    const userPrompt =
+      `Cau hoi hien tai: ${question}\n` +
+      (recentContext ? `Ngu canh hoi dap gan day:\n${recentContext}\n` : "") +
+      `Danh sach kenh hop le:\n${JSON.stringify(candidateNames)}\n` +
+      "Chi tra ve JSON."
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const parsed = this.safeParseRoute(raw)
+      const channelName =
+        typeof parsed?.channelName === "string" ? parsed.channelName.trim() : ""
+      if (!channelName) return null
+      if (!candidateNames.includes(channelName)) return null
+      return channelName
+    } catch {
+      return null
     }
   }
 
@@ -1964,15 +2801,44 @@ export class AiService {
     conversation?: AiConversation | null
   ) {
     if (!conversation?.messages?.length) return null
-    const lastUserMessages = [...conversation.messages]
+    const recentMessages = [...conversation.messages]
       .reverse()
-      .filter((m) => m.role === "user" && m.content)
-      .slice(0, 6)
-    for (const msg of lastUserMessages) {
-      const name = this.extractIncomeChannelName(msg.content)
-      if (name) return name
+      .filter((m) => m.content)
+      .slice(0, 10)
+    for (const msg of recentMessages) {
+      if (msg.role === "user") {
+        const name = this.extractIncomeChannelName(msg.content)
+        if (name) return name
+      }
+      if (msg.role === "assistant") {
+        const assistantMatch = msg.content.match(
+          /c(?:ua|ủa)\s*k(?:e|ê)nh\s*([^:\n\r]+)/i
+        )
+        if (assistantMatch?.[1]) {
+          const cleaned = this.cleanIncomeChannelName(assistantMatch[1])
+          if (cleaned) return cleaned
+        }
+      }
     }
     return null
+  }
+
+  private async findLivestreamChannelById(channelId: string) {
+    if (!channelId || !isValidObjectId(channelId)) return null
+    let channelModel: Model<any>
+    try {
+      channelModel = this.connection.model("livestreamchannels")
+    } catch {
+      return null
+    }
+    const channel: any = await channelModel
+      .findById(channelId, { _id: 1, name: 1, username: 1 })
+      .lean()
+      .exec()
+    if (!channel?._id) return null
+    const name = String(channel?.name || channel?.username || "").trim()
+    if (!name) return null
+    return { id: String(channel._id), name }
   }
 
   private async findLivestreamChannelId(channelKeyword: string) {
@@ -2440,6 +3306,41 @@ export class AiService {
     return null
   }
 
+  private async generateAmbiguityQuestionWithAi(
+    question: string,
+    options: Array<{ index: number; code?: string; name?: string }>
+  ) {
+    if (!Array.isArray(options) || !options.length) return null
+    const optionLines = options
+      .map((o) => {
+        const code = o.code ? ` (mã: ${o.code})` : ""
+        const name = o.name || "Không rõ tên"
+        return `${o.index}. ${name}${code}`
+      })
+      .join("\n")
+    const fallback =
+      "Có nhiều kết quả phù hợp. Bạn muốn AI trả lời theo kết quả nào?\n" +
+      optionLines
+    const systemPrompt =
+      "Bạn là trợ lý viết câu hỏi làm rõ. " +
+      "Viết 1 tin nhắn tiếng Việt tự nhiên, có dấu, ngắn gọn để người dùng chọn 1 kết quả. " +
+      "Giữ nguyên danh sách lựa chọn, không đổi số thứ tự, không thêm lựa chọn mới."
+    const userPrompt =
+      `Câu hỏi người dùng: ${question}\n` +
+      `Danh sách lựa chọn:\n${optionLines}\n` +
+      "Trả về đúng nội dung tin nhắn để gửi người dùng."
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const content = String(raw || "").trim()
+      if (!content) return fallback
+      const hasNumberedOption = /^\s*1\.\s+/m.test(content)
+      if (!hasNumberedOption) return fallback
+      return content
+    } catch {
+      return fallback
+    }
+  }
+
   private async storePendingSelection(
     conversation: AiConversation | null,
     options: Array<{ index: number; code?: string; name?: string }>
@@ -2475,10 +3376,28 @@ export class AiService {
       anyNumber?.[1]
     const choiceIndex = choiceText ? Number(choiceText) : NaN
     if (conversation?.pendingSelection?.options?.length) {
-      const option = Number.isFinite(choiceIndex)
-        ? conversation.pendingSelection.options.find(
-            (o) => o.index === choiceIndex
+      const pendingOptions = conversation.pendingSelection.options
+      const baseQuestion = this.getPendingSelectionBaseQuestion(conversation)
+      const shouldKeepStorageContext = this.shouldKeepStorageContextForSelection(
+        baseQuestion
+      )
+      const selectAllSignal =
+        /(ca\\s*2|ca\\s*hai|ca\\s*2\\s*san\\s*pham|ca\\s*hai\\s*san\\s*pham|tat\\s*ca|all\\s*(items|products)?|all)$/i.test(
+          normalized
+        )
+      if (selectAllSignal && shouldKeepStorageContext) {
+        if (conversation?._id) {
+          this.aiConversationModel.updateOne(
+            { _id: conversation._id },
+            { $unset: { pendingSelection: "" } }
           )
+        }
+        return {
+          question: this.buildStorageSelectionQuestion(baseQuestion, pendingOptions)
+        }
+      }
+      const option = Number.isFinite(choiceIndex)
+        ? pendingOptions.find((o) => o.index === choiceIndex)
         : undefined
       if (option?.code || option?.name) {
         const code = option?.code?.toUpperCase()
@@ -2487,6 +3406,11 @@ export class AiService {
             { _id: conversation._id },
             { $unset: { pendingSelection: "" } }
           )
+        }
+        if (shouldKeepStorageContext) {
+          return {
+            question: this.buildStorageSelectionQuestion(baseQuestion, [option])
+          }
         }
         if (code) {
           return {
@@ -2521,7 +3445,7 @@ export class AiService {
       }
 
       const normalizedQuestion = normalized
-      const codeMatch = conversation.pendingSelection.options.find(
+      const codeMatch = pendingOptions.find(
         (o) =>
           o.code &&
           normalizedQuestion.includes(normalizeText(String(o.code)))
@@ -2533,6 +3457,11 @@ export class AiService {
             { _id: conversation._id },
             { $unset: { pendingSelection: "" } }
           )
+        }
+        if (shouldKeepStorageContext) {
+          return {
+            question: this.buildStorageSelectionQuestion(baseQuestion, [codeMatch])
+          }
         }
         return {
           question: `ma ${code}`,
@@ -2550,7 +3479,7 @@ export class AiService {
         }
       }
 
-      const nameMatch = conversation.pendingSelection.options.find(
+      const nameMatch = pendingOptions.find(
         (o) =>
           o.name &&
           normalizedQuestion.includes(normalizeText(String(o.name)))
@@ -2562,6 +3491,11 @@ export class AiService {
             { _id: conversation._id },
             { $unset: { pendingSelection: "" } }
           )
+        }
+        if (shouldKeepStorageContext) {
+          return {
+            question: this.buildStorageSelectionQuestion(baseQuestion, [nameMatch])
+          }
         }
         if (code) {
           return {
@@ -2660,6 +3594,55 @@ export class AiService {
     return { question }
   }
 
+  private getPendingSelectionBaseQuestion(conversation: AiConversation | null) {
+    const messages = conversation?.messages || []
+    const users = [...messages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.content)
+      .map((m) => String(m.content).trim())
+    for (const q of users) {
+      const normalized = this.normalizeStorageText(q)
+      const isShortChoice =
+        /^\d+$/.test(normalized) ||
+        /(ket qua|chon|option|ca 2|ca hai|tat ca|all)/.test(normalized)
+      if (!isShortChoice) return q
+    }
+    return users[0] || ""
+  }
+
+  private shouldKeepStorageContextForSelection(baseQuestion: string) {
+    if (!baseQuestion) return false
+    const normalized = this.normalizeStorageText(baseQuestion)
+    if (this.isRestockForecastQuestion(baseQuestion)) return true
+    if (this.isStorageCoverageDaysQuestion(baseQuestion)) return true
+    if (this.isStorageMovementQuantityQuestion(baseQuestion)) return true
+    return /(xuat|nhap|ton kho|het hang|sap het)/.test(normalized)
+  }
+
+  private buildStorageSelectionQuestion(
+    baseQuestion: string,
+    options: Array<{ index: number; code?: string; name?: string }>
+  ) {
+    const labels = options
+      .map((o) => {
+        const code = o.code ? String(o.code).toUpperCase() : ""
+        const name = String(o.name || "").trim()
+        if (name && code) return `${name} (mã ${code})`
+        if (name) return name
+        if (code) return `mã ${code}`
+        return ""
+      })
+      .filter(Boolean)
+    if (!labels.length) return baseQuestion
+    const normalizedBase = this.normalizeStorageText(baseQuestion)
+    const connector = labels.length > 1 ? " và " : ""
+    const selectedLabel = labels.join(connector)
+    if (/(cho (ma|mã|mat hang|mặt hàng|san pham|sản phẩm))/.test(normalizedBase)) {
+      return `${baseQuestion} (${selectedLabel})`
+    }
+    return `${baseQuestion} cho ${selectedLabel}`
+  }
+
   private applyLikeFilters(filter: Record<string, any>) {
     const out: Record<string, any> = { ...filter }
     const likeKeys = new Set(["name", "code"])
@@ -2716,8 +3699,7 @@ export class AiService {
       /ma\s*hang\s*[:\-]?\s*([a-z0-9_-]+)/i,
       /ma\s*mat\s*hang\s*[:\-]?\s*([a-z0-9_-]+)/i,
       /ma\s*[:\-]?\s*([a-z0-9_-]+)/i,
-      /item\s*[:\-]?\s*([a-z0-9_-]+)/i,
-      /hang\s*[:\-]?\s*([a-z0-9_-]+)/i
+      /item\s*[:\-]?\s*([a-z0-9_-]+)/i
     ]
     for (const pattern of patterns) {
       const match = normalized.match(pattern)
@@ -2921,7 +3903,9 @@ export class AiService {
     return null
   }
 
-  private extractStorageLogStatus(question: string) {
+  private extractStorageLogStatus(
+    question: string
+  ): "received" | "delivered" | "returned" | null {
     const normalized = question
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -2978,6 +3962,1400 @@ export class AiService {
     const endDate = dates[1] || dates[0]
     const end = new Date(Date.UTC(endDate.y, endDate.m - 1, endDate.d, 23, 59, 59, 999))
     return { start, end }
+  }
+
+  private async tryBuildStorageMovementAnswer(question: string) {
+    const isRestockForecastIntent = this.isRestockForecastQuestion(question)
+    if (!this.isStorageMovementQuantityQuestion(question) && !isRestockForecastIntent) {
+      return null
+    }
+    if (
+      this.hasExplicitStorageItemScope(question) &&
+      this.extractStorageItemLookup(question) &&
+      !isRestockForecastIntent
+    ) {
+      return null
+    }
+    const aiQuery = await this.inferStorageMovementQueryWithAi(question)
+    console.info("[ai][storage] aiQuery", aiQuery)
+    const taskType = this.resolveStorageTaskType(question, aiQuery?.taskType || null)
+    const resolvedDateRange =
+      aiQuery?.dateRange || (await this.resolveStorageMovementDateRange(question))
+    const dateRange =
+      resolvedDateRange ||
+      (!this.hasUserProvidedTimeSignal(question)
+        ? this.getDefaultRecentTwoWeeksDateRange()
+        : null)
+    if (!dateRange) {
+      return "Mình chưa xác định được khoảng ngày phù hợp từ câu hỏi. Vui lòng cung cấp ngày hoặc khoảng ngày cụ thể."
+    }
+    if (!resolvedDateRange && dateRange) {
+      console.info("[ai][storage] applied_default_date_range_14_days", {
+        start: dateRange.start,
+        end: dateRange.end
+      })
+    }
+    const apiDateRange = this.normalizeStorageMovementDateRange(dateRange)
+
+    const askedDateLabel =
+      this.extractQuestionDateLabel(question) ||
+      this.formatDateRangeLabel(dateRange.start, dateRange.end)
+    const isCoverageDaysIntent = taskType === "coverage_days"
+    const aiStatus = aiQuery?.status
+    const answerScope = aiQuery?.answerScope || "all_items"
+    const status =
+      aiStatus && aiStatus !== "both"
+        ? aiStatus
+        : this.extractStorageLogStatus(question)
+    const effectiveStatus = isCoverageDaysIntent
+      ? ("delivered" as const)
+      : status
+    const hasDelivered = /(xuat kho|xuat|delivered)/.test(
+      question.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    )
+    const hasReceived = /(nhap kho|nhap|received)/.test(
+      question.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    )
+    const wantsBoth =
+      aiStatus === "both" ||
+      (!aiStatus && (!status || (hasDelivered && hasReceived)))
+    const wantsTotal =
+      typeof aiQuery?.wantsTotal === "boolean"
+        ? aiQuery.wantsTotal
+        : this.isTotalQuantityIntent(question)
+    const explicitTotalIntent = this.isTotalQuantityIntent(question)
+    let itemHints =
+      aiQuery?.itemHints?.length
+        ? aiQuery.itemHints
+        : (() => {
+            const fallback = this.extractStorageMovementItemHint(question)
+            return fallback ? [fallback] : []
+          })()
+    let hasItemScope = answerScope !== "all_items" || itemHints.length > 0
+    const hasExplicitItemCode = this.hasExplicitItemCodeLookup(question)
+    const hasMeaningfulItemHints = this.hasMeaningfulCoverageItemHints(itemHints)
+    if (isCoverageDaysIntent && !hasExplicitItemCode && !hasMeaningfulItemHints) {
+      itemHints = []
+      hasItemScope = false
+      console.info("[ai][storage] force_all_codes_coverage_no_code_specified")
+    }
+    if (isCoverageDaysIntent && this.shouldUseAllItemsCoverageScope(question, itemHints)) {
+      itemHints = []
+      hasItemScope = false
+      console.info("[ai][storage] force_all_items_coverage_scope")
+    }
+    const forceItemizedAllItems = !hasItemScope && !explicitTotalIntent
+    const taskPlan = await this.planStorageMovementTasksWithAi(question, {
+      taskType,
+      status: effectiveStatus,
+      wantsBoth: isCoverageDaysIntent ? false : wantsBoth,
+      hasItemScope
+    })
+    console.info("[ai][storage] taskPlan", {
+      taskPlan,
+      taskType,
+      status: effectiveStatus,
+      wantsBoth: isCoverageDaysIntent ? false : wantsBoth,
+      hasItemScope,
+      itemHints
+    })
+    const taskExecution = await this.executeStorageMovementTasks(taskPlan, {
+      dateRange,
+      apiDateRange,
+      status: effectiveStatus,
+      itemHints,
+      hasItemScope
+    })
+    console.info("[ai][storage] taskExecution", {
+      statusLogs: taskExecution.statusLogs?.length || 0,
+      receivedLogs: taskExecution.receivedLogs?.length || 0,
+      deliveredLogs: taskExecution.deliveredLogs?.length || 0,
+      statusByItem: taskExecution.statusByItem?.length || 0,
+      receivedByItem: taskExecution.receivedByItem?.length || 0,
+      deliveredByItem: taskExecution.deliveredByItem?.length || 0,
+      remainingQty: taskExecution.remainingQty,
+      hasCoverageAnswer: Boolean(taskExecution.coverageAnswer)
+    })
+
+    const countQuantity = (logs: any[]) =>
+      (logs || []).reduce((sum: number, log: any) => {
+        const many = Array.isArray(log?.items)
+          ? log.items.reduce(
+              (acc: number, item: any) => acc + Number(item?.quantity || 0),
+              0
+            )
+          : 0
+        const one = many > 0 ? 0 : Number(log?.item?.quantity || 0)
+        return sum + one + many
+      }, 0)
+
+    if (isCoverageDaysIntent) {
+      const deliveredLogs =
+        taskExecution.deliveredLogs ||
+        (await this.fetchStorageLogsViaApi(
+          apiDateRange.start,
+          apiDateRange.end,
+          "delivered"
+        ))
+      const byItem =
+        taskExecution.deliveredByItem ||
+        (await this.aggregateStorageLogsByItem(deliveredLogs))
+      const filteredByItem = this.filterStorageRowsByItemHints(byItem, itemHints)
+      const deliveredQty = hasItemScope
+        ? filteredByItem.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+        : countQuantity(deliveredLogs)
+      const daysInRange =
+        Math.floor((dateRange.end.getTime() - dateRange.start.getTime()) / 86400000) + 1
+      const dailyAvg = daysInRange > 0 ? deliveredQty / daysInRange : 0
+      if (!hasItemScope) {
+        const perItemCoverage = await this.estimateCoverageDaysByItem(
+          byItem,
+          daysInRange
+        )
+        if (!perItemCoverage.length) {
+          return `Không đủ dữ liệu xuất kho ${askedDateLabel ? `(${askedDateLabel})` : ""} để ước tính số ngày còn đủ hàng theo từng mã.`
+        }
+        return [
+          `Ước tính số ngày còn đủ hàng theo từng mã (${askedDateLabel}):`,
+          ...perItemCoverage.map(
+            (row) =>
+              `- ${row.code || ""}${row.code ? " - " : ""}${row.name}: còn ${row.remainingQty.toLocaleString(
+                "vi-VN"
+              )}, TB xuất/ngày ${row.dailyAvg.toLocaleString("vi-VN", {
+                maximumFractionDigits: 2
+              })}, đủ khoảng ${row.coverageDays.toLocaleString("vi-VN", {
+                maximumFractionDigits: 1
+              })} ngày, ${this.buildRestockEtaLabel(row.coverageDays)}`
+          )
+        ].join("\n")
+      }
+      const remainingQty =
+        taskExecution.remainingQty ??
+        (await this.sumRestQuantityByItemHints(itemHints))
+
+      if (deliveredQty <= 0 || dailyAvg <= 0) {
+        return `Không đủ dữ liệu xuất kho ${askedDateLabel ? `(${askedDateLabel})` : ""} để ước tính số ngày còn đủ hàng.`
+      }
+      const coverageDays = remainingQty / dailyAvg
+      const scopeLabel = hasItemScope
+        ? `cho nhóm mặt hàng phù hợp "${itemHints.join(", ")}"`
+        : "cho toàn bộ hàng hóa"
+      return [
+        `Ước tính số ngày còn đủ hàng ${scopeLabel}:`,
+        `- Khoảng tham chiếu xuất kho: ${askedDateLabel}`,
+        `- Tổng lượng xuất trong kỳ: ${deliveredQty.toLocaleString("vi-VN")}`,
+        `- Trung bình/ngày: ${dailyAvg.toLocaleString("vi-VN", {
+          maximumFractionDigits: 2
+        })}`,
+        `- Lượng tồn hiện tại: ${remainingQty.toLocaleString("vi-VN")}`,
+        `- Số ngày còn đủ hàng: ${coverageDays.toLocaleString("vi-VN", {
+          maximumFractionDigits: 1
+        })} ngày`,
+        `- Dự kiến cần nhập thêm: ${this.buildRestockEtaLabel(coverageDays)}`
+      ].join("\n")
+    }
+
+    if (!wantsBoth && effectiveStatus) {
+      const logs =
+        taskExecution.statusLogs ||
+        (await this.fetchStorageLogsViaApi(
+          apiDateRange.start,
+          apiDateRange.end,
+          effectiveStatus
+        ))
+      if (!logs.length) {
+        const statusLabel =
+          effectiveStatus === "received"
+            ? "nhập kho"
+            : effectiveStatus === "delivered"
+              ? "xuất kho"
+              : "trả hàng"
+        return `Không có dữ liệu ${statusLabel} ${askedDateLabel ? `(${askedDateLabel})` : ""}.`
+      }
+      const totalQuantity = countQuantity(logs)
+      const statusLabel =
+        effectiveStatus === "received"
+          ? "nhập kho"
+          : effectiveStatus === "delivered"
+            ? "xuất kho"
+            : "trả hàng"
+      const byItem =
+        taskExecution.statusByItem || (await this.aggregateStorageLogsByItem(logs))
+      const filteredByItem = this.filterStorageRowsByItemHints(byItem, itemHints)
+      if (wantsTotal && !forceItemizedAllItems) {
+        if (hasItemScope) {
+          const scopedTotal = filteredByItem.reduce(
+            (sum, row) => sum + Number(row.quantity || 0),
+            0
+          )
+          if (!filteredByItem.length) {
+            const hintLabel = itemHints.join(", ")
+            return `Không có dữ liệu ${statusLabel} cho mặt hàng phù hợp "${hintLabel}" ${askedDateLabel ? `(${askedDateLabel})` : ""}.`
+          }
+          return `Tổng số lượng ${statusLabel} của mặt hàng phù hợp ${askedDateLabel ? `(${askedDateLabel}) ` : ""}là ${scopedTotal.toLocaleString("vi-VN")}.`
+        }
+        return `Tổng số lượng ${statusLabel} ${askedDateLabel ? `(${askedDateLabel}) ` : ""}là ${totalQuantity.toLocaleString("vi-VN")}.`
+      }
+      if (!filteredByItem.length) {
+        if (hasItemScope) {
+          const hintLabel = itemHints.join(", ")
+          return `Không có dữ liệu ${statusLabel} cho mặt hàng phù hợp "${hintLabel}" ${askedDateLabel ? `(${askedDateLabel})` : ""}.`
+        }
+        return `Không có dữ liệu ${statusLabel} theo mặt hàng ${askedDateLabel ? `(${askedDateLabel})` : ""}.`
+      }
+      return [
+        `Chi tiết số lượng ${statusLabel} theo mặt hàng ${askedDateLabel ? `(${askedDateLabel})` : ""}:`,
+        ...filteredByItem.map(
+          (row) =>
+            `- ${row.code || ""}${row.code ? " - " : ""}${row.name}: ${row.quantity.toLocaleString("vi-VN")}`
+        )
+      ].join("\n")
+    }
+
+    const [receivedLogs, deliveredLogs] = await Promise.all([
+      taskExecution.receivedLogs
+        ? Promise.resolve(taskExecution.receivedLogs)
+        : this.fetchStorageLogsViaApi(apiDateRange.start, apiDateRange.end, "received"),
+      taskExecution.deliveredLogs
+        ? Promise.resolve(taskExecution.deliveredLogs)
+        : this.fetchStorageLogsViaApi(apiDateRange.start, apiDateRange.end, "delivered")
+    ])
+    const receivedQty = countQuantity(receivedLogs)
+    const deliveredQty = countQuantity(deliveredLogs)
+    if (wantsTotal) {
+      return [
+        `Số lượng nhập/xuất ${askedDateLabel ? `(${askedDateLabel})` : ""}:`,
+        `- Nhập kho: ${receivedQty.toLocaleString("vi-VN")}`,
+        `- Xuất kho: ${deliveredQty.toLocaleString("vi-VN")}`
+      ].join("\n")
+    }
+    const [receivedByItem, deliveredByItem] = await Promise.all([
+      taskExecution.receivedByItem
+        ? Promise.resolve(taskExecution.receivedByItem)
+        : this.aggregateStorageLogsByItem(receivedLogs),
+      taskExecution.deliveredByItem
+        ? Promise.resolve(taskExecution.deliveredByItem)
+        : this.aggregateStorageLogsByItem(deliveredLogs)
+    ])
+    const filteredReceivedByItem = this.filterStorageRowsByItemHints(
+      receivedByItem,
+      itemHints
+    )
+    const filteredDeliveredByItem = this.filterStorageRowsByItemHints(
+      deliveredByItem,
+      itemHints
+    )
+    if (hasItemScope && !filteredReceivedByItem.length && !filteredDeliveredByItem.length) {
+      const hintLabel = itemHints.join(", ")
+      return `Không có dữ liệu nhập/xuất cho mặt hàng phù hợp "${hintLabel}" ${askedDateLabel ? `(${askedDateLabel})` : ""}.`
+    }
+    const lines: string[] = [
+      `Chi tiết nhập/xuất theo mặt hàng ${askedDateLabel ? `(${askedDateLabel})` : ""}:`
+    ]
+    if (filteredReceivedByItem.length) {
+      lines.push("- Nhập kho:")
+      for (const row of filteredReceivedByItem) {
+        lines.push(
+          `- ${row.code || ""}${row.code ? " - " : ""}${row.name}: ${row.quantity.toLocaleString("vi-VN")}`
+        )
+      }
+    } else {
+      lines.push("- Nhập kho: không có dữ liệu.")
+    }
+    if (filteredDeliveredByItem.length) {
+      lines.push("- Xuất kho:")
+      for (const row of filteredDeliveredByItem) {
+        lines.push(
+          `- ${row.code || ""}${row.code ? " - " : ""}${row.name}: ${row.quantity.toLocaleString("vi-VN")}`
+        )
+      }
+    } else {
+      lines.push("- Xuất kho: không có dữ liệu.")
+    }
+    return lines.join("\n")
+  }
+
+  private async planStorageMovementTasksWithAi(
+    question: string,
+    context: {
+      taskType: "quantity" | "coverage_days"
+      status: "received" | "delivered" | "returned" | null
+      wantsBoth: boolean
+      hasItemScope: boolean
+    }
+  ): Promise<string[]> {
+    const allowedTasks = [
+      "fetch_status_logs",
+      "fetch_received_logs",
+      "fetch_delivered_logs",
+      "aggregate_status_items",
+      "aggregate_received_items",
+      "aggregate_delivered_items",
+      "fetch_remaining_quantities",
+      "compute_coverage_days"
+    ]
+    const fallback = this.buildDefaultStorageMovementTaskPlan(context)
+    const systemPrompt =
+      "Ban la bo lap ke hoach task cho truy van kho. " +
+      "Tra ve JSON: {\"tasks\":[...]} voi danh sach task tu tap cho phep. " +
+      "Chi dung cac task can thiet, theo thu tu thuc thi. " +
+      `Tap task hop le: ${allowedTasks.join(", ")}.`
+    const userPrompt =
+      `Cau hoi: ${question}\n` +
+      `Ngu canh: ${JSON.stringify(context)}\n` +
+      "Chi tra ve JSON."
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const parsed = this.safeParseRoute(raw)
+      const tasks: string[] = Array.isArray(parsed?.tasks)
+        ? parsed.tasks
+            .map((t: any) => (typeof t === "string" ? t.trim() : ""))
+            .filter((t: string) => allowedTasks.includes(t))
+        : []
+      if (!tasks.length) return fallback
+      return this.normalizeStorageMovementTaskPlan(context, [...new Set(tasks)])
+    } catch {
+      return fallback
+    }
+  }
+
+  private buildDefaultStorageMovementTaskPlan(context: {
+    taskType: "quantity" | "coverage_days"
+    status: "received" | "delivered" | "returned" | null
+    wantsBoth: boolean
+    hasItemScope: boolean
+  }): string[] {
+    if (context.taskType === "coverage_days") {
+      const tasks = ["fetch_delivered_logs", "aggregate_delivered_items"]
+      if (context.hasItemScope) tasks.push("fetch_remaining_quantities")
+      tasks.push("compute_coverage_days")
+      return tasks
+    }
+    if (!context.wantsBoth && context.status) {
+      return ["fetch_status_logs", "aggregate_status_items"]
+    }
+    return [
+      "fetch_received_logs",
+      "fetch_delivered_logs",
+      "aggregate_received_items",
+      "aggregate_delivered_items"
+    ]
+  }
+
+  private normalizeStorageMovementTaskPlan(
+    context: {
+      taskType: "quantity" | "coverage_days"
+      status: "received" | "delivered" | "returned" | null
+      wantsBoth: boolean
+      hasItemScope: boolean
+    },
+    tasks: string[]
+  ) {
+    if (context.taskType !== "coverage_days") return tasks
+    const cleaned = tasks.filter(
+      (t) => t !== "fetch_received_logs" && t !== "aggregate_received_items"
+    )
+    if (!cleaned.includes("fetch_delivered_logs")) cleaned.unshift("fetch_delivered_logs")
+    if (!cleaned.includes("aggregate_delivered_items")) {
+      cleaned.push("aggregate_delivered_items")
+    }
+    if (context.hasItemScope && !cleaned.includes("fetch_remaining_quantities")) {
+      cleaned.push("fetch_remaining_quantities")
+    }
+    if (!cleaned.includes("compute_coverage_days")) cleaned.push("compute_coverage_days")
+    return cleaned
+  }
+
+  private async executeStorageMovementTasks(
+    tasks: string[],
+    input: {
+      dateRange: { start: Date; end: Date }
+      apiDateRange: { start: Date; end: Date }
+      status: "received" | "delivered" | "returned" | null
+      itemHints: string[]
+      hasItemScope: boolean
+    }
+  ) {
+    const state: {
+      statusLogs?: any[]
+      receivedLogs?: any[]
+      deliveredLogs?: any[]
+      statusByItem?: Array<{ code: string; name: string; quantity: number }>
+      receivedByItem?: Array<{ code: string; name: string; quantity: number }>
+      deliveredByItem?: Array<{ code: string; name: string; quantity: number }>
+      remainingQty?: number
+      coverageAnswer?: string
+    } = {}
+    const uniqueTasks = [...new Set(tasks)]
+    const countQuantity = (logs: any[]) =>
+      (logs || []).reduce((sum: number, log: any) => {
+        const many = Array.isArray(log?.items)
+          ? log.items.reduce(
+              (acc: number, item: any) => acc + Number(item?.quantity || 0),
+              0
+            )
+          : 0
+        const one = many > 0 ? 0 : Number(log?.item?.quantity || 0)
+        return sum + one + many
+      }, 0)
+
+    for (const task of uniqueTasks) {
+      console.info("[ai][storage][task:start]", { task })
+      if (task === "fetch_status_logs" && input.status) {
+        state.statusLogs = await this.fetchStorageLogsViaApi(
+          input.apiDateRange.start,
+          input.apiDateRange.end,
+          input.status
+        )
+        console.info("[ai][storage][task:done]", {
+          task,
+          rows: state.statusLogs.length
+        })
+      }
+      if (task === "fetch_received_logs") {
+        state.receivedLogs = await this.fetchStorageLogsViaApi(
+          input.apiDateRange.start,
+          input.apiDateRange.end,
+          "received"
+        )
+        console.info("[ai][storage][task:done]", {
+          task,
+          rows: state.receivedLogs.length
+        })
+      }
+      if (task === "fetch_delivered_logs") {
+        state.deliveredLogs = await this.fetchStorageLogsViaApi(
+          input.apiDateRange.start,
+          input.apiDateRange.end,
+          "delivered"
+        )
+        console.info("[ai][storage][task:done]", {
+          task,
+          rows: state.deliveredLogs.length
+        })
+      }
+      if (task === "aggregate_status_items" && state.statusLogs) {
+        state.statusByItem = await this.aggregateStorageLogsByItem(state.statusLogs)
+        console.info("[ai][storage][task:done]", {
+          task,
+          rows: state.statusByItem.length
+        })
+      }
+      if (task === "aggregate_received_items" && state.receivedLogs) {
+        state.receivedByItem = await this.aggregateStorageLogsByItem(state.receivedLogs)
+        console.info("[ai][storage][task:done]", {
+          task,
+          rows: state.receivedByItem.length
+        })
+      }
+      if (task === "aggregate_delivered_items" && state.deliveredLogs) {
+        state.deliveredByItem = await this.aggregateStorageLogsByItem(state.deliveredLogs)
+        console.info("[ai][storage][task:done]", {
+          task,
+          rows: state.deliveredByItem.length
+        })
+      }
+      if (task === "fetch_remaining_quantities") {
+        if (!input.hasItemScope) {
+          console.info("[ai][storage][task:skip]", {
+            task,
+            reason: "all_items_scope_coverage"
+          })
+          continue
+        }
+        state.remainingQty = await this.sumRestQuantityByItemHints(
+          input.hasItemScope ? input.itemHints : []
+        )
+        console.info("[ai][storage][task:done]", {
+          task,
+          remainingQty: state.remainingQty
+        })
+      }
+      if (task === "compute_coverage_days") {
+        const deliveredLogs = state.deliveredLogs || []
+        const deliveredByItem =
+          state.deliveredByItem || (await this.aggregateStorageLogsByItem(deliveredLogs))
+        const filteredByItem = this.filterStorageRowsByItemHints(
+          deliveredByItem,
+          input.itemHints
+        )
+        const deliveredQty = input.hasItemScope
+          ? filteredByItem.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+          : countQuantity(deliveredLogs)
+        const daysInRange =
+          Math.floor(
+            (input.dateRange.end.getTime() - input.dateRange.start.getTime()) / 86400000
+          ) + 1
+        const dailyAvg = daysInRange > 0 ? deliveredQty / daysInRange : 0
+        const remainingQty =
+          typeof state.remainingQty === "number"
+            ? state.remainingQty
+            : await this.sumRestQuantityByItemHints(
+                input.hasItemScope ? input.itemHints : []
+              )
+        if (deliveredQty > 0 && dailyAvg > 0) {
+          const coverageDays = remainingQty / dailyAvg
+          const dateLabel = this.formatDateRangeLabel(
+            input.dateRange.start,
+            input.dateRange.end
+          )
+          const scopeLabel = input.hasItemScope
+            ? `cho nhóm mặt hàng phù hợp "${input.itemHints.join(", ")}"`
+            : "cho toàn bộ hàng hóa"
+          state.coverageAnswer = [
+            `Ước tính số ngày còn đủ hàng ${scopeLabel}:`,
+            `- Khoảng tham chiếu xuất kho: ${dateLabel}`,
+            `- Tổng lượng xuất trong kỳ: ${deliveredQty.toLocaleString("vi-VN")}`,
+            `- Trung bình/ngày: ${dailyAvg.toLocaleString("vi-VN", {
+              maximumFractionDigits: 2
+            })}`,
+            `- Lượng tồn hiện tại: ${remainingQty.toLocaleString("vi-VN")}`,
+            `- Số ngày còn đủ hàng: ${coverageDays.toLocaleString("vi-VN", {
+              maximumFractionDigits: 1
+            })} ngày`,
+            `- Dự kiến cần nhập thêm: ${this.buildRestockEtaLabel(coverageDays)}`
+          ].join("\n")
+        }
+        console.info("[ai][storage][task:done]", {
+          task,
+          deliveredQty,
+          dailyAvg,
+          remainingQty,
+          hasCoverageAnswer: Boolean(state.coverageAnswer)
+        })
+      }
+    }
+    return state
+  }
+
+  private async inferStorageMovementQueryWithAi(question: string): Promise<{
+    taskType: "quantity" | "coverage_days" | null
+    status: "received" | "delivered" | "returned" | "both" | null
+    wantsTotal: boolean | null
+    answerScope: "single_item" | "multiple_items" | "all_items" | null
+    itemHints: string[]
+    dateRange: { start: Date; end: Date } | null
+  } | null> {
+    const now = new Date()
+    const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(now.getUTCDate()).padStart(2, "0")}`
+    const systemPrompt =
+      "Ban la bo phan trich xuat tham so cho truy van lich su kho. " +
+      "Tra ve dung JSON: " +
+      "{\"taskType\":\"quantity|coverage_days|unknown\",\"status\":\"received|delivered|returned|both|unknown\",\"wantsTotal\":true|false|null,\"answerScope\":\"single_item|multiple_items|all_items|unknown\",\"itemHints\":[\"...\"],\"start\":\"YYYY-MM-DD\"|null,\"end\":\"YYYY-MM-DD\"|null}. " +
+      "BUOC 1 bat buoc: xac dinh taskType truoc tien. " +
+      "Quy tac: " +
+      "xuat kho => delivered, nhap kho => received, tra hang => returned. " +
+      "Neu cau hoi khong ro trang thai thi status=both. " +
+      "Neu co cum 'bao lau', 'bao nhieu ngay', 'khi nao', 'phai nhap them', 'sap het', 'het hang' thi uu tien taskType=coverage_days. " +
+      "taskType=coverage_days khi cau hoi hoi ton con lai du xuat trong bao nhieu ngay dua tren luong xuat tham chieu. Nguoc lai taskType=quantity. " +
+      "wantsTotal=true chi khi cau hoi co y ro rang ve tong (tu 'tong', 'tong so', 'tong cong', 'sum'). Neu chi la 'bao nhieu' thi de wantsTotal=false. " +
+      "answerScope=single_item neu cau hoi 1 mat hang cu the, multiple_items neu nhieu mat hang cu the, all_items neu hoi tong quan hang hoa. " +
+      "itemHints la danh sach ten mat hang (co the rong), bo cac tu chuc nang nhu co, duoc, trong, thang, tuan, bao nhieu. " +
+      "\"thang nay\" => start la ngay 01 thang hien tai, end la hom nay. " +
+      "\"thang truoc\" => start ngay 01 thang truoc, end ngay cuoi thang truoc. " +
+      "\"thang N\" => toan bo thang N gan nhat trong qua khu. " +
+      "\"thang N/YYYY\" => toan bo thang do. " +
+      "\"tuan nay\" => tu thu Hai tuan nay den hom nay. " +
+      "\"tuan truoc\" => tu thu Hai den Chu Nhat tuan truoc."
+    const userPrompt =
+      `Hom nay (UTC): ${today}\n` +
+      `Cau hoi: ${question}\n` +
+      "Chi tra ve JSON."
+
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const parsed = this.safeParseRoute(raw)
+      if (!parsed || typeof parsed !== "object") return null
+      const taskTypeRaw =
+        typeof parsed.taskType === "string" ? parsed.taskType.toLowerCase() : ""
+      const taskType =
+        taskTypeRaw === "quantity" || taskTypeRaw === "coverage_days"
+          ? (taskTypeRaw as "quantity" | "coverage_days")
+          : null
+      const statusRaw =
+        typeof parsed.status === "string" ? parsed.status.toLowerCase() : ""
+      const status =
+        statusRaw === "received" ||
+        statusRaw === "delivered" ||
+        statusRaw === "returned" ||
+        statusRaw === "both"
+          ? (statusRaw as "received" | "delivered" | "returned" | "both")
+          : null
+      const answerScopeRaw =
+        typeof parsed.answerScope === "string"
+          ? parsed.answerScope.toLowerCase()
+          : ""
+      const answerScope =
+        answerScopeRaw === "single_item" ||
+        answerScopeRaw === "multiple_items" ||
+        answerScopeRaw === "all_items"
+          ? (answerScopeRaw as "single_item" | "multiple_items" | "all_items")
+          : null
+      const wantsTotal =
+        typeof parsed.wantsTotal === "boolean" ? parsed.wantsTotal : null
+      const itemHintsRaw = Array.isArray(parsed.itemHints)
+        ? parsed.itemHints
+            .map((v: any) => (typeof v === "string" ? v.trim() : ""))
+            .filter((v: string) => v.length >= 2)
+        : []
+      const itemHints = this.sanitizeStorageMovementItemHints(
+        question,
+        answerScope,
+        itemHintsRaw
+      )
+
+      const startRaw = typeof parsed.start === "string" ? parsed.start : ""
+      const endRaw = typeof parsed.end === "string" ? parsed.end : ""
+      const startMatch = startRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      const endMatch = endRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      let dateRange: { start: Date; end: Date } | null = null
+      if (startMatch && endMatch) {
+        const start = new Date(
+          Date.UTC(
+            Number(startMatch[1]),
+            Number(startMatch[2]) - 1,
+            Number(startMatch[3]),
+            0,
+            0,
+            0,
+            0
+          )
+        )
+        const end = new Date(
+          Date.UTC(
+            Number(endMatch[1]),
+            Number(endMatch[2]) - 1,
+            Number(endMatch[3]),
+            23,
+            59,
+            59,
+            999
+          )
+        )
+        if (
+          !Number.isNaN(start.getTime()) &&
+          !Number.isNaN(end.getTime()) &&
+          start.getTime() <= end.getTime()
+        ) {
+          dateRange = { start, end }
+        }
+      }
+
+      return { taskType, status, wantsTotal, answerScope, itemHints, dateRange }
+    } catch {
+      return null
+    }
+  }
+
+  private extractStorageMovementDateRange(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const now = new Date()
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+    )
+    if (/(hom nay|today)/.test(normalized)) {
+      return {
+        start: today,
+        end: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
+      }
+    }
+    if (/(hom qua|yesterday)/.test(normalized)) {
+      const start = new Date(today)
+      start.setUTCDate(start.getUTCDate() - 1)
+      return {
+        start,
+        end: new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1)
+      }
+    }
+    if (/(ngay mai|tomorrow)/.test(normalized)) {
+      const start = new Date(today)
+      start.setUTCDate(start.getUTCDate() + 1)
+      return {
+        start,
+        end: new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1)
+      }
+    }
+    const monthRange = this.extractMonthRangeFromQuestion(normalized, now)
+    if (monthRange) return monthRange
+    const relativeDay = this.extractNearestRelativeDayRange(normalized, now)
+    if (relativeDay) return relativeDay
+    return this.extractDateRange(question)
+  }
+
+  private extractNearestRelativeDayRange(normalized: string, now: Date) {
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+    )
+
+    const dayInMonthMatch = normalized.match(
+      /(?:^|\s)ngay\s*(\d{1,2})\s+thang\s*(nay|truoc)\b/
+    )
+    if (dayInMonthMatch) {
+      const day = Number(dayInMonthMatch[1])
+      const fromPreviousMonth = dayInMonthMatch[2] === "truoc"
+      const resolved = this.resolveNearestPastDayByMonthScope(
+        day,
+        today,
+        fromPreviousMonth ? 1 : 0
+      )
+      if (resolved) {
+        return {
+          start: resolved,
+          end: new Date(resolved.getTime() + 24 * 60 * 60 * 1000 - 1)
+        }
+      }
+    }
+
+    const hasThisWeek = /(tuan nay|this week)/.test(normalized)
+    const hasLastWeek = /(tuan truoc|last week)/.test(normalized)
+    const weekday = this.extractWeekdayInQuestion(normalized)
+    if ((hasThisWeek || hasLastWeek) && weekday !== null) {
+      const resolved = this.resolveNearestDayByWeekScope(
+        today,
+        weekday,
+        hasLastWeek ? "last" : "this"
+      )
+      return {
+        start: resolved,
+        end: new Date(resolved.getTime() + 24 * 60 * 60 * 1000 - 1)
+      }
+    }
+    return null
+  }
+
+  private async resolveStorageMovementDateRange(question: string) {
+    const regexRange = this.extractStorageMovementDateRange(question)
+    if (regexRange && !this.shouldFallbackToAiForDateRange(question, regexRange)) {
+      return regexRange
+    }
+
+    const aiRange = await this.inferStorageMovementDateRangeWithAi(question)
+    if (aiRange) return aiRange
+    return regexRange
+  }
+
+  private shouldFallbackToAiForDateRange(
+    question: string,
+    regexRange: { start: Date; end: Date }
+  ) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasBroadTimeSignal =
+      /(thang nay|thang truoc|tuan nay|tuan truoc|this month|last month|this week|last week)/.test(
+        normalized
+      )
+    if (!hasBroadTimeSignal) return false
+    if (this.hasSpecificDateSignal(normalized)) return false
+
+    const sameDay =
+      regexRange.start.getUTCFullYear() === regexRange.end.getUTCFullYear() &&
+      regexRange.start.getUTCMonth() === regexRange.end.getUTCMonth() &&
+      regexRange.start.getUTCDate() === regexRange.end.getUTCDate()
+    return sameDay
+  }
+
+  private hasSpecificDateSignal(normalizedQuestion: string) {
+    if (/(hom nay|hom qua|ngay mai|today|yesterday|tomorrow)/.test(normalizedQuestion)) {
+      return true
+    }
+    if (/\d{1,2}\/\d{1,2}(?:\/\d{4})?/.test(normalizedQuestion)) return true
+    if (/(?:thang|month)\s*\d{1,2}(?:\s*\/\s*\d{4})?/.test(normalizedQuestion)) {
+      return true
+    }
+    if (/(?:^|\s)ngay\s+\d{1,2}\b/.test(normalizedQuestion)) return true
+    if (
+      /(thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)|chu nhat|cn)\s*(?:cua\s*)?(tuan nay|tuan truoc|this week|last week)/.test(
+        normalizedQuestion
+      )
+    ) {
+      return true
+    }
+    return false
+  }
+
+  private async inferStorageMovementDateRangeWithAi(question: string) {
+    const now = new Date()
+    const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(now.getUTCDate()).padStart(2, "0")}`
+    const systemPrompt =
+      "Ban la bo phan suy luan khoang ngay cho cau hoi kho. " +
+      "Tra ve dung JSON: {\"start\":\"YYYY-MM-DD\",\"end\":\"YYYY-MM-DD\",\"confidence\":0-1}. " +
+      "Neu khong suy ra duoc thi tra ve {\"start\":null,\"end\":null,\"confidence\":0}. " +
+      "Quy tac uu tien: " +
+      "\"thang nay\" => tu ngay 01 thang hien tai den hom nay; " +
+      "\"thang truoc\" => tu ngay 01 den ngay cuoi thang truoc; " +
+      "\"thang N\" => toan bo thang N gan nhat trong qua khu; " +
+      "\"thang N/YYYY\" => toan bo thang do; " +
+      "\"tuan nay\" => tu thu Hai tuan nay den hom nay; " +
+      "\"tuan truoc\" => tu thu Hai den Chu Nhat tuan truoc."
+    const userPrompt =
+      `Hom nay (UTC): ${today}\n` +
+      `Cau hoi: ${question}\n` +
+      "Chi tra ve JSON."
+
+    try {
+      const raw = await this.callOpenAi(systemPrompt, userPrompt, [])
+      const parsed = this.safeParseRoute(raw)
+      const startRaw = typeof parsed?.start === "string" ? parsed.start : ""
+      const endRaw = typeof parsed?.end === "string" ? parsed.end : ""
+      const startMatch = startRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      const endMatch = endRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (!startMatch || !endMatch) return null
+
+      const start = new Date(
+        Date.UTC(
+          Number(startMatch[1]),
+          Number(startMatch[2]) - 1,
+          Number(startMatch[3]),
+          0,
+          0,
+          0,
+          0
+        )
+      )
+      const end = new Date(
+        Date.UTC(
+          Number(endMatch[1]),
+          Number(endMatch[2]) - 1,
+          Number(endMatch[3]),
+          23,
+          59,
+          59,
+          999
+        )
+      )
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+      if (start.getTime() > end.getTime()) return null
+      return { start, end }
+    } catch {
+      return null
+    }
+  }
+
+  private extractMonthRangeFromQuestion(normalizedQuestion: string, now: Date) {
+    const monthYearMatch = normalizedQuestion.match(
+      /(?:thang|month)\s*(\d{1,2})\s*\/\s*(\d{4})/
+    )
+    if (monthYearMatch) {
+      const month = Number(monthYearMatch[1])
+      const year = Number(monthYearMatch[2])
+      if (month >= 1 && month <= 12 && Number.isFinite(year)) {
+        return this.buildMonthRange(month, year, now)
+      }
+    }
+
+    const monthOnlyMatch = normalizedQuestion.match(/(?:thang|month)\s*(\d{1,2})\b/)
+    if (monthOnlyMatch) {
+      const month = Number(monthOnlyMatch[1])
+      if (month >= 1 && month <= 12) {
+        const nowYear = now.getUTCFullYear()
+        const nowMonth = now.getUTCMonth() + 1
+        const inferredYear = month <= nowMonth ? nowYear : nowYear - 1
+        return this.buildMonthRange(month, inferredYear, now)
+      }
+    }
+    return null
+  }
+
+  private buildMonthRange(month: number, year: number, now: Date) {
+    const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0))
+    let end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
+    const isCurrentMonth =
+      year === now.getUTCFullYear() && month === now.getUTCMonth() + 1
+    if (isCurrentMonth) {
+      end = new Date(
+        Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          23,
+          59,
+          59,
+          999
+        )
+      )
+    }
+    return { start, end }
+  }
+
+  private normalizeStorageMovementDateRange(dateRange: { start: Date; end: Date }) {
+    const start = new Date(
+      Date.UTC(
+        dateRange.start.getUTCFullYear(),
+        dateRange.start.getUTCMonth(),
+        dateRange.start.getUTCDate() - 1,
+        17,
+        0,
+        0,
+        0
+      )
+    )
+    const end = new Date(
+      Date.UTC(
+        dateRange.end.getUTCFullYear(),
+        dateRange.end.getUTCMonth(),
+        dateRange.end.getUTCDate(),
+        16,
+        59,
+        59,
+        999
+      )
+    )
+    return { start, end }
+  }
+
+  private isStorageMovementQuantityQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasMoveKeywords = /(xuat kho|nhap kho|xuat|nhap|delivered|received)/.test(
+      normalized
+    )
+    const hasQuantitySignal = /(so luong|bao nhieu|tong|tong so|so hang|bao lau|bao nhieu ngay)/.test(
+      normalized
+    )
+    return hasMoveKeywords && hasQuantitySignal
+  }
+
+  private hasExplicitStorageItemScope(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /(ma hang|ma mat hang|mat hang|item|sku|code)/.test(normalized)
+  }
+
+  private extractStorageMovementItemHint(question: string) {
+    const normalized = this.normalizeStorageText(question)
+      .replace(/\d{1,2}\/\d{1,2}(?:\/\d{4})?/g, " ")
+      .replace(/(?:^|\s)ngay\s+\d{1,2}(?!\s*\/)/g, " ")
+      .replace(/\bngay\b/g, " ")
+      .replace(/\b(?:thang|month)\s*\d{1,2}(?:\s*\/\s*\d{4})?\b/g, " ")
+      .replace(/\b(thang|tuan)\s+(nay|truoc)\b/g, " ")
+      .replace(
+        /\b(tu ngay|den ngay|khoang thoi gian|trong ngay|hom nay|hom qua|ngay mai|today|yesterday|tomorrow|this week|last week|this month|last month|xuat kho|nhap kho|xuat ra|xuat|nhap|received|delivered|so luong|luong|bao nhieu|la bao nhieu|nhu nao|nhu the nao|tong|tong so|tong cong|hang|mat hang|item|sku|code|cua|trong|tu|den|hoi|cho|voi|va|co|duoc|ra)\b/g,
+        " "
+      )
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+    if (!normalized) return null
+    if (normalized.length < 2) return null
+    return normalized
+  }
+
+  private filterStorageRowsByItemHint(
+    rows: Array<{ code: string; name: string; quantity: number }>,
+    hint: string | null
+  ) {
+    if (!hint) return rows
+    const tokens = hint
+      .split(/\s+/)
+      .map((t) => this.normalizeStorageText(t.trim()))
+      .filter((t) => t.length >= 2)
+    if (!tokens.length) return rows
+    return rows.filter((row) => {
+      const haystack = this.normalizeStorageText(`${row.code || ""} ${row.name || ""}`)
+      return tokens.every((token) => haystack.includes(token))
+    })
+  }
+
+  private filterStorageRowsByItemHints(
+    rows: Array<{ code: string; name: string; quantity: number }>,
+    hints: string[]
+  ) {
+    if (!hints.length) return rows
+    const groups = hints
+      .map((hint) =>
+        hint
+          .split(/\s+/)
+          .map((t) => this.normalizeStorageText(t.trim()))
+          .filter((t) => t.length >= 2)
+      )
+      .filter((tokens) => tokens.length)
+    if (!groups.length) return rows
+    return rows.filter((row) => {
+      const haystack = this.normalizeStorageText(`${row.code || ""} ${row.name || ""}`)
+      return groups.some((tokens) => tokens.every((token) => haystack.includes(token)))
+    })
+  }
+
+  private sanitizeStorageMovementItemHints(
+    question: string,
+    answerScope: "single_item" | "multiple_items" | "all_items" | null,
+    hints: string[]
+  ) {
+    const normalizedQuestion = this.normalizeStorageText(question)
+    const hasAllItemsSignal = /(hang hoa|tat ca|toan bo|all items|all products)/.test(
+      normalizedQuestion
+    )
+    if (answerScope === "all_items" || hasAllItemsSignal) return []
+
+    const stopwords = new Set([
+      "co",
+      "duoc",
+      "ra",
+      "hang",
+      "hoa",
+      "hang hoa",
+      "xuat",
+      "nhap",
+      "kho",
+      "so",
+      "luong",
+      "bao",
+      "nhieu",
+      "trong",
+      "thang",
+      "tuan",
+      "ngay",
+      "nay",
+      "truoc",
+      "se",
+      "con",
+      "lai",
+      "du",
+      "de",
+      "nua"
+    ])
+    const cleaned = hints
+      .map((hint) =>
+        this.normalizeStorageText(hint)
+          .replace(/\b(?:thang|month)\s*\d{1,2}(?:\s*\/\s*\d{4})?\b/g, " ")
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+      )
+      .map((hint) =>
+        hint
+          .split(/\s+/)
+          .filter((token) => token.length >= 2 && !stopwords.has(token))
+          .join(" ")
+          .trim()
+      )
+      .filter((hint) => hint.length >= 3)
+    return [...new Set(cleaned)]
+  }
+
+  private isStorageCoverageDaysQuestion(question: string) {
+    const normalized = this.normalizeStorageText(question)
+    const hasCoverageSignal =
+      /(bao nhieu ngay|du .*ngay|con du|du de xuat|so ngay)/.test(normalized) &&
+      /(con lai|ton|ton kho|luong hang con)/.test(normalized)
+    const hasDeliveredSignal =
+      /(xuat kho|xuat|delivered)/.test(normalized) ||
+      /(bao lau|khi nao|phai nhap them|sap het|het hang)/.test(normalized)
+    return hasCoverageSignal && hasDeliveredSignal
+  }
+
+  private isRestockForecastQuestion(question: string) {
+    const normalized = this.normalizeStorageText(question)
+    const hasRestockSignal = /(phai nhap them|nhap them hang|khi nao nhap|bao lau.*nhap)/.test(
+      normalized
+    )
+    return hasRestockSignal
+  }
+
+  private resolveStorageTaskType(
+    question: string,
+    aiTaskType: "quantity" | "coverage_days" | null
+  ) {
+    if (this.isRestockForecastQuestion(question) || this.isStorageCoverageDaysQuestion(question)) {
+      return "coverage_days" as const
+    }
+    if (aiTaskType === "coverage_days" || aiTaskType === "quantity") {
+      return aiTaskType
+    }
+    return "quantity" as const
+  }
+
+  private shouldUseAllItemsCoverageScope(question: string, itemHints: string[]) {
+    const normalized = this.normalizeStorageText(question)
+    const hasGenericAllSignal =
+      /(hang hoa|luong hang|hang con lai|toan bo|tat ca|all items|all products)/.test(
+        normalized
+      )
+    const hasExplicitItemSignal = /(mat hang|san pham|sku|ma hang|item|code)/.test(
+      normalized
+    )
+    const hasWeakHints =
+      !itemHints.length || itemHints.every((hint) => hint.split(/\s+/).length <= 1)
+    return hasGenericAllSignal && !hasExplicitItemSignal && hasWeakHints
+  }
+
+  private hasExplicitItemCodeLookup(question: string) {
+    const lookup = this.extractStorageItemLookup(question)
+    return Boolean(lookup && lookup.type === "code" && String(lookup.value || "").trim())
+  }
+
+  private hasMeaningfulCoverageItemHints(itemHints: string[]) {
+    if (!Array.isArray(itemHints) || !itemHints.length) return false
+    return itemHints.some((hint) => {
+      const tokens = this.normalizeStorageText(hint)
+        .split(/\s+/)
+        .filter((t) => t && t.length >= 2)
+      return tokens.length >= 2
+    })
+  }
+
+  private async sumRestQuantityByItemHints(itemHints: string[]) {
+    const docs = await this.storageItemModel
+      .find({}, { code: 1, name: 1, restQuantity: 1 })
+      .lean()
+      .exec()
+    const rows = (docs as any[]).map((doc) => ({
+      code: String(doc?.code || ""),
+      name: String(doc?.name || ""),
+      quantity: Number(doc?.restQuantity?.quantity || 0)
+    }))
+    const filtered = this.filterStorageRowsByItemHints(rows, itemHints)
+    const totalFiltered = filtered.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+    console.info("[ai][storage][remaining]", {
+      hints: itemHints,
+      docsCount: rows.length,
+      filteredCount: filtered.length,
+      totalFiltered
+    })
+    if (itemHints.length > 0 && filtered.length === 0) return 0
+    return totalFiltered
+  }
+
+  private async estimateCoverageDaysByItem(
+    deliveredByItem: Array<{ code: string; name: string; quantity: number }>,
+    daysInRange: number
+  ) {
+    if (!daysInRange || daysInRange <= 0) return []
+    const docs = await this.storageItemModel
+      .find({}, { code: 1, name: 1, restQuantity: 1 })
+      .lean()
+      .exec()
+    const restMap = new Map<string, number>()
+    for (const doc of docs as any[]) {
+      const key = this.normalizeStorageText(`${doc?.code || ""}|${doc?.name || ""}`)
+      restMap.set(key, Number(doc?.restQuantity?.quantity || 0))
+    }
+    const topDelivered = [...(deliveredByItem || [])]
+      .filter((row) => Number(row?.quantity || 0) > 0)
+      .sort((a, b) => Number(b?.quantity || 0) - Number(a?.quantity || 0))
+      .slice(0, 15)
+    console.info("[ai][storage][coverage] top_delivered_items", {
+      totalItems: (deliveredByItem || []).length,
+      selectedTop: topDelivered.length
+    })
+    return topDelivered
+      .map((row) => {
+        const deliveredQty = Number(row?.quantity || 0)
+        const dailyAvg = deliveredQty / daysInRange
+        const key = this.normalizeStorageText(`${row?.code || ""}|${row?.name || ""}`)
+        const remainingQty = Number(restMap.get(key) || 0)
+        const coverageDays =
+          deliveredQty > 0 && dailyAvg > 0 ? remainingQty / dailyAvg : 0
+        return {
+          code: String(row?.code || ""),
+          name: String(row?.name || ""),
+          deliveredQty,
+          dailyAvg,
+          remainingQty,
+          coverageDays
+        }
+      })
+      .filter((row) => row.deliveredQty > 0)
+  }
+
+  private normalizeStorageText(value: string) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D")
+      .toLowerCase()
+  }
+
+  private buildRestockEtaLabel(coverageDays: number) {
+    if (!Number.isFinite(coverageDays) || coverageDays <= 0) {
+      return "cần nhập ngay"
+    }
+    const today = new Date()
+    const daysToAdd = Math.ceil(coverageDays)
+    const eta = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    )
+    eta.setUTCDate(eta.getUTCDate() + daysToAdd)
+    const dd = String(eta.getUTCDate()).padStart(2, "0")
+    const mm = String(eta.getUTCMonth() + 1).padStart(2, "0")
+    const yyyy = eta.getUTCFullYear()
+    return `cần nhập khoảng ${dd}/${mm}/${yyyy}`
+  }
+
+  private resolveStorageFollowUpQuestion(
+    currentQuestion: string,
+    conversation: AiConversation | null
+  ) {
+    const hasPendingSelection =
+      Boolean(conversation?.pendingSelection?.options?.length)
+    if (!hasPendingSelection) return currentQuestion
+
+    const isCurrentStorageIntent =
+      this.isStorageMovementQuantityQuestion(currentQuestion) ||
+      this.isRestockForecastQuestion(currentQuestion) ||
+      this.isStorageCoverageDaysQuestion(currentQuestion)
+    if (isCurrentStorageIntent) return currentQuestion
+    if (!this.hasUserProvidedTimeSignal(currentQuestion)) return currentQuestion
+
+    const messages = conversation?.messages || []
+    const lastStorageUserQuestion = [...messages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.content)
+      .map((m) => String(m.content).trim())
+      .find(
+        (q) =>
+          this.isStorageMovementQuantityQuestion(q) ||
+          this.isRestockForecastQuestion(q) ||
+          this.isStorageCoverageDaysQuestion(q)
+      )
+    if (!lastStorageUserQuestion) return currentQuestion
+
+    const normalizedCurrent = this.normalizeStorageText(currentQuestion)
+    if (
+      /(doanh thu|income|revenue|thu nhap|tong thu|kpi|chi phi ads|chi phi quang cao|don hang|so don)/.test(
+        normalizedCurrent
+      )
+    ) {
+      return currentQuestion
+    }
+    const merged = `${lastStorageUserQuestion}. ${currentQuestion}`
+    console.info("[ai][storage] followup_merged_question", {
+      from: currentQuestion,
+      base: lastStorageUserQuestion,
+      merged
+    })
+    return merged
+  }
+
+  private hasUserProvidedTimeSignal(question: string) {
+    const normalized = this.normalizeStorageText(question)
+    if (/\d{1,2}\/\d{1,2}(?:\/\d{4})?/.test(normalized)) return true
+    if (/(hom nay|hom qua|ngay mai|today|yesterday|tomorrow)/.test(normalized)) {
+      return true
+    }
+    if (
+      /(thang nay|thang truoc|tuan nay|tuan truoc|this month|last month|this week|last week)/.test(
+        normalized
+      )
+    ) {
+      return true
+    }
+    if (/(?:thang|month)\s*\d{1,2}(?:\s*\/\s*\d{4})?/.test(normalized)) return true
+    if (/(?:^|\s)ngay\s+\d{1,2}\b/.test(normalized)) return true
+    if (/(tu ngay|den ngay|khoang|trong ngay)/.test(normalized)) return true
+    return false
+  }
+
+  private getDefaultRecentTwoWeeksDateRange() {
+    const now = new Date()
+    const end = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)
+    )
+    const start = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 13, 0, 0, 0, 0)
+    )
+    return { start, end }
+  }
+
+  private isTotalQuantityIntent(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    return /\btong\b|tong so|tong cong|sum/.test(normalized)
+  }
+
+  private async aggregateStorageLogsByItem(logs: any[]) {
+    const map = new Map<string, number>()
+    for (const log of logs || []) {
+      const items =
+        Array.isArray(log?.items) && log.items.length > 0
+          ? log.items
+          : log?.item
+            ? [log.item]
+            : []
+      for (const item of items) {
+        const id = item?._id ? String(item._id) : ""
+        if (!id) continue
+        map.set(id, (map.get(id) || 0) + Number(item?.quantity || 0))
+      }
+    }
+    const ids = [...map.keys()]
+    if (!ids.length) return []
+    const docs = await this.storageItemModel
+      .find({ _id: { $in: ids } }, { _id: 1, code: 1, name: 1 })
+      .lean()
+      .exec()
+    const info = new Map<string, { code: string; name: string }>()
+    for (const doc of docs as any[]) {
+      info.set(String(doc._id), {
+        code: String(doc.code || "").trim(),
+        name: String(doc.name || "").trim()
+      })
+    }
+    return ids
+      .map((id) => ({
+        itemId: id,
+        code: info.get(id)?.code || "",
+        name: info.get(id)?.name || id,
+        quantity: map.get(id) || 0
+      }))
+      .sort((a, b) => b.quantity - a.quantity)
+  }
+
+  private async fetchStorageLogsViaApi(
+    startDate: Date,
+    endDate: Date,
+    status?: "received" | "delivered" | "returned"
+  ) {
+    const pageSize = 10
+    const startDateIso = startDate.toISOString()
+    const endDateIso = endDate.toISOString()
+    const all: any[] = []
+    let page = 1
+    let total = 0
+    do {
+      console.info("[ai][api:req] storagelogs", {
+        page,
+        limit: pageSize,
+        startDate: startDateIso,
+        endDate: endDateIso,
+        status
+      })
+      const res = await this.storageLogsService.getStorageLogs(
+        page,
+        pageSize,
+        startDateIso,
+        endDateIso,
+        status
+      )
+      const rows = Array.isArray(res?.data) ? res.data : []
+      total = Number(res?.total || 0)
+      all.push(...rows)
+      console.info("[ai][api:res] storagelogs", {
+        page,
+        count: rows.length,
+        total
+      })
+      page += 1
+    } while (all.length < total)
+    return all
   }
 
   private inferNearestPastDayMonth(
@@ -3045,6 +5423,94 @@ export class AiService {
       }
     }
     return null
+  }
+
+  private resolveNearestPastDayByMonthScope(
+    day: number,
+    today: Date,
+    monthBackOffset: number
+  ) {
+    if (day < 1 || day > 31) return null
+    const nowMs = Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate(),
+      23,
+      59,
+      59,
+      999
+    )
+    let cursorMonth = today.getUTCMonth() - monthBackOffset
+    let cursorYear = today.getUTCFullYear()
+    while (cursorMonth < 0) {
+      cursorMonth += 12
+      cursorYear -= 1
+    }
+    for (let i = 0; i < 24; i += 1) {
+      const candidate = new Date(Date.UTC(cursorYear, cursorMonth, day, 0, 0, 0, 0))
+      const isValid =
+        candidate.getUTCFullYear() === cursorYear &&
+        candidate.getUTCMonth() === cursorMonth &&
+        candidate.getUTCDate() === day
+      if (isValid && candidate.getTime() <= nowMs) {
+        return candidate
+      }
+      cursorMonth -= 1
+      if (cursorMonth < 0) {
+        cursorMonth = 11
+        cursorYear -= 1
+      }
+    }
+    return null
+  }
+
+  private extractWeekdayInQuestion(normalized: string): number | null {
+    const weekdayMap: Array<{ regex: RegExp; weekday: number }> = [
+      { regex: /(?:\bchu nhat\b|\bcn\b)/, weekday: 0 },
+      { regex: /\bthu\s*(?:2|hai)\b/, weekday: 1 },
+      { regex: /\bthu\s*(?:3|ba)\b/, weekday: 2 },
+      { regex: /\bthu\s*(?:4|tu)\b/, weekday: 3 },
+      { regex: /\bthu\s*(?:5|nam)\b/, weekday: 4 },
+      { regex: /\bthu\s*(?:6|sau)\b/, weekday: 5 },
+      { regex: /\bthu\s*(?:7|bay)\b/, weekday: 6 }
+    ]
+    for (const entry of weekdayMap) {
+      if (entry.regex.test(normalized)) return entry.weekday
+    }
+    return null
+  }
+
+  private resolveNearestDayByWeekScope(
+    today: Date,
+    weekday: number | null,
+    scope: "this" | "last"
+  ) {
+    const currentWeekday = today.getUTCDay()
+    const offsetFromMonday = (currentWeekday + 6) % 7
+    const weekStart = new Date(today)
+    weekStart.setUTCDate(weekStart.getUTCDate() - offsetFromMonday)
+    weekStart.setUTCHours(0, 0, 0, 0)
+
+    if (scope === "last") {
+      weekStart.setUTCDate(weekStart.getUTCDate() - 7)
+    }
+
+    if (weekday === null) {
+      const fallback = new Date(today)
+      if (scope === "last") fallback.setUTCDate(fallback.getUTCDate() - 7)
+      fallback.setUTCHours(0, 0, 0, 0)
+      return fallback
+    }
+
+    const mondayBasedIndex = weekday === 0 ? 6 : weekday - 1
+    const candidate = new Date(weekStart)
+    candidate.setUTCDate(candidate.getUTCDate() + mondayBasedIndex)
+
+    if (scope === "this" && candidate.getTime() > today.getTime()) {
+      candidate.setUTCDate(candidate.getUTCDate() - 7)
+    }
+    candidate.setUTCHours(0, 0, 0, 0)
+    return candidate
   }
 
   private isStorageLogQuestion(question: string) {
