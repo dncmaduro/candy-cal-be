@@ -12,12 +12,16 @@ import { StorageLogSchema } from "../database/mongoose/schemas/StorageLog"
 import { IncomeModule } from "../income/income.module"
 import { LivestreamanalyticsModule } from "../livestreamanalytics/livestreamanalytics.module"
 import { LivestreammonthgoalsModule } from "../livestreammonthgoals/livestreammonthgoals.module"
+import { StorageLogsModule } from "../storagelogs/storagelogs.module"
+import { MonthGoalModule } from "../monthgoals/monthgoals.module"
 
 @Module({
   imports: [
     IncomeModule,
     LivestreamanalyticsModule,
     LivestreammonthgoalsModule,
+    StorageLogsModule,
+    MonthGoalModule,
     MongooseModule.forFeature([
       { name: "aiusages", schema: AiUsageSchema },
       { name: "aiuserusages", schema: AiUserUsageSchema },
