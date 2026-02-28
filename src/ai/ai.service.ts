@@ -304,6 +304,35 @@ export class AiService {
       ])
       return { answer: storageMovementAnswer, conversationId: safeConversationId }
     }
+    const isTopCreatorsRequest = this.isTopCreatorsQuestion(resolved.question)
+    if (module === "storage" && isTopCreatorsRequest) {
+      const topCreatorsAnswer = await this.tryBuildTopCreatorsAnswer(resolved.question)
+      if (topCreatorsAnswer) {
+        await this.appendConversationMessages(conversation, [
+          { role: "user", content: resolved.question, createdAt: new Date() },
+          {
+            role: "assistant",
+            content: topCreatorsAnswer,
+            createdAt: new Date()
+          }
+        ])
+        return { answer: topCreatorsAnswer, conversationId: safeConversationId }
+      }
+      const missingTopCreatorsArgsMessage =
+        "Để lấy top nhà sáng tạo, vui lòng cung cấp khoảng ngày (ví dụ: từ ngày 01/02/2026 đến 28/02/2026)."
+      await this.appendConversationMessages(conversation, [
+        { role: "user", content: resolved.question, createdAt: new Date() },
+        {
+          role: "assistant",
+          content: missingTopCreatorsArgsMessage,
+          createdAt: new Date()
+        }
+      ])
+      return {
+        answer: missingTopCreatorsArgsMessage,
+        conversationId: safeConversationId
+      }
+    }
     const isIncomeRequest = this.isIncomeQuestion(resolved.question)
     const isIncomeBySourceRequest = this.isIncomeBySourceQuestion(
       resolved.question
@@ -1192,6 +1221,109 @@ export class AiService {
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
     return /(doanh thu|revenue|thu nhap|tong thu)/.test(normalized)
+  }
+
+  private isTopCreatorsQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasTopSignal =
+      /\btop\b/.test(normalized) ||
+      /(lon nhat|cao nhat|nhieu nhat|dan dau|xep hang|hang dau)/.test(normalized)
+    const hasCreatorSignal =
+      /(nha sang tao|creator|creators|nguoi dung nha sang tao)/.test(normalized)
+    const hasRevenueSignal = /(doanh thu|doanh so|gmv|ban ra)/.test(normalized)
+    return hasTopSignal && hasCreatorSignal && hasRevenueSignal
+  }
+
+  private async tryBuildTopCreatorsAnswer(question: string) {
+    try {
+      const taskPlan = [
+        "resolve_date_range",
+        "fetch_top_creators",
+        "format_answer"
+      ]
+      console.info("[ai][top-creators] taskPlan", { taskPlan })
+      console.info("[ai][top-creators][task:start]", {
+        task: "resolve_date_range"
+      })
+      const dateRange =
+        (await this.inferIncomeDateRangeWithAi(question)) || this.extractDateRange(question)
+      console.info("[ai][top-creators][task:done]", {
+        task: "resolve_date_range",
+        hasDateRange: Boolean(dateRange)
+      })
+      if (!dateRange) return null
+
+      const normalizedRange = this.normalizeRangeStatsDateRange(dateRange)
+      console.info("[ai][top-creators][task:start]", {
+        task: "fetch_top_creators"
+      })
+      console.info("[ai][api:req] incomes/top-creators", {
+        startDate: normalizedRange.start,
+        endDate: normalizedRange.end
+      })
+      const topCreators = await this.incomeService.getTopCreators(
+        normalizedRange.start,
+        normalizedRange.end
+      )
+      console.info("[ai][api:res] incomes/top-creators", {
+        ok: true,
+        affiliateBefore: Array.isArray(topCreators?.affiliate?.beforeDiscount)
+          ? topCreators.affiliate.beforeDiscount.length
+          : 0,
+        affiliateAfter: Array.isArray(topCreators?.affiliate?.afterDiscount)
+          ? topCreators.affiliate.afterDiscount.length
+          : 0,
+        affiliateAdsBefore: Array.isArray(topCreators?.affiliateAds?.beforeDiscount)
+          ? topCreators.affiliateAds.beforeDiscount.length
+          : 0,
+        affiliateAdsAfter: Array.isArray(topCreators?.affiliateAds?.afterDiscount)
+          ? topCreators.affiliateAds.afterDiscount.length
+          : 0
+      })
+      console.info("[ai][top-creators][task:done]", {
+        task: "fetch_top_creators"
+      })
+
+      console.info("[ai][top-creators][task:start]", { task: "format_answer" })
+      const dateLabel =
+        this.extractQuestionDateLabel(question) ||
+        this.formatDateRangeLabel(dateRange.start, dateRange.end)
+      const formatRows = (
+        rows: Array<{ creator: string; totalIncome: number; percentage: number }> | undefined
+      ) => {
+        if (!rows?.length) return ["- Không có dữ liệu"]
+        return rows.map((row, index) => {
+          const creator = String(row?.creator || "(unknown)").trim() || "(unknown)"
+          const totalIncome = Number(row?.totalIncome || 0).toLocaleString("vi-VN")
+          const percentage = (
+            Math.round(Number(row?.percentage || 0) * 100) / 100
+          ).toLocaleString("vi-VN")
+          return `${index + 1}. ${creator}: ${totalIncome} VNĐ (${percentage}%)`
+        })
+      }
+
+      return [
+        `Top nhà sáng tạo (${dateLabel || "không rõ thời gian"}):`,
+        "",
+        "Affiliate (trước chiết khấu):",
+        ...formatRows(topCreators?.affiliate?.beforeDiscount),
+        "",
+        "Affiliate (sau chiết khấu):",
+        ...formatRows(topCreators?.affiliate?.afterDiscount),
+        "",
+        "Affiliate Ads (trước chiết khấu):",
+        ...formatRows(topCreators?.affiliateAds?.beforeDiscount),
+        "",
+        "Affiliate Ads (sau chiết khấu):",
+        ...formatRows(topCreators?.affiliateAds?.afterDiscount)
+      ].join("\n")
+    } catch (error: any) {
+      console.error("[ai][top-creators] failed", error?.message || error)
+      return "Hiện chưa lấy được top nhà sáng tạo do lỗi hệ thống tạm thời. Bạn thử lại sau giúp mình."
+    }
   }
 
   private isLivestreamScheduleQuestion(question: string) {
