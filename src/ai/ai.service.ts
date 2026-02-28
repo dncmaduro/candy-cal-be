@@ -1291,6 +1291,80 @@ export class AiService {
       const dateLabel =
         this.extractQuestionDateLabel(question) ||
         this.formatDateRangeLabel(dateRange.start, dateRange.end)
+      const isGrowthQuestion = this.isTopCreatorGrowthQuestion(question)
+      const isSingleTopQuestion = this.isSingleTopCreatorQuestion(question)
+
+      const mergeAfterDiscountTotals = (payload: any) => {
+        const totals = new Map<string, number>()
+        const addRows = (rows: Array<{ creator: string; totalIncome: number }> = []) => {
+          for (const row of rows) {
+            const key = String(row?.creator || "(unknown)").trim() || "(unknown)"
+            totals.set(key, (totals.get(key) || 0) + Number(row?.totalIncome || 0))
+          }
+        }
+        addRows(payload?.affiliate?.afterDiscount || [])
+        addRows(payload?.affiliateAds?.afterDiscount || [])
+        return totals
+      }
+
+      if (isGrowthQuestion) {
+        const prevStart = new Date(normalizedRange.start)
+        const prevEnd = new Date(normalizedRange.end)
+        const diffMs = normalizedRange.end.getTime() - normalizedRange.start.getTime() + 1
+        prevStart.setTime(prevStart.getTime() - diffMs)
+        prevEnd.setTime(prevEnd.getTime() - diffMs)
+        const prevTopCreators = await this.incomeService.getTopCreators(prevStart, prevEnd)
+
+        const currentTotals = mergeAfterDiscountTotals(topCreators)
+        const previousTotals = mergeAfterDiscountTotals(prevTopCreators)
+        const excludeZeroPrevious = this.shouldExcludeZeroPreviousForGrowth(question)
+        const candidates = Array.from(currentTotals.keys())
+          .map((creator) => {
+            const currentValue = Number(currentTotals.get(creator) || 0)
+            const previousValue = Number(previousTotals.get(creator) || 0)
+            const diff = currentValue - previousValue
+            const growthPct =
+              previousValue === 0
+                ? currentValue > 0
+                  ? Number.POSITIVE_INFINITY
+                  : 0
+                : (diff / previousValue) * 100
+            return { creator, currentValue, previousValue, diff, growthPct }
+          })
+          .filter((row) => {
+            if (excludeZeroPrevious && row.previousValue <= 0) return false
+            return true
+          })
+        const best = candidates.sort((a, b) => b.diff - a.diff)[0]
+        if (!best) {
+          if (excludeZeroPrevious) {
+            return `Không có nhà sáng tạo nào có doanh số tháng trước > 0 trong giai đoạn ${dateLabel} để tính tăng trưởng.`
+          }
+          return `Không tìm thấy dữ liệu tăng trưởng nhà sáng tạo trong giai đoạn ${dateLabel}.`
+        }
+        const growthPctLabel =
+          Number.isFinite(best.growthPct) && !Number.isNaN(best.growthPct)
+            ? `${(Math.round(best.growthPct * 100) / 100).toLocaleString("vi-VN")}%`
+            : "N/A"
+        return [
+          `Nhà sáng tạo tăng trưởng cao nhất (${dateLabel}): ${best.creator}`,
+          `- Doanh số kỳ hiện tại: ${best.currentValue.toLocaleString("vi-VN")} VNĐ`,
+          `- Doanh số kỳ trước: ${best.previousValue.toLocaleString("vi-VN")} VNĐ`,
+          `- Tăng: ${best.diff.toLocaleString("vi-VN")} VNĐ (${growthPctLabel})`
+        ].join("\n")
+      }
+
+      if (isSingleTopQuestion) {
+        const totals = mergeAfterDiscountTotals(topCreators)
+        const best = Array.from(totals.entries())
+          .sort((a, b) => b[1] - a[1])[0]
+        if (!best) {
+          return `Không tìm thấy dữ liệu nhà sáng tạo trong giai đoạn ${dateLabel}.`
+        }
+        return `Nhà sáng tạo có doanh số cao nhất (${dateLabel}): ${best[0]} - ${Number(
+          best[1] || 0
+        ).toLocaleString("vi-VN")} VNĐ.`
+      }
       const formatRows = (
         rows: Array<{ creator: string; totalIncome: number; percentage: number }> | undefined
       ) => {
@@ -1324,6 +1398,47 @@ export class AiService {
       console.error("[ai][top-creators] failed", error?.message || error)
       return "Hiện chưa lấy được top nhà sáng tạo do lỗi hệ thống tạm thời. Bạn thử lại sau giúp mình."
     }
+  }
+
+  private isTopCreatorGrowthQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasGrowthSignal = /(tang truong|tang|giam|bien dong)/.test(normalized)
+    const hasCompareSignal =
+      /(so voi|so sanh|thang truoc|ky truoc|truoc do|previous)/.test(normalized)
+    const hasCreatorSignal = /(nha sang tao|creator|creators)/.test(normalized)
+    return hasGrowthSignal && hasCompareSignal && hasCreatorSignal
+  }
+
+  private isSingleTopCreatorQuestion(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const hasSingularSignal =
+      /(ai|nao).*(lon nhat|cao nhat|nhieu nhat|tot nhat|dan dau)|top\s*1/.test(
+        normalized
+      ) || /(lon nhat|cao nhat|nhieu nhat)/.test(normalized)
+    const hasListSignal = /(top\s*\d+|danh sach|xep hang|liet ke)/.test(normalized)
+    return hasSingularSignal && !hasListSignal
+  }
+
+  private shouldExcludeZeroPreviousForGrowth(question: string) {
+    const normalized = question
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+    const explicitIncludeZero =
+      /(bao gom|ke ca|tinh ca).*(thang truoc).*(=|la)?\s*0/.test(normalized) ||
+      /(cho phep).*(thang truoc).*(=|la)?\s*0/.test(normalized)
+    if (explicitIncludeZero) return false
+    const explicitExcludeZero =
+      /(khong tinh|loai|bo qua).*(thang truoc).*(=|la)?\s*0/.test(normalized) ||
+      /(thang truoc).*(=|la)?\s*0.*(khong tinh|bo qua|loai)/.test(normalized)
+    if (explicitExcludeZero) return true
+    return true
   }
 
   private isLivestreamScheduleQuestion(question: string) {
