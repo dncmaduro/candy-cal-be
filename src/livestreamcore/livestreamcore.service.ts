@@ -8,6 +8,7 @@ import {
 import { LivestreamPeriod } from "../database/mongoose/schemas/LivestreamPeriod"
 import { LivestreamMonthGoal } from "../database/mongoose/schemas/LivestreamGoal"
 import { User } from "../database/mongoose/schemas/User"
+import { Income } from "../database/mongoose/schemas/Income"
 
 type LivestreamDoc = HydratedDocument<Livestream>
 
@@ -21,7 +22,9 @@ export class LivestreamcoreService {
     @InjectModel("livestreammonthgoals")
     private readonly livestreamMonthGoalModel: Model<LivestreamMonthGoal>,
     @InjectModel("users")
-    private readonly userModel: Model<User>
+    private readonly userModel: Model<User>,
+    @InjectModel("incomes")
+    private readonly incomeModel: Model<Income>
   ) {}
 
   // helper: convert time to minutes since midnight
@@ -277,7 +280,10 @@ export class LivestreamcoreService {
     channel?: string,
     forRole?: "host" | "assistant",
     assigneeId?: string
-  ): Promise<{ livestreams: Livestream[] }> {
+  ): Promise<{
+    livestreams: Livestream[]
+    productsQuantity: { [code: string]: number }
+  }> {
     try {
       const start = new Date(startDate)
       start.setHours(0, 0, 0, 0)
@@ -311,7 +317,53 @@ export class LivestreamcoreService {
         })
       }
 
-      return { livestreams: filtered }
+      const productsQuantity =
+        await this.getLiveProductsQuantityByDateRange(start, end, channel)
+
+      return { livestreams: filtered, productsQuantity }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getLiveProductsQuantityByDateRange(
+    startDate: Date,
+    endDate: Date,
+    channel?: string
+  ): Promise<{ [code: string]: number }> {
+    try {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+
+      const incomeFilter: any = { date: { $gte: start, $lte: end } }
+      if (channel) {
+        incomeFilter.channel = channel
+      }
+
+      const incomes = await this.incomeModel.find(incomeFilter).lean()
+      const productsQuantityMap: Record<string, number> = {}
+
+      for (const income of incomes) {
+        for (const p of income.products || []) {
+          if ((p.content || "").trim() !== "Phát trực tiếp") continue
+
+          const productCode = p.code || "(unknown)"
+          productsQuantityMap[productCode] =
+            (productsQuantityMap[productCode] || 0) + (p.quantity || 0)
+        }
+      }
+
+      const productsQuantity = Object.fromEntries(
+        Object.entries(productsQuantityMap).sort(([, a], [, b]) => b - a)
+      )
+
+      return productsQuantity
     } catch (error) {
       console.error(error)
       throw new HttpException(
