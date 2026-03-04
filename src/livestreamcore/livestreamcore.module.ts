@@ -6,6 +6,7 @@ import { LivestreamSchema } from "../database/mongoose/schemas/Livestream"
 import { LivestreamPeriodSchema } from "../database/mongoose/schemas/LivestreamPeriod"
 import { LivestreamMonthGoalSchema } from "../database/mongoose/schemas/LivestreamGoal"
 import { UserSchema } from "../database/mongoose/schemas/User"
+import { IncomeSchema } from "../database/mongoose/schemas/Income"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
@@ -14,7 +15,8 @@ import { SystemLogsModule } from "../systemlogs/systemlogs.module"
       { name: "livestreams", schema: LivestreamSchema },
       { name: "livestreamperiods", schema: LivestreamPeriodSchema },
       { name: "livestreammonthgoals", schema: LivestreamMonthGoalSchema },
-      { name: "users", schema: UserSchema }
+      { name: "users", schema: UserSchema },
+      { name: "incomes", schema: IncomeSchema }
     ]),
     SystemLogsModule
   ],
