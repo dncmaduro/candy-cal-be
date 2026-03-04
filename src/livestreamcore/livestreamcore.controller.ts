@@ -126,6 +126,30 @@ export class LivestreamcoreController {
     )
   }
 
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "order-emp",
+    "livestream-accounting"
+  )
+  @Get("products-quantity-by-date-range")
+  @HttpCode(HttpStatus.OK)
+  async getProductsQuantityByDateRange(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @Query("channel") channel?: string
+  ) {
+    const productsQuantity =
+      await this.livestreamcoreService.getLiveProductsQuantityByDateRange(
+      new Date(startDate),
+      new Date(endDate),
+      channel
+    )
+    return { productsQuantity }
+  }
+
   @Roles("admin", "livestream-leader")
   @Post(":livestreamId/snapshots")
   @HttpCode(HttpStatus.CREATED)
