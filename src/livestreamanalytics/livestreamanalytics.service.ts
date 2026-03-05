@@ -502,8 +502,28 @@ export class LivestreamanalyticsService {
         }
       >()
 
+      const toMinutes = (time?: { hour: number; minute: number }): number =>
+        (time?.hour ?? 0) * 60 + (time?.minute ?? 0)
+
+      const getSnapshotRange = (snapshot: LivestreamSnapshotEmbedded) => {
+        const start = toMinutes(snapshot.period?.startTime)
+        const end = toMinutes(snapshot.period?.endTime)
+        return { start, end, duration: Math.max(0, end - start) }
+      }
+
       for (const livestream of livestreams) {
         const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+        const hostSnapshots = snapshots.filter((snapshot) => {
+          if ((snapshot as any).period?.for !== "host") {
+            return false
+          }
+
+          if (channelId && snapshot.period?.channel.toString() !== channelId) {
+            return false
+          }
+
+          return true
+        })
 
         for (const snapshot of snapshots) {
           // Only process assistant snapshots
@@ -514,9 +534,6 @@ export class LivestreamanalyticsService {
           // Apply channel filter
           if (channelId && snapshot.period?.channel.toString() !== channelId)
             continue
-
-          const income = snapshot.income ?? 0
-          const adsCost = snapshot.adsCost ?? 0
 
           let targetAssistantId: string | "other"
           let targetAssistantName: string
@@ -559,8 +576,36 @@ export class LivestreamanalyticsService {
           }
 
           const assistantData = assistantDataMap.get(targetAssistantId)!
-          assistantData.totalRevenue += income
-          assistantData.totalAdsCost += adsCost
+          const assistantRange = getSnapshotRange(snapshot)
+
+          let attributedRevenue = 0
+          let attributedAdsCost = 0
+          if (assistantRange.duration > 0) {
+            for (const hostSnapshot of hostSnapshots) {
+              const hostRange = getSnapshotRange(hostSnapshot)
+              if (hostRange.duration <= 0) {
+                continue
+              }
+
+              const overlapDuration =
+                Math.min(assistantRange.end, hostRange.end) -
+                Math.max(assistantRange.start, hostRange.start)
+
+              if (overlapDuration <= 0) {
+                continue
+              }
+
+              const hostIncome = hostSnapshot.income ?? 0
+              const hostAdsCost = hostSnapshot.adsCost ?? 0
+              const overlapRatio = overlapDuration / hostRange.duration
+              attributedRevenue +=
+                hostIncome * overlapRatio
+              attributedAdsCost += hostAdsCost * overlapRatio
+            }
+          }
+
+          assistantData.totalRevenue += attributedRevenue
+          assistantData.totalAdsCost += attributedAdsCost
         }
 
         // Add orders to all assistants who have snapshots in this livestream
@@ -818,8 +863,28 @@ export class LivestreamanalyticsService {
         }
       >()
 
+      const toMinutes = (time?: { hour: number; minute: number }): number =>
+        (time?.hour ?? 0) * 60 + (time?.minute ?? 0)
+
+      const getSnapshotRange = (snapshot: LivestreamSnapshotEmbedded) => {
+        const start = toMinutes(snapshot.period?.startTime)
+        const end = toMinutes(snapshot.period?.endTime)
+        return { start, end, duration: Math.max(0, end - start) }
+      }
+
       for (const livestream of livestreams) {
         const snapshots = livestream.snapshots as LivestreamSnapshotEmbedded[]
+        const hostSnapshots = snapshots.filter((snapshot) => {
+          if ((snapshot as any).period?.for !== "host") {
+            return false
+          }
+
+          if (channelId && snapshot.period?.channel.toString() !== channelId) {
+            return false
+          }
+
+          return true
+        })
 
         for (const snapshot of snapshots) {
           // Only process assistant snapshots
@@ -830,9 +895,6 @@ export class LivestreamanalyticsService {
           // Apply channel filter
           if (channelId && snapshot.period?.channel.toString() !== channelId)
             continue
-
-          const income = snapshot.income ?? 0
-          const adsCost = snapshot.adsCost ?? 0
 
           let targetAssistantId: string | "other"
           let targetAssistantName: string
@@ -875,8 +937,36 @@ export class LivestreamanalyticsService {
           }
 
           const assistantData = assistantDataMap.get(targetAssistantId)!
-          assistantData.totalRevenue += income
-          assistantData.totalAdsCost += adsCost
+          const assistantRange = getSnapshotRange(snapshot)
+
+          let attributedRevenue = 0
+          let attributedAdsCost = 0
+          if (assistantRange.duration > 0) {
+            for (const hostSnapshot of hostSnapshots) {
+              const hostRange = getSnapshotRange(hostSnapshot)
+              if (hostRange.duration <= 0) {
+                continue
+              }
+
+              const overlapDuration =
+                Math.min(assistantRange.end, hostRange.end) -
+                Math.max(assistantRange.start, hostRange.start)
+
+              if (overlapDuration <= 0) {
+                continue
+              }
+
+              const hostIncome = hostSnapshot.income ?? 0
+              const hostAdsCost = hostSnapshot.adsCost ?? 0
+              const overlapRatio = overlapDuration / hostRange.duration
+              attributedRevenue +=
+                hostIncome * overlapRatio
+              attributedAdsCost += hostAdsCost * overlapRatio
+            }
+          }
+
+          assistantData.totalRevenue += attributedRevenue
+          assistantData.totalAdsCost += attributedAdsCost
         }
 
         // Add orders to all assistants who have snapshots in this livestream
