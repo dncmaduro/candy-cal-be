@@ -62,6 +62,24 @@ export class UsersService {
         throw new HttpException("Wrong password", HttpStatus.UNAUTHORIZED)
       }
 
+      if (existingUser.isDeactivated) {
+        void this.systemLogsService.createSystemLog(
+          {
+            type: "auth",
+            action: "login_failed",
+            entity: "user",
+            entityId: username,
+            result: "failed",
+            meta: { reason: "user_deactivated" }
+          },
+          existingUser._id.toString()
+        )
+        throw new HttpException(
+          "Account is deactivated",
+          HttpStatus.FORBIDDEN
+        )
+      }
+
       const payload = {
         username: existingUser.username,
         sub: existingUser._id,
@@ -296,6 +314,7 @@ export class UsersService {
   async publicSearchUsers(
     searchText: string,
     role?: string,
+    unactive?: string,
     page = 1,
     limit = 10
   ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
@@ -304,6 +323,11 @@ export class UsersService {
       const safeLimit = Math.max(1, Number(limit) || 10)
 
       const filter: any = {}
+      const includeUnactive = String(unactive).toLowerCase() === "true"
+      if (!includeUnactive) {
+        filter.isDeactivated = { $ne: true }
+      }
+
       if (searchText && String(searchText).trim().length > 0) {
         filter.name = {
           $regex: `.*${String(searchText).trim()}.*`,
