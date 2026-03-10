@@ -121,6 +121,42 @@ export class SalesItemsController {
   }
 
   @Roles("admin", "sales-emp", "system-emp")
+  @Get("export/xlsx")
+  @HttpCode(HttpStatus.OK)
+  async exportSalesItemsToXlsx(
+    @Query("searchText") searchText: string = "",
+    @Query("factory") factory: SalesItemFactory | undefined,
+    @Query("source") source: SalesItemSource | undefined,
+    @Res() res: Response,
+    @Req() req
+  ): Promise<void> {
+    const buffer = await this.salesItemsService.exportSalesItemsToXlsx(
+      searchText,
+      factory,
+      source
+    )
+
+    const filename = `salesitems_${new Date().getTime()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesitems",
+        action: "export_xlsx",
+        entity: "salesitem",
+        result: "success",
+        meta: { searchText, factory, source }
+      },
+      req.user?.userId ?? "unknown"
+    )
+  }
+
+  @Roles("admin", "sales-emp", "system-emp")
   @Get("factories")
   @HttpCode(HttpStatus.OK)
   async getAllFactories(): Promise<{
