@@ -266,14 +266,11 @@ export class SalesItemsService {
     return { data, total }
   }
 
-  async searchSalesItems(
-    searchText: string,
-    page: number = 1,
-    limit: number = 20,
+  private buildSearchFilter(
+    searchText: string = "",
     factory?: SalesItemFactory,
     source?: SalesItemSource
-  ): Promise<{ data: SalesItem[]; total: number }> {
-    const skip = (page - 1) * limit
+  ): any {
     const searchRegex = new RegExp(searchText, "i")
 
     const filter: any = {
@@ -284,15 +281,54 @@ export class SalesItemsService {
       ]
     }
 
-    // Add factory filter if provided
     if (factory) {
       filter.factory = factory
     }
 
-    // Add source filter if provided
     if (source) {
       filter.source = source
     }
+
+    return filter
+  }
+
+  private getFactoryLabel(factory?: SalesItemFactory): string {
+    const labels: Record<SalesItemFactory, string> = {
+      candy: "Xưởng Kẹo mút",
+      manufacturing: "Xưởng Gia công",
+      position_MongCai: "Xưởng Móng Cái",
+      jelly: "Xưởng Thạch",
+      import: "Hàng Nhập khẩu"
+    }
+    return factory ? labels[factory] : ""
+  }
+
+  private getSourceLabel(source?: SalesItemSource): string {
+    const labels: Record<SalesItemSource, string> = {
+      inside: "Hàng trong nhà máy",
+      outside: "Hàng ngoài nhà máy"
+    }
+    return source ? labels[source] : ""
+  }
+
+  private formatThousandsWithDot(value?: number): string {
+    if (value === undefined || value === null || Number.isNaN(value)) return ""
+
+    const [integerPart, decimalPart] = value.toString().split(".")
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+
+    return decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger
+  }
+
+  async searchSalesItems(
+    searchText: string,
+    page: number = 1,
+    limit: number = 20,
+    factory?: SalesItemFactory,
+    source?: SalesItemSource
+  ): Promise<{ data: SalesItem[]; total: number }> {
+    const skip = (page - 1) * limit
+    const filter = this.buildSearchFilter(searchText, factory, source)
 
     const [data, total] = await Promise.all([
       this.salesItemModel
@@ -303,6 +339,68 @@ export class SalesItemsService {
       this.salesItemModel.countDocuments(filter)
     ])
     return { data, total }
+  }
+
+  async exportSalesItemsToXlsx(
+    searchText: string = "",
+    factory?: SalesItemFactory,
+    source?: SalesItemSource
+  ): Promise<Buffer> {
+    try {
+      const filter = this.buildSearchFilter(searchText, factory, source)
+      const items = await this.salesItemModel.find(filter).sort({ createdAt: -1 })
+
+      const workbook = XLSX.utils.book_new()
+      const headers = [
+        "Mã",
+        "Tên tiếng Việt",
+        "Tên Trung Quốc",
+        "Xưởng",
+        "Nguồn gốc",
+        "Giá bán",
+        "Kích thước",
+        "Số khối",
+        "Quy cách",
+        "Cân nặng"
+      ]
+
+      const rows = items.map((item) => [
+        item.code || "",
+        item.name?.vn || "",
+        item.name?.cn || "",
+        this.getFactoryLabel(item.factory),
+        this.getSourceLabel(item.source),
+        this.formatThousandsWithDot(item.price),
+        item.size || "",
+        item.area ?? "",
+        item.specification || "",
+        item.mass ?? ""
+      ])
+
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+      worksheet["!cols"] = [
+        { wch: 14 }, // Mã
+        { wch: 28 }, // Tên tiếng Việt
+        { wch: 24 }, // Tên Trung Quốc
+        { wch: 20 }, // Xưởng
+        { wch: 20 }, // Nguồn gốc
+        { wch: 14 }, // Giá bán
+        { wch: 16 }, // Kích thước
+        { wch: 12 }, // Số khối
+        { wch: 16 }, // Quy cách
+        { wch: 12 } // Cân nặng
+      ]
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, "SalesItems")
+      return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in exportSalesItemsToXlsx:", error)
+      throw new HttpException(
+        "Có lỗi khi xuất danh sách sản phẩm",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
   }
 
   async getAllFactories(): Promise<{
