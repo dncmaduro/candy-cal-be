@@ -460,8 +460,8 @@ export class IncomeController {
     }
   }> {
     return this.incomeService.getRangeStats(
-      new Date(startDate),
-      new Date(endDate),
+      startDate,
+      endDate,
       channelId,
       comparePrevious !== "false"
     )
