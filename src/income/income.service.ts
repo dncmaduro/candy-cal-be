@@ -32,6 +32,52 @@ export class IncomeService {
     private readonly livestreamChannelModel: Model<LivestreamChannel>
   ) {}
 
+  private isDateOnlyInput(value: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+  }
+
+  private createVietnamDayBoundary(value: string, endOfDay: boolean): Date {
+    const [year, month, day] = value.split("-").map(Number)
+    const startOfDayUtcMs =
+      Date.UTC(year, month - 1, day, 0, 0, 0, 0) - 7 * 60 * 60 * 1000
+
+    return new Date(
+      endOfDay ? startOfDayUtcMs + 24 * 60 * 60 * 1000 - 1 : startOfDayUtcMs
+    )
+  }
+
+  private resolveRangeStatsDates(
+    startDate: Date | string,
+    endDate: Date | string
+  ): { start: Date; end: Date } {
+    const rawStart = typeof startDate === "string" ? startDate.trim() : null
+    const rawEnd = typeof endDate === "string" ? endDate.trim() : null
+
+    if (
+      rawStart &&
+      rawEnd &&
+      this.isDateOnlyInput(rawStart) &&
+      this.isDateOnlyInput(rawEnd)
+    ) {
+      return {
+        start: this.createVietnamDayBoundary(rawStart, false),
+        end: this.createVietnamDayBoundary(rawEnd, true)
+      }
+    }
+
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new HttpException(
+        "startDate hoặc endDate không hợp lệ",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    return { start, end }
+  }
+
   /** @deprecated */
   async insertIncome(dto: InsertIncomeFileDto): Promise<void> {
     try {
@@ -1063,8 +1109,8 @@ export class IncomeService {
   }
 
   async getRangeStats(
-    startDate: Date,
-    endDate: Date,
+    startDate: Date | string,
+    endDate: Date | string,
     channelId: string,
     comparePrevious = true
   ): Promise<{
@@ -1183,16 +1229,14 @@ export class IncomeService {
         throw new HttpException("channelId là bắt buộc", HttpStatus.BAD_REQUEST)
       }
 
-      const start = new Date(startDate)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(endDate)
-      end.setHours(23, 59, 59, 999)
+      const { start, end } = this.resolveRangeStatsDates(startDate, endDate)
       if (end < start)
         throw new HttpException(
           "Khoảng ngày không hợp lệ",
           HttpStatus.BAD_REQUEST
         )
-      const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+      const rangeDurationMs = end.getTime() - start.getTime() + 1
+      const days = Math.max(1, Math.ceil(rangeDurationMs / 86400000))
 
       const buildStats = async (s: Date, e: Date) => {
         const filter: any = { date: { $gte: s, $lte: e } }
@@ -1508,8 +1552,8 @@ export class IncomeService {
       if (!comparePrevious)
         return { period: { startDate: start, endDate: end, days }, current }
 
-      const prevEnd = new Date(start.getTime() - 1)
-      const prevStart = new Date(prevEnd.getTime() - (days - 1) * 86400000)
+      const prevStart = new Date(start.getTime() - rangeDurationMs)
+      const prevEnd = new Date(end.getTime() - rangeDurationMs)
       const previous = await buildStats(prevStart, prevEnd)
       const pct = (cur: number, prev: number) =>
         prev === 0
