@@ -4,6 +4,9 @@ import { Model, Types } from "mongoose"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import * as XLSX from "xlsx"
 import { CurrencyExchangeService } from "../common/currency-exchange.service"
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz"
+
+const DAILY_ADS_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
 @Injectable()
 export class DailyAdsService {
@@ -12,6 +15,11 @@ export class DailyAdsService {
     private readonly dailyAdsModel: Model<DailyAds>,
     private readonly currencyExchangeService: CurrencyExchangeService
   ) {}
+
+  private normalizeDateToBusinessDay(date: Date): Date {
+    const localDate = formatInTimeZone(date, DAILY_ADS_TIME_ZONE, "yyyy-MM-dd")
+    return fromZonedTime(`${localDate}T00:00:00`, DAILY_ADS_TIME_ZONE)
+  }
 
   async createOrUpdateDailyAds(
     yesterdayLiveAdsCostFileBefore4pm: Express.Multer.File,
@@ -89,8 +97,7 @@ export class DailyAdsService {
       const liveAdsCost = yLiveFull - yLiveBefore4 + tLiveBefore4
       const shopAdsCost = yShopFull - yShopBefore4 + tShopBefore4
 
-      const target = new Date(date)
-      target.setHours(0, 0, 0, 0)
+      const target = this.normalizeDateToBusinessDay(date)
 
       await this.dailyAdsModel.findOneAndUpdate(
         { date: target },
@@ -171,8 +178,7 @@ export class DailyAdsService {
         }
       }
 
-      const target = new Date(date)
-      target.setHours(0, 0, 0, 0)
+      const target = this.normalizeDateToBusinessDay(date)
 
       // Get yesterday's date
       const yesterday = new Date(target)
@@ -250,8 +256,7 @@ export class DailyAdsService {
     totalBefore4pmCost: number
   } | null> {
     try {
-      const target = new Date(date)
-      target.setHours(0, 0, 0, 0)
+      const target = this.normalizeDateToBusinessDay(date)
 
       const record = await this.dailyAdsModel.findOne({ date: target }).exec()
 
@@ -298,8 +303,7 @@ export class DailyAdsService {
         finalShopAdsCost = Math.round(shopAdsCost * rate)
       }
 
-      const target = new Date(date)
-      target.setHours(0, 0, 0, 0)
+      const target = this.normalizeDateToBusinessDay(date)
 
       // Build query filter - use both date and channel for unique identification
       const queryFilter: any = { date: target }
