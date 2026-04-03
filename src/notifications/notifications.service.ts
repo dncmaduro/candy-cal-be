@@ -5,6 +5,7 @@ import { Notification } from "../database/mongoose/schemas/Notification"
 import { NotificationDto } from "./dto/notifications.dto"
 import { NotificationsGateway } from "./notifications.gateway"
 import { User } from "../database/mongoose/schemas/User"
+import { buildRoleFilter } from "../roles/role-aliases"
 
 @Injectable()
 export class NotificationsService {
@@ -57,10 +58,18 @@ export class NotificationsService {
 
   async createNotificationsForRoles(
     notification: NotificationDto,
-    role: "order-emp" | "accounting-emp" | "admin"
+    role:
+      | "order-emp"
+      | "tiktokshop-emp"
+      | "shopee-emp"
+      | "accounting-emp"
+      | "admin"
   ): Promise<Notification[]> {
     try {
-      const users = await this.userModel.find({ role }).distinct("_id").exec()
+      const users = await this.userModel
+        .find({ roles: buildRoleFilter(role) })
+        .distinct("_id")
+        .exec()
 
       const notifications = users.map((userId) => ({
         ...notification,

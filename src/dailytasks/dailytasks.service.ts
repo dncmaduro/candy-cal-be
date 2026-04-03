@@ -11,6 +11,7 @@ import { DailyUserTask } from "../database/mongoose/schemas/DailyUserTask"
 import { User } from "../database/mongoose/schemas/User"
 import { ApiEndpoint } from "../database/mongoose/schemas/ApiEndpoint"
 import { RequestAudit } from "../database/mongoose/schemas/RequestAudit"
+import { expandRoleAliases } from "../roles/role-aliases"
 
 interface UpsertOptions {
   regenerate?: boolean
@@ -58,7 +59,7 @@ export class DailyTasksService {
     const activeDefs = await this.roleTaskDefModel.find({ active: true }).lean()
     if (activeDefs.length === 0) return { date, users: 0, tasksCreated: 0 }
 
-    const users = await this.userModel.find({}, { _id: 1, role: 1 }).lean()
+    const users = await this.userModel.find({}, { _id: 1, roles: 1 }).lean()
     let tasksCreated = 0
 
     const endpoints = await this.apiEndpointModel
@@ -67,8 +68,11 @@ export class DailyTasksService {
     const endpointMap = new Map(endpoints.map((e) => [e.key, e]))
 
     for (const u of users) {
+      const userRoles = expandRoleAliases(Array.isArray(u.roles) ? u.roles : [])
       const defsForRole = activeDefs.filter((d) =>
-        d.roles.some((r) => u.roles && u.roles.includes(r))
+        expandRoleAliases(Array.isArray(d.roles) ? d.roles : []).some((r) =>
+          userRoles.includes(r)
+        )
       )
       if (defsForRole.length === 0) continue
 

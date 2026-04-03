@@ -29,7 +29,7 @@ export class MonthGoalController {
     return this.monthGoalService.createGoal(dto)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get("year")
   @HttpCode(HttpStatus.OK)
   async getGoals(
@@ -64,7 +64,7 @@ export class MonthGoalController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get("month")
   @HttpCode(HttpStatus.OK)
   async getGoal(

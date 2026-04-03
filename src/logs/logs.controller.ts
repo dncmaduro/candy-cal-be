@@ -26,7 +26,7 @@ export class LogsController {
     private readonly systemLogsService: SystemLogsService // Ensure SystemLogsService is injected
   ) {}
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLogs(
@@ -36,7 +36,7 @@ export class LogsController {
     return this.logsService.getLogs(page, limit)
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLog(@Body() log: LogDto, @Req() req): Promise<Log> {
@@ -54,7 +54,7 @@ export class LogsController {
     return created
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("range")
   @HttpCode(HttpStatus.OK)
   async getLogsByRange(

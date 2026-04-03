@@ -1,12 +1,14 @@
+export type ProductRankingsBy = "quantity" | "income"
+
 export class InsertIncomeFileDto {
   file: Express.Multer.File
-  type: "affiliate" | "ads" | "other"
+  type: "internal" | "affiliate" | "ads" | "other"
   date: Date
   channel: string
 }
 
 export class InsertIncomeRequest {
-  type: "affiliate" | "ads" | "other"
+  type: "internal" | "affiliate" | "ads" | "other"
   date: Date
   channel: string
 }

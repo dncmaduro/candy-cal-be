@@ -25,7 +25,7 @@ export class DailyLogsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createDailyLog(
@@ -44,7 +44,7 @@ export class DailyLogsController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getDailyLogs(
@@ -55,7 +55,7 @@ export class DailyLogsController {
     return this.dailyLogsService.getDailyLogs(channelId, page, limit)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get("by-date")
   @HttpCode(HttpStatus.OK)
   async getDailyLogByDate(

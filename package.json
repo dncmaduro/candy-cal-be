@@ -8,6 +8,7 @@
     "start:dev": "nest start --watch",
     "build": "tsc",
     "start:prod": "node dist/main",
+    "migrate:roles:order-to-tiktok": "bash scripts/migrate-order-emp-to-tiktokshop-emp.sh",
     "up:prod": "docker buildx build --platform linux/amd64 -t gunnyrealer9/candy-cal-be:latest --push .",
     "up:staging": "docker buildx build --platform linux/amd64 -f Dockerfile.staging -t gunnyrealer9/candy-cal-be:staging --push .",
     "dump:prod": "mongodump --uri=\"mongodb+srv://manhdungtranvnuuet:madurc29@candy.j3wyn.mongodb.net/?retryWrites=true&w=majority&appName=Candy\"",

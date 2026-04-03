@@ -20,7 +20,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
 import { IncomeService } from "./income.service"
-import { InsertIncomeRequest } from "./dto/income.dto"
+import { InsertIncomeRequest, ProductRankingsBy } from "./dto/income.dto"
 import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express"
 import { Income } from "../database/mongoose/schemas/Income"
 import { Response } from "express"
@@ -103,7 +103,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getIncomesByDateRange(
@@ -150,7 +150,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("export-xlsx")
   async exportIncomesToXlsx(
     @Query("startDate") startDate: string,
@@ -192,7 +192,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("income-split-by-month")
   @HttpCode(HttpStatus.OK)
   async totalIncomeByMonthSplit(
@@ -213,7 +213,7 @@ export class IncomeController {
     return { totalIncome }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("quantity-split-by-month")
   @HttpCode(HttpStatus.OK)
   async totalQuantityByMonthSplit(
@@ -229,7 +229,7 @@ export class IncomeController {
     return { totalQuantity }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("total-orders-by-month")
   @HttpCode(HttpStatus.OK)
   async getTotalIncomeCountByMonth(
@@ -244,7 +244,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("kpi-percentage-split-by-month")
   @HttpCode(HttpStatus.OK)
   async KPIPercentageByMonthSplit(
@@ -260,7 +260,7 @@ export class IncomeController {
     return { KPIPercentage }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("top-creators")
   @HttpCode(HttpStatus.OK)
   async getTopCreators(
@@ -319,7 +319,7 @@ export class IncomeController {
     return result
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("monthly-live-shop-income")
   @HttpCode(HttpStatus.OK)
   async totalLiveAndShopIncomeByMonth(
@@ -340,7 +340,7 @@ export class IncomeController {
     return { totalIncome }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("monthly-ads-cost-split")
   @HttpCode(HttpStatus.OK)
   async adsCostSplitByMonth(
@@ -348,10 +348,18 @@ export class IncomeController {
     @Query("year") year: string,
     @Query("channelId") channelId?: string
   ): Promise<{
+    storageMode: "legacy" | "v2" | "mixed"
     liveAdsCost: number
     shopAdsCost: number
-    percentages: { liveAdsToLiveIncome: number; shopAdsToShopIncome: number }
-    totalIncome: { live: number; shop: number }
+    internalAdsCost: number
+    externalAdsCost: number
+    percentages: {
+      liveAdsToLiveIncome: number
+      shopAdsToShopIncome: number
+      internalAdsToInternalIncome: number
+      externalAdsToAffiliateIncome: number
+    }
+    totalIncome: { live: number; shop: number; internal: number; affiliate: number }
   }> {
     return this.incomeService.adsCostSplitByMonth(
       Number(month),
@@ -360,14 +368,15 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("range-stats")
   @HttpCode(HttpStatus.OK)
   async getRangeStats(
     @Query("startDate") startDate: string,
     @Query("endDate") endDate: string,
     @Query("channelId") channelId: string,
-    @Query("comparePrevious") comparePrevious?: string
+    @Query("comparePrevious") comparePrevious?: string,
+    @Query("productRankingsBy") productRankingsBy?: ProductRankingsBy
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -379,6 +388,7 @@ export class IncomeController {
         otherVideoIncome: number
         otherIncome: number
         sources: {
+          internal: number
           ads: number
           affiliate: number
           affiliateAds: number
@@ -393,6 +403,7 @@ export class IncomeController {
         otherVideoIncome: number
         otherIncome: number
         sources: {
+          internal: number
           ads: number
           affiliate: number
           affiliateAds: number
@@ -402,11 +413,16 @@ export class IncomeController {
       boxes: { box: string; quantity: number }[]
       shippingProviders: { provider: string; orders: number }[]
       ads: {
+        storageMode: "legacy" | "v2" | "mixed"
         liveAdsCost: number
         shopAdsCost: number
+        internalAdsCost: number
+        externalAdsCost: number
         percentages: {
           liveAdsToLiveIncome: number
           shopAdsToShopIncome: number
+          internalAdsToInternalIncome: number
+          externalAdsToAffiliateIncome: number
         }
       }
       discounts: {
@@ -415,6 +431,10 @@ export class IncomeController {
         totalDiscount: number
         avgDiscountPerOrder: number
         discountPercentage: number
+      }
+      productRankingsBy: ProductRankingsBy
+      productsQuantity: {
+        [code: string]: number
       }
     }
     changes?: {
@@ -425,6 +445,7 @@ export class IncomeController {
         ownVideoIncomePct: number
         otherVideoIncomePct: number
         sources: {
+          internalPct: number
           adsPct: number
           affiliatePct: number
           affiliateAdsPct: number
@@ -438,6 +459,7 @@ export class IncomeController {
         ownVideoIncomePct: number
         otherVideoIncomePct: number
         sources: {
+          internalPct: number
           adsPct: number
           affiliatePct: number
           affiliateAdsPct: number
@@ -445,10 +467,15 @@ export class IncomeController {
         }
       }
       ads: {
+        storageMode: "legacy" | "v2" | "mixed"
         liveAdsCostPct: number
         shopAdsCostPct: number
+        internalAdsCostPct: number
+        externalAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
         shopAdsToShopIncomePctDiff: number
+        internalAdsToInternalIncomePctDiff: number
+        externalAdsToAffiliateIncomePctDiff: number
       }
       discounts: {
         totalPlatformDiscountPct: number
@@ -463,11 +490,12 @@ export class IncomeController {
       startDate,
       endDate,
       channelId,
-      comparePrevious !== "false"
+      comparePrevious !== "false",
+      productRankingsBy
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
   @Post("insert-and-update-source")
   @UseInterceptors(FilesInterceptor("files"))
   @HttpCode(HttpStatus.ACCEPTED) // Đổi thành 202 ACCEPTED
@@ -562,7 +590,7 @@ export class IncomeController {
     }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("detailed-product-stats")
   @HttpCode(HttpStatus.OK)
   async getDetailedProductStats(

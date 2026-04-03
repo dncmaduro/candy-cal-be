@@ -11,6 +11,7 @@ import {
 } from "./dto/login.dto"
 import { JwtService } from "@nestjs/jwt"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
+import { buildRoleFilter } from "../roles/role-aliases"
 
 @Injectable()
 export class UsersService {
@@ -311,7 +312,7 @@ export class UsersService {
         }
       }
       if (role && String(role).trim().length > 0) {
-        filter.roles = role
+        filter.roles = buildRoleFilter(role)
       }
 
       const [users, total] = await Promise.all([

@@ -30,7 +30,7 @@ export class OrderLogsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getOrderLogs(
@@ -40,7 +40,7 @@ export class OrderLogsController {
     return this.orderLogsService.getOrderLogs(page, limit)
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLogSession(
@@ -61,7 +61,7 @@ export class OrderLogsController {
     return created
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("range")
   @HttpCode(HttpStatus.OK)
   async getOrderLogsByRange(

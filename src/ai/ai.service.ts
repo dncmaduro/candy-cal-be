@@ -475,7 +475,7 @@ export class AiService {
       "Chi tra loi ket qua cuoi cung, ngan gon. " +
       "Khong giai thich ky thuat truy van va khong giai thich logic ngay thang/khung gio. " +
       "Neu cau hoi ve ma/SKU/san pham da ban trong ngay/khoang ngay, bat buoc su dung field productsQuantity de tra loi. " +
-      "Neu cau hoi la doanh thu theo nguon, chi duoc tra loi cac so lieu theo nguon (ads, affiliate, affiliateAds, other) va tong theo nguon; khong tra loi cac muc khac. " +
+      "Neu cau hoi la doanh thu theo nguon, chi duoc tra loi cac so lieu theo nguon (internal, affiliate, affiliateAds, ads, other) va tong theo nguon; khong tra loi cac muc khac. " +
       "Neu cau hoi la doanh thu tong quan (khong theo nguon), bat buoc neu day du 2 phan: Truoc chiet khau va Sau chiet khau; moi phan gom it nhat tong doanh thu, doanh thu live, doanh thu video va doanh thu khac. Tuyet doi khong liet ke theo nguon trong mode nay. " +
       "Neu co nhieu nguon du lieu hoac nhieu dong ket qua, hay tach rieng tung nguon/tung dong, khong gop chung. " +
       "Neu data la danh sach (array) co nhieu phan tu, phai liet ke tung phan tu voi cac truong chinh. " +
@@ -2446,6 +2446,7 @@ export class AiService {
         titleLine,
         "",
         "Trước chiết khấu:",
+        `- Internal: ${fmt(b?.sources?.internal)} VNĐ`,
         `- Quảng cáo: ${fmt(b?.sources?.ads)} VNĐ`,
         `- Affiliate: ${fmt(b?.sources?.affiliate)} VNĐ`,
         `- Affiliate Ads: ${fmt(b?.sources?.affiliateAds)} VNĐ`,
@@ -2453,6 +2454,7 @@ export class AiService {
         `- Tổng: ${fmt(b?.totalIncome)} VNĐ`,
         "",
         "Sau chiết khấu:",
+        `- Internal: ${fmt(a?.sources?.internal)} VNĐ`,
         `- Quảng cáo: ${fmt(a?.sources?.ads)} VNĐ`,
         `- Affiliate: ${fmt(a?.sources?.affiliate)} VNĐ`,
         `- Affiliate Ads: ${fmt(a?.sources?.affiliateAds)} VNĐ`,
@@ -2610,6 +2612,8 @@ export class AiService {
         stats: {
           period: range.stats.period,
           current: {
+            productRankingsBy:
+              range.stats.current.productRankingsBy || "quantity",
             productsQuantity: range.stats.current.productsQuantity || {}
           }
         }

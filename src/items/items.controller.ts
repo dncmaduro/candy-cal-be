@@ -28,7 +28,7 @@ export class ItemsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createItem(@Body() item: ItemDto, @Req() req): Promise<Item> {
@@ -47,7 +47,7 @@ export class ItemsController {
     return created
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateItem(@Body() item: Item, @Req() req): Promise<Item> {
@@ -65,21 +65,21 @@ export class ItemsController {
     return updated
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getItem(@Query("id") id: string): Promise<Item> {
     return this.itemsService.getItem(id)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(@Query("searchText") searchText: string): Promise<Item[]> {
     return this.itemsService.searchItems(searchText)
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteItem(@Param("id") id: string, @Req() req): Promise<void> {

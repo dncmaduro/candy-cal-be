@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common"
 import { Reflector } from "@nestjs/core"
 import { ROLES_KEY } from "./roles.decorator"
+import { expandRoleAliases } from "./role-aliases"
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -27,7 +28,11 @@ export class RolesGuard implements CanActivate {
         ? [user.role]
         : []
 
-    const hasRole = requiredRoles.some((r) => userRoles.includes(r))
+    const expandedUserRoles = expandRoleAliases(userRoles)
+    const expandedRequiredRoles = expandRoleAliases(requiredRoles)
+    const hasRole = expandedRequiredRoles.some((r) =>
+      expandedUserRoles.includes(r)
+    )
     if (!hasRole) {
       throw new ForbiddenException("Bạn không có quyền truy cập")
     }

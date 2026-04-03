@@ -33,7 +33,7 @@ export class ProductsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createProduct(
@@ -55,7 +55,7 @@ export class ProductsController {
     return created
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateProduct(
@@ -76,7 +76,7 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Put("/items")
   @HttpCode(HttpStatus.OK)
   async updateItemsForProduct(
@@ -102,21 +102,21 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllProducts(): Promise<ProductResponse[]> {
     return this.productsService.getAllProducts()
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp")
   @Get("/product")
   @HttpCode(HttpStatus.OK)
   async getProduct(@Query("id") id: string): Promise<ProductResponse> {
     return this.productsService.getProduct(id)
   }
 
-  @Roles("admin", "order-emp", "system-emp", "accounting-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "system-emp", "accounting-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
@@ -134,7 +134,7 @@ export class ProductsController {
     return this.productsService.searchProducts(searchText, deletedFilter)
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
@@ -162,7 +162,7 @@ export class ProductsController {
     return res
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Patch(":productId/change-ready-status")
   @HttpCode(HttpStatus.OK)
   async changeReadyStatus(
@@ -183,7 +183,7 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Delete(":productId")
   @HttpCode(HttpStatus.OK)
   async deleteProduct(
@@ -204,7 +204,7 @@ export class ProductsController {
     return { message: "Sản phẩm đã được xóa thành công" }
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Patch(":productId/restore")
   @HttpCode(HttpStatus.OK)
   async restoreProduct(

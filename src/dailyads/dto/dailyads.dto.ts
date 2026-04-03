@@ -12,3 +12,18 @@ export class SimpleDailyAdsDto {
   currency?: "vnd" | "usd"
   channel?: string
 }
+
+export class DailyAdsV2Dto {
+  date: Date
+  internalAdsCost: number
+  externalAdsCost: number
+  currency?: "vnd" | "usd"
+}
+
+export class SimpleDailyAdsV2Dto {
+  date: string
+  internalAdsCost: number
+  externalAdsCost: number
+  currency?: "vnd" | "usd"
+  channel?: string
+}

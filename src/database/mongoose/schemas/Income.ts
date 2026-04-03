@@ -11,7 +11,7 @@ export interface Income {
     creator?: string
     code: string
     name: string
-    source: "affiliate" | "affiliate-ads" | "ads" | "other"
+    source: "internal" | "affiliate" | "affiliate-ads" | "ads" | "other"
     quantity: number
     quotation: number
     price: number

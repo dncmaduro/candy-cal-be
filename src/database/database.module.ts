@@ -17,6 +17,7 @@ import { SessionLogSchema } from "./mongoose/schemas/SessionLog"
 import { DailyLogSchema } from "./mongoose/schemas/DailyLog"
 import { SystemLogSchema } from "./mongoose/schemas/SystemLog"
 import { DailyAdsSchema } from "./mongoose/schemas/DailyAds"
+import { DailyAdsV2Schema } from "./mongoose/schemas/DailyAdsV2"
 import { LivestreamPeriodSchema } from "./mongoose/schemas/LivestreamPeriod"
 import { LivestreamEmployeeSchema } from "./mongoose/schemas/LivestreamEmployee"
 import { LivestreamSchema } from "./mongoose/schemas/Livestream"
@@ -58,6 +59,7 @@ import { ShopeeIncomeSchema } from "./mongoose/schemas/ShopeeIncome"
       { name: "dailylogs", schema: DailyLogSchema },
       { name: "systemlogs", schema: SystemLogSchema },
       { name: "dailyads", schema: DailyAdsSchema },
+      { name: "dailyadsv2", schema: DailyAdsV2Schema },
       { name: "livestreamperiods", schema: LivestreamPeriodSchema },
       { name: "livestreamemployees", schema: LivestreamEmployeeSchema },
       { name: "livestreams", schema: LivestreamSchema },

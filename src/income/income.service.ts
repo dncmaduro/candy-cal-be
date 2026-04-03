@@ -4,6 +4,7 @@ import { Model, Types } from "mongoose"
 import { Income } from "../database/mongoose/schemas/Income"
 import {
   InsertIncomeFileDto,
+  ProductRankingsBy,
   UpdateAffiliateTypeDto,
   XlsxAffiliateData,
   XlsxIncomeData
@@ -13,10 +14,9 @@ import * as ExcelJS from "exceljs"
 import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
-import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { format as formatDateFns } from "date-fns"
 import { OWN_USERS } from "../constants/own-users"
-import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
+import { DailyAdsService, DailyAdsStorageMode } from "../dailyads/dailyads.service"
 
 @Injectable()
 export class IncomeService {
@@ -26,10 +26,7 @@ export class IncomeService {
     @InjectModel("monthgoals")
     private readonly monthGoalModel: Model<MonthGoal>,
     private readonly packingRulesService: PackingRulesService,
-    @InjectModel("dailyads")
-    private readonly dailyAdsModel: Model<DailyAds>,
-    @InjectModel("livestreamchannels")
-    private readonly livestreamChannelModel: Model<LivestreamChannel>
+    private readonly dailyAdsService: DailyAdsService
   ) {}
 
   private isDateOnlyInput(value: string): boolean {
@@ -76,6 +73,99 @@ export class IncomeService {
     }
 
     return { start, end }
+  }
+
+  private parseNumberCell(value: unknown): number | null {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null
+    }
+
+    const normalized = String(value ?? "").trim()
+    if (!normalized) return null
+
+    const sanitized = normalized
+      .replace(/%/g, "")
+      .replace(/\s+/g, "")
+      .replace(/[^\d,.-]/g, "")
+
+    if (!sanitized) return null
+
+    let numeric = sanitized
+    if (numeric.includes(",") && numeric.includes(".")) {
+      numeric = numeric.replace(/\./g, "").replace(",", ".")
+    } else if (numeric.includes(",")) {
+      numeric = numeric.replace(",", ".")
+    }
+
+    const parsed = Number(numeric)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  private hasCommissionValue(value: unknown): boolean {
+    const parsed = this.parseNumberCell(value)
+    if (parsed !== null) return parsed !== 0
+
+    const normalized = String(value ?? "").trim().replace(/\s+/g, "")
+    if (!normalized) return false
+    return !/^0+([.,]0+)?%?$/.test(normalized)
+  }
+
+  private resolveAffiliateSource(line: XlsxAffiliateData):
+    | "internal"
+    | "affiliate"
+    | "affiliate-ads" {
+    const hasAffiliateAdsCommission = this.hasCommissionValue(
+      line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
+    )
+    const hasStandardAffiliateCommission = this.hasCommissionValue(
+      line["Tỷ lệ hoa hồng tiêu chuẩn"]
+    )
+
+    if (hasAffiliateAdsCommission && !hasStandardAffiliateCommission) {
+      return "affiliate-ads"
+    }
+
+    if (hasStandardAffiliateCommission && !hasAffiliateAdsCommission) {
+      return "affiliate"
+    }
+
+    return "internal"
+  }
+
+  private resolveProductRankingsBy(value?: string): ProductRankingsBy {
+    const normalized = String(value || "quantity").trim().toLowerCase()
+    if (normalized === "quantity" || normalized === "income") {
+      return normalized
+    }
+
+    throw new HttpException(
+      "productRankingsBy chỉ chấp nhận quantity hoặc income",
+      HttpStatus.BAD_REQUEST
+    )
+  }
+
+  private async getSourceIncomeTotalsAfterDiscount(
+    start: Date,
+    end: Date,
+    channelId?: string
+  ): Promise<{ internal: number; affiliate: number }> {
+    const filter: any = { date: { $gte: start, $lte: end } }
+    if (channelId) filter.channel = channelId
+
+    const incomes = await this.incomeModel.find(filter).lean()
+    let internal = 0
+    let affiliate = 0
+
+    for (const income of incomes) {
+      for (const p of income.products || []) {
+        const amount = (p.price || 0) - (p.sellerDiscount || 0)
+        if (p.source === "internal") internal += amount
+        else if (p.source === "affiliate" || p.source === "affiliate-ads")
+          affiliate += amount
+      }
+    }
+
+    return { internal, affiliate }
   }
 
   /** @deprecated */
@@ -281,17 +371,7 @@ export class IncomeService {
           if (foundProduct) {
             foundProduct.sourceChecked = true
             foundProduct.creator = line["Tên người dùng nhà sáng tạo"]
-            foundProduct.source = OWN_USERS.includes(
-              line["Tên người dùng nhà sáng tạo"]
-            )
-              ? "ads"
-              : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
-                  !line["Tỷ lệ hoa hồng tiêu chuẩn"]
-                ? "affiliate-ads"
-                : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
-                    !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-                  ? "affiliate"
-                  : "other"
+            foundProduct.source = this.resolveAffiliateSource(line)
             foundProduct.content = line["Loại nội dung"]
 
             const affiliateAdsPercentage = Number(
@@ -596,6 +676,7 @@ export class IncomeService {
       } as const
 
       const sourcesMap = {
+        internal: "INTERNAL",
         ads: "ADS",
         affiliate: "AFFILIATE",
         "affiliate-ads": "AFFILIATE ADS",
@@ -1010,13 +1091,23 @@ export class IncomeService {
     year: number,
     channelId?: string
   ): Promise<{
+    storageMode: DailyAdsStorageMode
     liveAdsCost: number
     shopAdsCost: number
+    internalAdsCost: number
+    externalAdsCost: number
     percentages: {
       liveAdsToLiveIncome: number
       shopAdsToShopIncome: number
+      internalAdsToInternalIncome: number
+      externalAdsToAffiliateIncome: number
     }
-    totalIncome: { live: number; shop: number }
+    totalIncome: {
+      live: number
+      shop: number
+      internal: number
+      affiliate: number
+    }
     kpi: {
       liveKpi: number
       shopKpi: number
@@ -1032,27 +1123,15 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setDate(end.getDate() - 1)
 
-      // Sum daily ads cost in month
-      const adsFilter: any = { date: { $gte: start, $lte: end } }
-      if (channelId) {
-        adsFilter.channel = new Types.ObjectId(channelId)
-      }
-
-      const rows = await this.dailyAdsModel
-        .aggregate([
-          { $match: adsFilter },
-          {
-            $group: {
-              _id: null,
-              liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
-              shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
-            }
-          }
-        ])
-        .exec()
-
-      const liveAdsCost = rows?.[0]?.liveAdsCost || 0
-      const shopAdsCost = rows?.[0]?.shopAdsCost || 0
+      const adsCosts = await this.dailyAdsService.getAdsCostsByDateRange(
+        start,
+        end,
+        channelId
+      )
+      const liveAdsCost = adsCosts.liveAdsCost
+      const shopAdsCost = adsCosts.shopAdsCost
+      const internalAdsCost = adsCosts.internalAdsCost
+      const externalAdsCost = adsCosts.externalAdsCost
 
       // Get total live/shop incomes in month
       const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
@@ -1062,12 +1141,25 @@ export class IncomeService {
       )
       const live = totalLiveShop.afterDiscount.live
       const shop = totalLiveShop.afterDiscount.shop
+      const bySource = await this.getSourceIncomeTotalsAfterDiscount(
+        start,
+        end,
+        channelId
+      )
 
       const percentages = {
         liveAdsToLiveIncome:
           live === 0 ? 0 : Math.round((liveAdsCost / live) * 10000) / 100,
         shopAdsToShopIncome:
-          shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100
+          shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100,
+        internalAdsToInternalIncome:
+          bySource.internal === 0
+            ? 0
+            : Math.round((internalAdsCost / bySource.internal) * 10000) / 100,
+        externalAdsToAffiliateIncome:
+          bySource.affiliate === 0
+            ? 0
+            : Math.round((externalAdsCost / bySource.affiliate) * 10000) / 100
       }
 
       // Get month goals for KPI calculation
@@ -1088,10 +1180,13 @@ export class IncomeService {
           : Math.min(Math.round((shop / shopKpi) * 10000) / 100, 999)
 
       return {
+        storageMode: adsCosts.mode,
         liveAdsCost,
         shopAdsCost,
+        internalAdsCost,
+        externalAdsCost,
         percentages,
-        totalIncome: { live, shop },
+        totalIncome: { live, shop, internal: bySource.internal, affiliate: bySource.affiliate },
         kpi: {
           liveKpi,
           shopKpi,
@@ -1112,7 +1207,8 @@ export class IncomeService {
     startDate: Date | string,
     endDate: Date | string,
     channelId: string,
-    comparePrevious = true
+    comparePrevious = true,
+    productRankingsByInput?: string
   ): Promise<{
     period: { startDate: Date; endDate: Date; days: number }
     current: {
@@ -1124,6 +1220,7 @@ export class IncomeService {
         otherVideoIncome: number
         otherIncome: number
         sources: {
+          internal: number
           ads: number
           affiliate: number
           affiliateAds: number
@@ -1138,6 +1235,7 @@ export class IncomeService {
         otherVideoIncome: number
         otherIncome: number
         sources: {
+          internal: number
           ads: number
           affiliate: number
           affiliateAds: number
@@ -1147,11 +1245,16 @@ export class IncomeService {
       boxes: { box: string; quantity: number }[]
       shippingProviders: { provider: string; orders: number }[]
       ads: {
+        storageMode: DailyAdsStorageMode
         liveAdsCost: number
         shopAdsCost: number
+        internalAdsCost: number
+        externalAdsCost: number
         percentages: {
           liveAdsToLiveIncome: number
           shopAdsToShopIncome: number
+          internalAdsToInternalIncome: number
+          externalAdsToAffiliateIncome: number
         }
       }
       discounts: {
@@ -1161,6 +1264,7 @@ export class IncomeService {
         avgDiscountPerOrder: number
         discountPercentage: number
       }
+      productRankingsBy: ProductRankingsBy
       productsQuantity: {
         [code: string]: number
       }
@@ -1190,6 +1294,7 @@ export class IncomeService {
         ownVideoIncomePct: number
         otherVideoIncomePct: number
         sources: {
+          internalPct: number
           adsPct: number
           affiliatePct: number
           affiliateAdsPct: number
@@ -1203,6 +1308,7 @@ export class IncomeService {
         ownVideoIncomePct: number
         otherVideoIncomePct: number
         sources: {
+          internalPct: number
           adsPct: number
           affiliatePct: number
           affiliateAdsPct: number
@@ -1210,10 +1316,15 @@ export class IncomeService {
         }
       }
       ads: {
+        storageMode: DailyAdsStorageMode
         liveAdsCostPct: number
         shopAdsCostPct: number
+        internalAdsCostPct: number
+        externalAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
         shopAdsToShopIncomePctDiff: number
+        internalAdsToInternalIncomePctDiff: number
+        externalAdsToAffiliateIncomePctDiff: number
       }
       discounts: {
         totalPlatformDiscountPct: number
@@ -1228,6 +1339,8 @@ export class IncomeService {
       if (!channelId) {
         throw new HttpException("channelId là bắt buộc", HttpStatus.BAD_REQUEST)
       }
+      const productRankingsBy =
+        this.resolveProductRankingsBy(productRankingsByInput)
 
       const { start, end } = this.resolveRangeStatsDates(startDate, endDate)
       if (end < start)
@@ -1252,6 +1365,7 @@ export class IncomeService {
         let ownVideoIncomeBeforeDiscount = 0
         let otherVideoIncomeBeforeDiscount = 0
         const sourcesBeforeDiscount = {
+          internal: 0,
           ads: 0,
           affiliate: 0,
           affiliateAds: 0,
@@ -1264,6 +1378,7 @@ export class IncomeService {
         let ownVideoIncomeAfterDiscount = 0
         let otherVideoIncomeAfterDiscount = 0
         const sourcesAfterDiscount = {
+          internal: 0,
           ads: 0,
           affiliate: 0,
           affiliateAds: 0,
@@ -1279,7 +1394,7 @@ export class IncomeService {
           0
         )
 
-        // Products quantity tracking
+        // Product rankings tracking. Value is quantity by default, or gross income when requested.
         const productsQuantityMap: Record<string, number> = {}
 
         for (const income of incomes) {
@@ -1300,7 +1415,9 @@ export class IncomeService {
             totalSellerDiscount += sellerDiscount
             totalOriginalPrice += priceBeforeDiscount
 
-            if (p.source === "ads")
+            if (p.source === "internal")
+              sourcesBeforeDiscount.internal += priceBeforeDiscount
+            else if (p.source === "ads")
               sourcesBeforeDiscount.ads += priceBeforeDiscount
             else if (p.source === "affiliate")
               sourcesBeforeDiscount.affiliate += priceBeforeDiscount
@@ -1311,7 +1428,9 @@ export class IncomeService {
             // Calculate after discount (CHỈ TRỪ SELLER DISCOUNT)
             totalIncomeAfterDiscount += priceAfterSellerDiscount
 
-            if (p.source === "ads")
+            if (p.source === "internal")
+              sourcesAfterDiscount.internal += priceAfterSellerDiscount
+            else if (p.source === "ads")
               sourcesAfterDiscount.ads += priceAfterSellerDiscount
             else if (p.source === "affiliate")
               sourcesAfterDiscount.affiliate += priceAfterSellerDiscount
@@ -1338,10 +1457,13 @@ export class IncomeService {
 
             if (p.box) boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
 
-            // Track products quantity
+            // Track product rankings by selected metric
             const productCode = p.code || "(unknown)"
             productsQuantityMap[productCode] =
-              (productsQuantityMap[productCode] || 0) + (p.quantity || 0)
+              (productsQuantityMap[productCode] || 0) +
+              (productRankingsBy === "income"
+                ? priceBeforeDiscount
+                : p.quantity || 0)
           }
         }
 
@@ -1366,26 +1488,17 @@ export class IncomeService {
           .map(([provider, orders]) => ({ provider, orders }))
           .sort((a, b) => b.orders - a.orders)
 
-        // Build ads filter with channel if provided
-        const adsFilter: any = { date: { $gte: s, $lte: e } }
-        if (channelId) {
-          adsFilter.channel = new Types.ObjectId(channelId)
-        }
-
-        const adsAgg = await this.dailyAdsModel
-          .aggregate([
-            { $match: adsFilter },
-            {
-              $group: {
-                _id: null,
-                liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
-                shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
-              }
-            }
-          ])
-          .exec()
-        const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
-        const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
+        const adsCosts = await this.dailyAdsService.getAdsCostsByDateRange(
+          s,
+          e,
+          channelId
+        )
+        const liveAdsCost = adsCosts.liveAdsCost
+        const shopAdsCost = adsCosts.shopAdsCost
+        const internalAdsCost = adsCosts.internalAdsCost
+        const externalAdsCost = adsCosts.externalAdsCost
+        const affiliateIncomeAfterDiscount =
+          sourcesAfterDiscount.affiliate + sourcesAfterDiscount.affiliateAds
         const percentages = {
           liveAdsToLiveIncome:
             liveIncomeAfterDiscount === 0
@@ -1396,7 +1509,19 @@ export class IncomeService {
             videoIncomeAfterDiscount === 0
               ? 0
               : Math.round((shopAdsCost / videoIncomeAfterDiscount) * 10000) /
-                100
+                100,
+          internalAdsToInternalIncome:
+            sourcesAfterDiscount.internal === 0
+              ? 0
+              : Math.round(
+                  (internalAdsCost / sourcesAfterDiscount.internal) * 10000
+                ) / 100,
+          externalAdsToAffiliateIncome:
+            affiliateIncomeAfterDiscount === 0
+              ? 0
+              : Math.round(
+                  (externalAdsCost / affiliateIncomeAfterDiscount) * 10000
+                ) / 100
         }
 
         const totalDiscount = totalPlatformDiscount + totalSellerDiscount
@@ -1407,7 +1532,7 @@ export class IncomeService {
             ? (totalSellerDiscount / totalOriginalPrice) * 100
             : 0
 
-        // Sort products by quantity descending
+        // Sort product rankings descending by selected metric
         const productsQuantity = Object.fromEntries(
           Object.entries(productsQuantityMap).sort(([, a], [, b]) => b - a)
         )
@@ -1433,7 +1558,14 @@ export class IncomeService {
           },
           boxes,
           shippingProviders,
-          ads: { liveAdsCost, shopAdsCost, percentages },
+          ads: {
+            storageMode: adsCosts.mode,
+            liveAdsCost,
+            shopAdsCost,
+            internalAdsCost,
+            externalAdsCost,
+            percentages
+          },
           discounts: {
             totalPlatformDiscount,
             totalSellerDiscount,
@@ -1441,6 +1573,7 @@ export class IncomeService {
             avgDiscountPerOrder,
             discountPercentage: Math.round(discountPercentage * 100) / 100
           },
+          productRankingsBy,
           productsQuantity
         }
       }
@@ -1585,6 +1718,10 @@ export class IncomeService {
             previous.beforeDiscount.otherVideoIncome
           ),
           sources: {
+            internalPct: pct(
+              current.beforeDiscount.sources.internal,
+              previous.beforeDiscount.sources.internal
+            ),
             adsPct: pct(
               current.beforeDiscount.sources.ads,
               previous.beforeDiscount.sources.ads
@@ -1625,6 +1762,10 @@ export class IncomeService {
             previous.afterDiscount.otherVideoIncome
           ),
           sources: {
+            internalPct: pct(
+              current.afterDiscount.sources.internal,
+              previous.afterDiscount.sources.internal
+            ),
             adsPct: pct(
               current.afterDiscount.sources.ads,
               previous.afterDiscount.sources.ads
@@ -1644,6 +1785,7 @@ export class IncomeService {
           }
         },
         ads: {
+          storageMode: current.ads.storageMode,
           liveAdsCostPct: pct(
             current.ads.liveAdsCost,
             previous.ads.liveAdsCost
@@ -1651,6 +1793,14 @@ export class IncomeService {
           shopAdsCostPct: pct(
             current.ads.shopAdsCost,
             previous.ads.shopAdsCost
+          ),
+          internalAdsCostPct: pct(
+            current.ads.internalAdsCost,
+            previous.ads.internalAdsCost
+          ),
+          externalAdsCostPct: pct(
+            current.ads.externalAdsCost,
+            previous.ads.externalAdsCost
           ),
           liveAdsToLiveIncomePctDiff:
             Math.round(
@@ -1662,6 +1812,18 @@ export class IncomeService {
             Math.round(
               (current.ads.percentages.shopAdsToShopIncome -
                 previous.ads.percentages.shopAdsToShopIncome) *
+                100
+            ) / 100,
+          internalAdsToInternalIncomePctDiff:
+            Math.round(
+              (current.ads.percentages.internalAdsToInternalIncome -
+                previous.ads.percentages.internalAdsToInternalIncome) *
+                100
+            ) / 100,
+          externalAdsToAffiliateIncomePctDiff:
+            Math.round(
+              (current.ads.percentages.externalAdsToAffiliateIncome -
+                previous.ads.percentages.externalAdsToAffiliateIncome) *
                 100
             ) / 100
         },
@@ -1718,7 +1880,7 @@ export class IncomeService {
       const end = new Date(dto.date)
       end.setHours(23, 59, 59, 999)
 
-      // ====== 1) Xử lý file tổng doanh thu: insert với source mặc định "other" + sourceChecked=false ======
+      // ====== 1) Xử lý file tổng doanh thu: insert với source mặc định "internal" + sourceChecked=false ======
       const totalWorkbook = XLSX.read(dto.totalIncomeFile.buffer, {
         type: "buffer"
       })
@@ -1757,7 +1919,7 @@ export class IncomeService {
         const products = lines.map((line) => ({
           code: String(line["Seller SKU"] || "").trim(),
           name: String(line["Product Name"] || "").trim(),
-          source: "other",
+          source: "internal",
           quantity: Number(line["Quantity"]) || 0,
           quotation: Number(line["SKU Unit Original Price"]) || 0,
           price: Number(line["SKU Subtotal Before Discount"]) || 0,
@@ -1786,21 +1948,6 @@ export class IncomeService {
       await this.updateIncomesBox(new Date(dto.date))
 
       // ====== 2) Xử lý file affiliate: update source (FIX RACE + IDEMPOTENT) ======
-      const channelDoc = await this.livestreamChannelModel
-        .findById(dto.channel, { usernames: 1, username: 1 })
-        .lean()
-      const channelUsernames = new Set(
-        [
-          ...(channelDoc?.usernames || []),
-          ...(channelDoc?.username ? [channelDoc.username] : [])
-        ]
-          .map((name) => String(name || "").trim().toLowerCase())
-          .filter(Boolean)
-      )
-
-      const normalizeCreator = (value: unknown) =>
-        String(value || "").trim().toLowerCase()
-
       const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
         type: "buffer"
       })
@@ -1822,15 +1969,7 @@ export class IncomeService {
         if (!orderId || !code || !Number.isFinite(quantity)) continue
 
         const creator = line["Tên người dùng nhà sáng tạo"]
-        const nextSource = channelUsernames.has(normalizeCreator(creator))
-          ? "ads"
-          : line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"] &&
-              !line["Tỷ lệ hoa hồng tiêu chuẩn"]
-            ? "affiliate-ads"
-            : line["Tỷ lệ hoa hồng tiêu chuẩn"] &&
-                !line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]
-              ? "affiliate"
-              : "other"
+        const nextSource = this.resolveAffiliateSource(line)
 
         const affiliateAdsPercentage = Number(
           line["Tỷ lệ hoa hồng Quảng cáo cửa hàng"]

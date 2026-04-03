@@ -18,7 +18,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { FilesInterceptor } from "@nestjs/platform-express"
-import { SimpleDailyAdsDto } from "./dto/dailyads.dto"
+import { SimpleDailyAdsDto, SimpleDailyAdsV2Dto } from "./dto/dailyads.dto"
 
 @Controller("dailyads")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -28,7 +28,7 @@ export class DailyAdsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
   @Post()
   @UseInterceptors(FilesInterceptor("files", 6))
   @HttpCode(HttpStatus.CREATED)
@@ -97,7 +97,7 @@ export class DailyAdsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
   @Post("/update-with-saved-before4pm")
   @UseInterceptors(FilesInterceptor("files", 4))
   @HttpCode(HttpStatus.OK)
@@ -162,7 +162,7 @@ export class DailyAdsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
   @Get("/before4pm")
   @HttpCode(HttpStatus.OK)
   async getBefore4pmCosts(@Query("date") dateStr: string) {
@@ -189,7 +189,7 @@ export class DailyAdsController {
     return result
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
   @Post("/simpledailyads")
   @HttpCode(HttpStatus.OK)
   async simpleCreateOrUpdateDailyAds(
@@ -248,6 +248,221 @@ export class DailyAdsController {
           date: dto.date,
           liveAdsCost: dto.liveAdsCost,
           shopAdsCost: dto.shopAdsCost,
+          currency
+        }
+      },
+      req.user.userId
+    )
+
+    return { success: true, data: result }
+  }
+
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
+  @Post("/v2")
+  @UseInterceptors(FilesInterceptor("files", 6))
+  @HttpCode(HttpStatus.CREATED)
+  async upsertDailyAdsV2(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req
+  ): Promise<void> {
+    if (!files || files.length !== 6) {
+      throw new HttpException(
+        "Cần upload 6 file chi phí cho DailyAdsV2",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const dateStr = req.body?.date || req.query?.date
+    if (!dateStr) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const currency = (
+      req.body?.currency ||
+      req.query?.currency ||
+      "vnd"
+    ).toLowerCase()
+    if (currency !== "vnd" && currency !== "usd") {
+      throw new HttpException(
+        "Currency phải là 'vnd' hoặc 'usd'",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    await this.dailyAdsService.createOrUpdateDailyAdsV2(
+      files[0],
+      files[1],
+      files[2],
+      files[3],
+      files[4],
+      files[5],
+      date,
+      currency as "vnd" | "usd"
+    )
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "created/updated_v2",
+        entity: "daily_ads_v2",
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
+  @Post("/v2/update-with-saved-before4pm")
+  @UseInterceptors(FilesInterceptor("files", 4))
+  @HttpCode(HttpStatus.OK)
+  async updateDailyAdsUsingSavedBefore4pmV2(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req
+  ): Promise<void> {
+    if (!files || files.length !== 4) {
+      throw new HttpException(
+        "Cần upload 4 file chi phí cho DailyAdsV2",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const dateStr = req.body?.date || req.query?.date
+    if (!dateStr) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const currency = (
+      req.body?.currency ||
+      req.query?.currency ||
+      "vnd"
+    ).toLowerCase()
+    if (currency !== "vnd" && currency !== "usd") {
+      throw new HttpException(
+        "Currency phải là 'vnd' hoặc 'usd'",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    await this.dailyAdsService.updateDailyAdsUsingSavedBefore4pmV2(
+      files[0],
+      files[1],
+      files[2],
+      files[3],
+      date,
+      currency as "vnd" | "usd"
+    )
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "updated-with-saved-before4pm_v2",
+        entity: "daily_ads_v2",
+        result: "success"
+      },
+      req.user.userId
+    )
+  }
+
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
+  @Get("/v2/before4pm")
+  @HttpCode(HttpStatus.OK)
+  async getBefore4pmCostsV2(@Query("date") dateStr: string) {
+    if (!dateStr) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const result = await this.dailyAdsService.getBefore4pmCostsV2(date)
+
+    if (!result) {
+      throw new HttpException(
+        "Không tìm thấy dữ liệu DailyAdsV2 cho ngày này",
+        HttpStatus.NOT_FOUND
+      )
+    }
+
+    return result
+  }
+
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp")
+  @Post("/v2/simpledailyads")
+  @HttpCode(HttpStatus.OK)
+  async simpleCreateOrUpdateDailyAdsV2(
+    @Body() dto: SimpleDailyAdsV2Dto,
+    @Req() req
+  ): Promise<{ success: boolean; data: any }> {
+    if (!dto.date) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const date = new Date(dto.date)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    if (dto.internalAdsCost === undefined || dto.internalAdsCost === null) {
+      throw new HttpException(
+        "Cần cung cấp internalAdsCost",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    if (dto.externalAdsCost === undefined || dto.externalAdsCost === null) {
+      throw new HttpException(
+        "Cần cung cấp externalAdsCost",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const currency = (dto.currency || "vnd").toLowerCase()
+    if (currency !== "vnd" && currency !== "usd") {
+      throw new HttpException(
+        "Currency phải là 'vnd' hoặc 'usd'",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const result = await this.dailyAdsService.simpleCreateOrUpdateDailyAdsV2(
+      date,
+      Number(dto.internalAdsCost),
+      Number(dto.externalAdsCost),
+      currency as "vnd" | "usd",
+      dto.channel
+    )
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "simple_create_update_v2",
+        entity: "daily_ads_v2",
+        result: "success",
+        meta: {
+          date: dto.date,
+          internalAdsCost: dto.internalAdsCost,
+          externalAdsCost: dto.externalAdsCost,
           currency
         }
       },

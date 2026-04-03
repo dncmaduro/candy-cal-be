@@ -375,6 +375,32 @@ export const AI_DB_TABLES: DbTableContext[] = [
     ]
   },
   {
+    collection: "dailyadsv2",
+    schemaFile: "DailyAdsV2",
+    keyFields: [
+      "before4pmInternalAdsCost",
+      "before4pmExternalAdsCost",
+      "channel",
+      "date",
+      "internalAdsCost",
+      "externalAdsCost",
+      "updatedAt"
+    ],
+    description:
+      "Schema DailyAdsV2. Cac truong chinh: before4pmInternalAdsCost, before4pmExternalAdsCost, channel, date, internalAdsCost, externalAdsCost, updatedAt. Day la bang quan ly chi phi quang cao hang ngay theo mo hinh internal/external, ap dung tu ngay 01/04/2026 tro di.",
+    primaryKeys: [],
+    searchableFields: [],
+    dateFields: ["date", "updatedAt"],
+    statusFields: [],
+    relationships: [],
+    commonFilters: [],
+    queryHints: [],
+    examples: [
+      "Lay du lieu tu bang dailyadsv2 theo dieu kien phu hop",
+      "Tim kiem trong bang dailyadsv2"
+    ]
+  },
+  {
     collection: "livestreamperiods",
     schemaFile: "LivestreamPeriod",
     keyFields: ["channel", "endTime", "for", "startTime"],

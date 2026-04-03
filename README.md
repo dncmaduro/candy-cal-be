@@ -33,9 +33,19 @@ NestJS + Mongoose backend cho hệ thống quản lý đơn hàng, kho, doanh th
 ## Phân Quyền Roles
 
 - `admin`: Toàn quyền
-- `order-emp`: Nghiệp vụ đơn hàng / sản xuất
+- `tiktokshop-emp`: Nghiệp vụ Tiktok Shop
+- `shopee-emp`: Nghiệp vụ Shopee
 - `accounting-emp`: Kế toán / doanh thu / kho
 - `system-emp`: Quyền xem (read-only) hầu hết GET
+
+`order-emp` hiện được giữ như alias legacy trong backend để user cũ chưa migrate vẫn match quyền của `tiktokshop-emp` và `shopee-emp`.
+
+Nếu muốn migrate role cũ trong DB:
+
+- Dry run từ shell: `bash scripts/migrate-order-emp-to-tiktokshop-emp.sh`
+- Ghi thật từ shell: `bash scripts/migrate-order-emp-to-tiktokshop-emp.sh --apply`
+- Có thể chạy qua npm nếu muốn: `npm run migrate:roles:order-to-tiktok -- --apply`
+- Có thể override bằng `--database-url ...`, `--db-name ...` hoặc `--env-file ...`
 
 Các endpoint GET đã được mở thêm `system-emp` để quan sát dữ liệu (không ghi).
 
@@ -70,9 +80,11 @@ Chỉ log unexpected (non-HTTP) errors hiện tại. Các lỗi Http (400/403/..
 
 ### Import
 
-- API `POST /incomes` nhận file (Shopee export) + `type` (affiliate|ads|...)
+- API `POST /incomes/insert-and-update-source` nhận 2 file:
+  file 1 là file tổng doanh thu, import toàn bộ product với `source = internal` và `sourceChecked = false`
+  file 2 là file affiliate, chỉ override `source` sang `affiliate` hoặc `affiliate-ads`
+- API `POST /incomes` là luồng cũ/deprecated nhận file (Shopee export) + `type`
 - Loại bỏ entries `Cancelation/Return Type = Cancel`
-- Xoá products trùng source trong ngày rồi append dữ liệu mới
 - Sau khi import: tự động chạy cập nhật box (`updateIncomesBox`) dựa vào `packingrules`
 
 ### Split theo kênh (livestream vs shop)
@@ -91,14 +103,39 @@ Chỉ log unexpected (non-HTTP) errors hiện tại. Các lỗi Http (400/403/..
   {
     boxes: [{ box, quantity }],
     totalIncome: number,
-    sources: { ads, affiliate, affiliateAds, other }
+    sources: { internal, ads, affiliate, affiliateAds, other }
   }
   ```
+
+### Thống kê khoảng ngày
+
+- `GET /incomes/range-stats?startDate=&endDate=&channelId=&comparePrevious=&productRankingsBy=`
+- `productRankingsBy` nhận:
+  - `quantity` mặc định, xếp hạng sản phẩm theo số lượng bán
+  - `income` xếp hạng sản phẩm theo doanh thu gốc trước mọi chiết khấu/chi phí
+- Response `current` có:
+  - `productRankingsBy`
+  - `productsQuantity` là map `SKU -> giá trị xếp hạng` theo mode đang chọn
 
 ### Xuất Excel
 
 - `GET /incomes/export-xlsx` với filter (startDate, endDate, productSource, productCode, orderId)
 - Gộp ô chung cho thông tin đơn hàng, liệt kê từng product.
+
+## Daily Ads
+
+- Legacy collection/API: `dailyads`
+  - dùng mô hình `live/shop`
+- New collection/API: `dailyadsv2`
+  - dùng mô hình `internal/external`
+  - các route mới:
+    - `POST /dailyads/v2`
+    - `POST /dailyads/v2/update-with-saved-before4pm`
+    - `GET /dailyads/v2/before4pm`
+    - `POST /dailyads/v2/simpledailyads`
+- Quy tắc đọc dữ liệu ads:
+  - trước ngày `2026-04-01` dùng `dailyads`
+  - từ ngày `2026-04-01` trở đi dùng `dailyadsv2`
 
 ## Month Goals
 

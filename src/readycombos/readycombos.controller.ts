@@ -25,7 +25,7 @@ export class ReadyCombosController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createCombo(
@@ -46,7 +46,7 @@ export class ReadyCombosController {
     return created
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Put("/:comboId")
   @HttpCode(HttpStatus.OK)
   async updateCombo(
@@ -68,7 +68,7 @@ export class ReadyCombosController {
     return updated
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp")
   @Patch("/:comboId/toggle")
   @HttpCode(HttpStatus.OK)
   async toggleReadyCombo(
@@ -89,7 +89,7 @@ export class ReadyCombosController {
     return updated
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchCombos(
@@ -99,7 +99,7 @@ export class ReadyCombosController {
     return this.readyCombosService.searchCombos(searchText, isReady)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "tiktokshop-emp", "shopee-emp", "accounting-emp")
   @Delete("/:comboId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteCombo(
