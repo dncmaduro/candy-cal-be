@@ -1,12 +1,14 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
+import { endOfDay, endOfMonth, startOfDay, startOfMonth, subDays } from "date-fns"
+import { fromZonedTime, toZonedTime } from "date-fns-tz"
 import { Model, Types } from "mongoose"
 import { SalesDailyReport } from "../database/mongoose/schemas/SalesDailyReport"
 import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
-import { SalesDashboardService } from "../salesdashboard/salesdashboard.service"
-import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
+
+const SALES_REPORT_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
 @Injectable()
 export class SalesDailyReportsService {
@@ -15,14 +17,70 @@ export class SalesDailyReportsService {
     private readonly salesDailyReportModel: Model<SalesDailyReport>,
     @InjectModel("salesmonthkpis")
     private readonly salesMonthKpiModel: Model<SalesMonthKpi>,
-    @InjectModel("dailyads")
-    private readonly dailyAdsModel: Model<DailyAds>,
     @InjectModel("salesorders")
     private readonly salesOrderModel: Model<SalesOrder>,
     @InjectModel("salesfunnel")
-    private readonly salesFunnelModel: Model<SalesFunnel>,
-    private readonly salesDashboardService: SalesDashboardService
+    private readonly salesFunnelModel: Model<SalesFunnel>
   ) {}
+
+  private getZonedDate(date: Date): Date {
+    return toZonedTime(date, SALES_REPORT_TIME_ZONE)
+  }
+
+  private getUtcDayRange(date: Date): { start: Date; end: Date } {
+    const zonedDate = this.getZonedDate(date)
+
+    return {
+      start: fromZonedTime(startOfDay(zonedDate), SALES_REPORT_TIME_ZONE),
+      end: fromZonedTime(endOfDay(zonedDate), SALES_REPORT_TIME_ZONE)
+    }
+  }
+
+  private getUtcMonthRangeForDate(date: Date): {
+    start: Date
+    end: Date
+    month: number
+    year: number
+  } {
+    const zonedDate = this.getZonedDate(date)
+
+    return {
+      start: fromZonedTime(startOfMonth(zonedDate), SALES_REPORT_TIME_ZONE),
+      end: fromZonedTime(endOfMonth(zonedDate), SALES_REPORT_TIME_ZONE),
+      month: zonedDate.getMonth() + 1,
+      year: zonedDate.getFullYear()
+    }
+  }
+
+  private getUtcMonthRange(month: number, year: number): {
+    start: Date
+    end: Date
+  } {
+    const paddedMonth = String(month).padStart(2, "0")
+    const lastDayOfMonth = String(new Date(year, month, 0).getDate()).padStart(
+      2,
+      "0"
+    )
+
+    return {
+      start: fromZonedTime(
+        `${year}-${paddedMonth}-01T00:00:00.000`,
+        SALES_REPORT_TIME_ZONE
+      ),
+      end: fromZonedTime(
+        `${year}-${paddedMonth}-${lastDayOfMonth}T23:59:59.999`,
+        SALES_REPORT_TIME_ZONE
+      )
+    }
+  }
+
+  private getUtcEndOfPreviousDay(date: Date): Date {
+    const zonedDate = this.getZonedDate(date)
+    return fromZonedTime(
+      endOfDay(subDays(zonedDate, 1)),
+      SALES_REPORT_TIME_ZONE
+    )
+  }
 
   /**
    * 1. Get revenue data for a specific channel and date
@@ -48,27 +106,11 @@ export class SalesDailyReportsService {
   }> {
     try {
       const targetDate = new Date(date)
-
-      // Get revenue stats for the specific date using salesdashboard service
-      const stats = await this.salesDashboardService.getRevenueStats(
-        targetDate,
-        targetDate
-      )
-
-      // Filter revenue by channel
-      const channelRevenue = stats.revenueByChannel.find(
-        (ch) => ch.channelId === channelId
-      )
-
-      const revenue = channelRevenue?.revenue || 0
+      const { start: startOfDay, end: endOfDay } =
+        this.getUtcDayRange(targetDate)
 
       // Calculate new/returning funnel revenue for this specific channel
       // We need to query orders directly for this channel
-      const startOfDay = new Date(targetDate)
-      startOfDay.setUTCHours(0, 0, 0, 0)
-      const endOfDay = new Date(targetDate)
-      endOfDay.setUTCHours(23, 59, 59, 999)
-
       // Get funnels for this channel
       const funnels = await this.salesFunnelModel
         .find({ channel: new Types.ObjectId(channelId) })
@@ -96,11 +138,13 @@ export class SalesDailyReportsService {
       let returningFunnelRevenue = 0
       let newOrder = 0
       let returningOrder = 0
+      let revenue = 0
 
       channelOrders.forEach((order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
         const actualRevenue = order.total - totalDiscount
+        revenue += actualRevenue
 
         if (order.returning) {
           returningFunnelRevenue += actualRevenue
@@ -120,14 +164,8 @@ export class SalesDailyReportsService {
       })
 
       // Calculate accumulated values for the month
-      const year = targetDate.getFullYear()
-      const month = targetDate.getMonth()
-      // minus 7 hours
-      const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
-      startOfMonth.setUTCHours(startOfMonth.getUTCHours() - 7)
-      const endOfPreviousDay = new Date(targetDate)
-      endOfPreviousDay.setUTCHours(23, 59, 59, 999)
-      endOfPreviousDay.setUTCHours(endOfPreviousDay.getUTCHours() - 7)
+      const { start: startOfMonth } = this.getUtcMonthRangeForDate(targetDate)
+      const endOfPreviousDay = this.getUtcEndOfPreviousDay(targetDate)
 
       // Get all reports from start of month to previous day
       const previousReports = await this.salesDailyReportModel
@@ -219,8 +257,9 @@ export class SalesDailyReportsService {
     }
   }): Promise<SalesDailyReport> {
     try {
+      const normalizedDate = this.getUtcDayRange(payload.date).start
       const report = new this.salesDailyReportModel({
-        date: payload.date,
+        date: normalizedDate,
         channel: new Types.ObjectId(payload.channel),
         adsCost: payload.adsCost,
         dateKpi: payload.dateKpi,
@@ -277,10 +316,10 @@ export class SalesDailyReportsService {
     includeDeleted = false
   ): Promise<{ data: SalesDailyReport[]; total: number }> {
     try {
-      const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
-      startOfMonth.setUTCHours(startOfMonth.getUTCHours() - 7)
-      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
-      endOfMonth.setUTCHours(endOfMonth.getUTCHours() - 7)
+      const { start: startOfMonth, end: endOfMonth } = this.getUtcMonthRange(
+        month,
+        year
+      )
 
       const filter: any = {
         date: { $gte: startOfMonth, $lte: endOfMonth }
@@ -349,10 +388,7 @@ export class SalesDailyReportsService {
     channelId: string
   ): Promise<SalesMonthKpi | null> {
     try {
-      const targetDate = new Date(date)
-      targetDate.setUTCHours(targetDate.getUTCHours() + 7)
-      const month = targetDate.getMonth() + 1 // 1-based month
-      const year = targetDate.getFullYear()
+      const { month, year } = this.getUtcMonthRangeForDate(date)
 
       const kpi = await this.salesMonthKpiModel
         .findOne({
@@ -382,8 +418,10 @@ export class SalesDailyReportsService {
     channelId: string
   ): Promise<number> {
     try {
-      const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0)
-      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999)
+      const { start: startOfMonth, end: endOfMonth } = this.getUtcMonthRange(
+        month,
+        year
+      )
 
       const reports = await this.salesDailyReportModel
         .find({
@@ -526,10 +564,8 @@ export class SalesDailyReportsService {
     channelId?: string
   ): Promise<{ updated: number; skipped: number; errors: string[] }> {
     try {
-      const start = new Date(startDate)
-      start.setUTCHours(0, 0, 0, 0)
-      const end = new Date(endDate)
-      end.setUTCHours(23, 59, 59, 999)
+      const { start } = this.getUtcDayRange(startDate)
+      const { end } = this.getUtcDayRange(endDate)
 
       // Build filter
       const filter: any = {
