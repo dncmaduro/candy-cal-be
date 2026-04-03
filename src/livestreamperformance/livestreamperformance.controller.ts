@@ -180,7 +180,7 @@ export class LivestreamperformanceController {
   @UseInterceptors(FilesInterceptor("files"))
   async calculateRealIncome(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() body: { date: string }
+    @Body() body: { date: string; channelId?: string }
   ) {
     if (!files || files.length !== 2) {
       return {
@@ -194,7 +194,8 @@ export class LivestreamperformanceController {
     return this.livestreamperformanceService.calculateRealIncome(
       totalIncomeFile,
       sourceFile,
-      new Date(body.date)
+      new Date(body.date),
+      body.channelId
     )
   }
 
