@@ -2,7 +2,10 @@ import { Injectable, HttpException, HttpStatus } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import { LivestreamPerformance } from "../database/mongoose/schemas/LivestreamPerformance"
-import { Livestream } from "../database/mongoose/schemas/Livestream"
+import {
+  Livestream,
+  LivestreamSnapshotEmbedded
+} from "../database/mongoose/schemas/Livestream"
 import { User } from "../database/mongoose/schemas/User"
 import { LivestreamSalary } from "../database/mongoose/schemas/LivestreamSalary"
 import * as XLSX from "xlsx"
@@ -833,7 +836,8 @@ export class LivestreamperformanceService {
   async calculateRealIncome(
     totalIncomeFile: Express.Multer.File,
     sourceFile: Express.Multer.File,
-    date: Date
+    date: Date,
+    channelId?: string
   ): Promise<{
     success: boolean
     processedOrders: number
@@ -923,25 +927,72 @@ export class LivestreamperformanceService {
       livestreamDate.setDate(livestreamDate.getDate() + 1)
 
       // ===== Find livestream for this date first =====
-      const livestream = await this.livestreamModel
-        .findOne({ date: livestreamDate })
+      const livestreamCandidates = await this.livestreamModel
+        .find({ date: livestreamDate })
         .exec()
 
-      await this.livestreamModel.updateOne(
-        { _id: livestream._id },
-        { $set: { "snapshots.$[].realIncome": 0 } }
+      const candidatesWithSnapshots = livestreamCandidates.filter(
+        (candidate) =>
+          Array.isArray(candidate.snapshots) && candidate.snapshots.length > 0
       )
 
-      if (
-        !livestream ||
-        !livestream.snapshots ||
-        livestream.snapshots.length === 0
-      ) {
+      const getCandidateChannelId = (candidate: Livestream) => {
+        const snapshots = candidate.snapshots as LivestreamSnapshotEmbedded[]
+        const snapshotWithChannel = snapshots.find((s) => s.period?.channel)
+        return snapshotWithChannel?.period?.channel?.toString()
+      }
+
+      if (livestreamCandidates.length === 0) {
         throw new HttpException(
           `No livestream found for date ${livestreamDate.toISOString()}`,
           HttpStatus.NOT_FOUND
         )
       }
+
+      if (candidatesWithSnapshots.length === 0) {
+        throw new HttpException(
+          `Livestream documents exist for date ${livestreamDate.toISOString()} but all snapshots are empty`,
+          HttpStatus.CONFLICT
+        )
+      }
+
+      let matchingCandidates = candidatesWithSnapshots
+      if (channelId) {
+        matchingCandidates = matchingCandidates.filter(
+          (candidate) => getCandidateChannelId(candidate) === channelId
+        )
+      }
+
+      if (matchingCandidates.length === 0) {
+        throw new HttpException(
+          channelId
+            ? `No livestream found for date ${livestreamDate.toISOString()} and channel ${channelId}`
+            : `No livestream found for date ${livestreamDate.toISOString()}`,
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      if (matchingCandidates.length > 1) {
+        const candidateSummary = matchingCandidates.map((candidate) => ({
+          id: candidate._id?.toString?.(),
+          channelId: getCandidateChannelId(candidate),
+          snapshots: candidate.snapshots?.length ?? 0
+        }))
+
+        throw new HttpException(
+          channelId
+            ? `Multiple livestreams found for date ${livestreamDate.toISOString()} and channel ${channelId}: ${JSON.stringify(candidateSummary)}`
+            : `Multiple livestreams found for date ${livestreamDate.toISOString()}. Please pass channelId. Candidates: ${JSON.stringify(candidateSummary)}`,
+          HttpStatus.CONFLICT
+        )
+      }
+
+      const livestream = matchingCandidates[0]
+
+      await this.livestreamModel.updateOne(
+        { _id: livestream._id },
+        { $set: { "snapshots.$[].realIncome": 0 } }
+      )
 
       // ====== 1) Parse total income file ======
       const totalWorkbook = XLSX.read(totalIncomeFile.buffer, {
