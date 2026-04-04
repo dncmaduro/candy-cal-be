@@ -346,11 +346,11 @@ export class LivestreamperformanceService {
         // Determine income value based on baseOnRealIncome parameter
         let incomeValue: number
         if (baseOnRealIncome === true) {
-          // Use realIncome if > 0, otherwise fallback to income
-          incomeValue = snapshot.realIncome
+          // Treat missing realIncome as 0 so the lowest salary bracket still applies.
+          incomeValue = Number(snapshot.realIncome ?? 0)
         } else {
-          // Use realIncome if available, otherwise use income (default behavior)
-          incomeValue = snapshot.realIncome ?? snapshot.income
+          // Default behavior: prefer real income when present, otherwise use tracked income.
+          incomeValue = Number(snapshot.realIncome ?? snapshot.income ?? 0)
         }
 
         if (snapshot.income === 4049405) {
