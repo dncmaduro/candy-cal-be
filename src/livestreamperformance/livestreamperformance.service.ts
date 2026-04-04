@@ -228,7 +228,8 @@ export class LivestreamperformanceService {
   // 6. Calculate and save performance for all snapshots in a date
   async calculateDailyPerformance(
     date: Date,
-    baseOnRealIncome?: boolean
+    baseOnRealIncome?: boolean,
+    channelId?: string
   ): Promise<{
     livestreamId: string
     date: Date
@@ -256,8 +257,8 @@ export class LivestreamperformanceService {
       const endOfDay = new Date(date)
       endOfDay.setUTCHours(23, 59, 59, 999)
 
-      const livestream = await this.livestreamModel
-        .findOne({
+      const livestreamCandidates = await this.livestreamModel
+        .find({
           date: {
             $gte: startOfDay,
             $lte: endOfDay
@@ -265,12 +266,56 @@ export class LivestreamperformanceService {
         })
         .exec()
 
-      if (!livestream) {
+      if (livestreamCandidates.length === 0) {
         throw new HttpException(
           "Livestream not found for this date",
           HttpStatus.NOT_FOUND
         )
       }
+
+      const candidatesWithSnapshots = livestreamCandidates.filter(
+        (candidate) =>
+          Array.isArray(candidate.snapshots) && candidate.snapshots.length > 0
+      )
+
+      const getCandidateChannelId = (candidate: Livestream) => {
+        const snapshots = candidate.snapshots as LivestreamSnapshotEmbedded[]
+        const snapshotWithChannel = snapshots.find((s) => s.period?.channel)
+        return snapshotWithChannel?.period?.channel?.toString()
+      }
+
+      let matchingCandidates = candidatesWithSnapshots
+      if (channelId) {
+        matchingCandidates = matchingCandidates.filter(
+          (candidate) => getCandidateChannelId(candidate) === channelId
+        )
+      }
+
+      if (matchingCandidates.length === 0) {
+        throw new HttpException(
+          channelId
+            ? `No livestream with snapshots found for this date and channel ${channelId}`
+            : "Livestream found for this date but all snapshots are empty",
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      if (matchingCandidates.length > 1) {
+        const candidateSummary = matchingCandidates.map((candidate) => ({
+          id: candidate._id?.toString?.(),
+          channelId: getCandidateChannelId(candidate),
+          snapshots: candidate.snapshots?.length ?? 0
+        }))
+
+        throw new HttpException(
+          channelId
+            ? `Multiple livestreams found for this date and channel ${channelId}: ${JSON.stringify(candidateSummary)}`
+            : `Multiple livestreams found for this date. Please pass channelId. Candidates: ${JSON.stringify(candidateSummary)}`,
+          HttpStatus.CONFLICT
+        )
+      }
+
+      const livestream = matchingCandidates[0]
 
       let snapshotsUpdated = 0
       let snapshotsSkipped = 0
@@ -291,6 +336,13 @@ export class LivestreamperformanceService {
 
       // Process each snapshot
       for (const snapshot of livestream.snapshots) {
+        if (channelId) {
+          const snapshotChannelId = (snapshot as any).period?.channel?.toString()
+          if (snapshotChannelId !== channelId) {
+            continue
+          }
+        }
+
         // Determine income value based on baseOnRealIncome parameter
         let incomeValue: number
         if (baseOnRealIncome === true) {
