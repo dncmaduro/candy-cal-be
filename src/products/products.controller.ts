@@ -134,7 +134,7 @@ export class ProductsController {
     return this.productsService.searchProducts(searchText, deletedFilter)
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "accounting-emp")
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
