@@ -153,7 +153,7 @@ export class ShopeeProductsController {
     )
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "order-emp", "accounting-emp")
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
