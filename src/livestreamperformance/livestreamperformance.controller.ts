@@ -100,14 +100,20 @@ export class LivestreamperformanceController {
   @Roles("admin", "livestream-leader")
   @Post("calculate-daily")
   async calculateDailyPerformance(
-    @Body() payload: { date: string; baseOnRealIncome?: boolean }
+    @Body()
+    payload: {
+      date: string
+      baseOnRealIncome?: boolean
+      channelId?: string
+    }
   ) {
     if (!payload.date) {
       return { error: "Date is required" }
     }
     return this.livestreamperformanceService.calculateDailyPerformance(
       new Date(payload.date),
-      payload.baseOnRealIncome
+      payload.baseOnRealIncome,
+      payload.channelId
     )
   }
 
