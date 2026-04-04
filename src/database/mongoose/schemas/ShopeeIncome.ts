@@ -1,48 +1,62 @@
 import { Document, model, Schema, Types } from "mongoose"
 
-export interface ShopeeIncome extends Document {
-  date: Date
-  orderId: string
-  creator: string
-  customer: string
-  products: {
-    code: string
-    name: string
-    quantity: number
-    price: number
-  }[]
-  source: string
-  total: number
-  channel: Types.ObjectId
-  affPercentage: number
+export interface ShopeeIncomeProduct {
+  variantSku: Types.ObjectId
+  originalPrice: number
+  sellerDiscount: number
+  buyerPaidTotal: number
 }
 
+export interface ShopeeIncome extends Document {
+  channel: Types.ObjectId
+  orderId: string
+  packageId: string
+  orderDate: Date
+  orderStatus: string
+  cancelReason: string
+  trackingNumber: string
+  expectedDeliveryDate: Date | null
+  shippedDate: Date | null
+  deliveryTime: Date | null
+  products: ShopeeIncomeProduct[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+export const ShopeeIncomeProductSchema = new Schema<ShopeeIncomeProduct>(
+  {
+    variantSku: {
+      type: Schema.Types.ObjectId,
+      ref: "shopeeproducts",
+      required: true
+    },
+    originalPrice: { type: Number, required: true, default: 0 },
+    sellerDiscount: { type: Number, required: true, default: 0 },
+    buyerPaidTotal: { type: Number, required: true, default: 0 }
+  },
+  { _id: false }
+)
+
 export const ShopeeIncomeSchema = new Schema<ShopeeIncome>({
-  date: { type: Date, required: true },
-  orderId: { type: String, required: true },
-  creator: { type: String, required: false, default: "" },
-  customer: { type: String, required: false, default: "" },
-  products: [
-    {
-      code: { type: String, required: true },
-      name: { type: String, required: true },
-      quantity: { type: Number, required: true },
-      price: { type: Number, required: true }
-    }
-  ],
-  source: { type: String, required: false, default: "" },
-  total: { type: Number, required: true },
   channel: {
     type: Schema.Types.ObjectId,
-    ref: "livestreamchannels",
+    ref: "shopeechannels",
     required: true
   },
-  affPercentage: { type: Number, required: false, default: 0 }
+  orderId: { type: String, required: true },
+  packageId: { type: String, required: false, default: "" },
+  orderDate: { type: Date, required: true },
+  orderStatus: { type: String, required: true, default: "" },
+  cancelReason: { type: String, required: false, default: "" },
+  trackingNumber: { type: String, required: false, default: "" },
+  expectedDeliveryDate: { type: Date, required: false, default: null },
+  shippedDate: { type: Date, required: false, default: null },
+  deliveryTime: { type: Date, required: false, default: null },
+  products: { type: [ShopeeIncomeProductSchema], required: true, default: [] }
+}, {
+  timestamps: true
 })
 
-// Create compound unique index for orderId and channel
-// This ensures that the same orderId can exist for different channels
-// but cannot be duplicated within the same channel
 ShopeeIncomeSchema.index({ orderId: 1, channel: 1 }, { unique: true })
 
 export const ShopeeIncomeModel = model<ShopeeIncome>(
