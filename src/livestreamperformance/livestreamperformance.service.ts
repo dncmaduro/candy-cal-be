@@ -921,7 +921,11 @@ export class LivestreamperformanceService {
         )
       }
 
-      // ===== Normalize date to 00:00:00 UTC (giữ như code gốc của bạn) =====
+      // ===== Keep requested day for source row matching =====
+      const requestedDate = new Date(date)
+      requestedDate.setUTCHours(0, 0, 0, 0)
+
+      // ===== Normalize date to 00:00:00 UTC for livestream lookup =====
       const livestreamDate = new Date(date)
       livestreamDate.setUTCHours(0, 0, 0, 0)
       livestreamDate.setDate(livestreamDate.getDate() + 1)
@@ -1088,9 +1092,9 @@ export class LivestreamperformanceService {
       const sampleNoIncome: string[] = []
       const sampleHasIncome: string[] = []
 
-      const targetY = livestreamDate.getUTCFullYear()
-      const targetM = livestreamDate.getUTCMonth() + 1
-      const targetD = livestreamDate.getUTCDate()
+      const targetY = requestedDate.getUTCFullYear()
+      const targetM = requestedDate.getUTCMonth() + 1
+      const targetD = requestedDate.getUTCDate()
 
       const onlyDigits = (s: string) => s.replace(/\D/g, "")
 
@@ -1104,7 +1108,7 @@ export class LivestreamperformanceService {
           continue
         }
 
-        const orderId = normalizeOrderKey(pickField(row, totalOrderIdKeys))
+        const orderId = normalizeOrderKey(pickField(row, sourceOrderIdKeys))
         if (!orderId) continue
 
         // Step 1: Skip cancelled orders (status from totalIncome)
@@ -1132,7 +1136,7 @@ export class LivestreamperformanceService {
         const minute = parseInt(match[5], 10)
 
         // Filter đúng ngày target
-        if (!sameYMD(livestreamDate, yyyy, MM, dd)) {
+        if (!sameYMD(requestedDate, yyyy, MM, dd)) {
           continue
         }
 
