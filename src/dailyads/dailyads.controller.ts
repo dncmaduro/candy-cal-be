@@ -28,7 +28,7 @@ export class DailyAdsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp")
   @Post()
   @UseInterceptors(FilesInterceptor("files", 6))
   @HttpCode(HttpStatus.CREATED)
@@ -97,7 +97,7 @@ export class DailyAdsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp")
   @Post("/update-with-saved-before4pm")
   @UseInterceptors(FilesInterceptor("files", 4))
   @HttpCode(HttpStatus.OK)
@@ -162,7 +162,7 @@ export class DailyAdsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp")
   @Get("/before4pm")
   @HttpCode(HttpStatus.OK)
   async getBefore4pmCosts(@Query("date") dateStr: string) {
@@ -189,7 +189,7 @@ export class DailyAdsController {
     return result
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp")
   @Post("/simpledailyads")
   @HttpCode(HttpStatus.OK)
   async simpleCreateOrUpdateDailyAds(

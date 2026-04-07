@@ -32,7 +32,7 @@ export class ShopeeProductsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createShopeeProduct(
@@ -61,7 +61,7 @@ export class ShopeeProductsController {
     return created
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp")
   @Put(":productId")
   @HttpCode(HttpStatus.OK)
   async updateShopeeProduct(
@@ -93,7 +93,7 @@ export class ShopeeProductsController {
     return updated
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp")
   @Delete(":productId")
   @HttpCode(HttpStatus.OK)
   async deleteShopeeProduct(
@@ -114,21 +114,21 @@ export class ShopeeProductsController {
     return deleted
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllShopeeProducts(): Promise<{ products: ShopeeProduct[] }> {
     return this.shopeeService.getAllShopeeProducts()
   }
 
-  @Roles("admin", "order-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "system-emp")
   @Get("/product")
   @HttpCode(HttpStatus.OK)
   async getShopeeProduct(@Query("id") id: string): Promise<ShopeeProduct> {
     return this.shopeeService.getShopeeProduct(id)
   }
 
-  @Roles("admin", "order-emp", "system-emp", "accounting-emp")
+  @Roles("admin", "tiktokshop-emp", "system-emp", "accounting-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchShopeeProducts(
@@ -153,7 +153,7 @@ export class ShopeeProductsController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp")
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
