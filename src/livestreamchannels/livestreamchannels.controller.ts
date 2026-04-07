@@ -60,7 +60,7 @@ export class LivestreamchannelsController {
     "livestream-leader",
     "livestream-emp",
     "livestream-ast",
-    "order-emp",
+    "tiktokshop-emp",
     "accounting-emp",
     "livestream-accounting"
   )

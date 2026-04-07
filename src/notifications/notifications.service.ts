@@ -57,7 +57,7 @@ export class NotificationsService {
 
   async createNotificationsForRoles(
     notification: NotificationDto,
-    role: "order-emp" | "accounting-emp" | "admin"
+    role: "tiktokshop-emp" | "accounting-emp" | "admin"
   ): Promise<Notification[]> {
     try {
       const users = await this.userModel.find({ role }).distinct("_id").exec()

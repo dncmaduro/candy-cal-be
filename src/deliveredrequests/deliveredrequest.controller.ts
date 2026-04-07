@@ -27,7 +27,7 @@ export class DeliveredRequestsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createDeliveredRequest(
@@ -47,7 +47,7 @@ export class DeliveredRequestsController {
     return created
   }
 
-  @Roles("admin", "order-emp", "accounting-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp")
   @Post(":id/comment")
   @HttpCode(HttpStatus.OK)
   async addComment(
@@ -94,7 +94,7 @@ export class DeliveredRequestsController {
     return res
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchRequests(
@@ -125,7 +125,7 @@ export class DeliveredRequestsController {
     return res
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get(":requestId")
   @HttpCode(HttpStatus.OK)
   async getRequest(

@@ -103,7 +103,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getIncomesByDateRange(
@@ -150,7 +150,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("export-xlsx")
   async exportIncomesToXlsx(
     @Query("startDate") startDate: string,
@@ -192,7 +192,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("income-split-by-month")
   @HttpCode(HttpStatus.OK)
   async totalIncomeByMonthSplit(
@@ -213,7 +213,7 @@ export class IncomeController {
     return { totalIncome }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("quantity-split-by-month")
   @HttpCode(HttpStatus.OK)
   async totalQuantityByMonthSplit(
@@ -229,7 +229,7 @@ export class IncomeController {
     return { totalQuantity }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("total-orders-by-month")
   @HttpCode(HttpStatus.OK)
   async getTotalIncomeCountByMonth(
@@ -244,7 +244,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("kpi-percentage-split-by-month")
   @HttpCode(HttpStatus.OK)
   async KPIPercentageByMonthSplit(
@@ -260,7 +260,7 @@ export class IncomeController {
     return { KPIPercentage }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("top-creators")
   @HttpCode(HttpStatus.OK)
   async getTopCreators(
@@ -319,7 +319,7 @@ export class IncomeController {
     return result
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("monthly-live-shop-income")
   @HttpCode(HttpStatus.OK)
   async totalLiveAndShopIncomeByMonth(
@@ -340,7 +340,7 @@ export class IncomeController {
     return { totalIncome }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("monthly-ads-cost-split")
   @HttpCode(HttpStatus.OK)
   async adsCostSplitByMonth(
@@ -360,7 +360,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("range-stats")
   @HttpCode(HttpStatus.OK)
   async getRangeStats(
@@ -467,7 +467,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "order-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp")
   @Post("insert-and-update-source")
   @UseInterceptors(FilesInterceptor("files"))
   @HttpCode(HttpStatus.ACCEPTED) // Đổi thành 202 ACCEPTED
@@ -562,7 +562,7 @@ export class IncomeController {
     }
   }
 
-  @Roles("admin", "accounting-emp", "order-emp", "system-emp")
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("detailed-product-stats")
   @HttpCode(HttpStatus.OK)
   async getDetailedProductStats(
