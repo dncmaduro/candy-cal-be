@@ -66,21 +66,21 @@ export class CommonOrdersController {
     return updated
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllOrders(): Promise<CommonOrder[]> {
     return this.commonOrdersService.getAllOrders()
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get("/order")
   @HttpCode(HttpStatus.OK)
   async getOrder(@Query("id") id: string): Promise<CommonOrder> {
     return this.commonOrdersService.getOrder(id)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchOrders(

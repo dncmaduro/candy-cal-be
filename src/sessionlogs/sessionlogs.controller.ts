@@ -26,7 +26,7 @@ export class SessionLogsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createSessionLog(
@@ -45,7 +45,7 @@ export class SessionLogsController {
     )
   }
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp")
   @Delete("delete")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSessionLog(@Body("id") id: string, @Req() req): Promise<void> {
@@ -62,7 +62,7 @@ export class SessionLogsController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getSessionLogs(
@@ -72,7 +72,7 @@ export class SessionLogsController {
     return this.sessionLogsService.getSessionLogs(page, limit)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getSessionLogById(@Query("id") id: string): Promise<SessionLog | null> {

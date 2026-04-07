@@ -105,7 +105,7 @@ export class LivestreamcoreController {
     "livestream-leader",
     "livestream-emp",
     "livestream-ast",
-    "order-emp",
+    "tiktokshop-emp",
     "livestream-accounting"
   )
   @Get("by-date-range")
@@ -131,7 +131,7 @@ export class LivestreamcoreController {
     "livestream-leader",
     "livestream-emp",
     "livestream-ast",
-    "order-emp",
+    "tiktokshop-emp",
     "livestream-accounting"
   )
   @Get("products-quantity-by-date-range")

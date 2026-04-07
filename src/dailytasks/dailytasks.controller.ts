@@ -66,7 +66,7 @@ export class DailyTasksController {
   }
 
   // user: mark done
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Patch(":code/done")
   @HttpCode(HttpStatus.OK)
   async markDone(
@@ -136,7 +136,7 @@ export class DailyTasksController {
   }
 
   // user: recheck http task
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Patch(":code/recheck")
   @HttpCode(HttpStatus.OK)
   async recheck(

@@ -91,14 +91,14 @@ export class PackingRulesController {
     )
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getRuleById(@Param("id") id: string): Promise<PackingRule | null> {
     return this.packingRulesService.getRuleById(id)
   }
 
-  @Roles("admin", "order-emp", "accounting-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchRules(

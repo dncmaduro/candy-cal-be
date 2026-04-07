@@ -14,7 +14,7 @@ export class ProvincesController {
     return { synced }
   }
 
-  @Roles("admin", "system-emp", "order-emp", "accounting-emp")
+  @Roles("admin", "system-emp", "tiktokshop-emp", "accounting-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAll() {

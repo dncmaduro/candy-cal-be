@@ -33,7 +33,7 @@ NestJS + Mongoose backend cho hệ thống quản lý đơn hàng, kho, doanh th
 ## Phân Quyền Roles
 
 - `admin`: Toàn quyền
-- `order-emp`: Nghiệp vụ đơn hàng / sản xuất
+- `tiktokshop-emp`: Nghiệp vụ TikTok Shop / sản xuất
 - `accounting-emp`: Kế toán / doanh thu / kho
 - `system-emp`: Quyền xem (read-only) hầu hết GET
 
