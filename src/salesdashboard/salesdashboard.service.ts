@@ -1,9 +1,13 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
+import { endOfDay, startOfDay } from "date-fns"
+import { fromZonedTime, toZonedTime } from "date-fns-tz"
 import { Model, Types } from "mongoose"
 import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
+
+const SALES_DASHBOARD_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
 export interface RevenueByItem {
   code: string
@@ -86,17 +90,49 @@ export class SalesDashboardService {
     private readonly salesMonthKpiModel: Model<SalesMonthKpi>
   ) {}
 
+  private getZonedDate(date: Date): Date {
+    return toZonedTime(date, SALES_DASHBOARD_TIME_ZONE)
+  }
+
+  private getUtcDayRange(date: Date): { start: Date; end: Date } {
+    const zonedDate = this.getZonedDate(date)
+
+    return {
+      start: fromZonedTime(startOfDay(zonedDate), SALES_DASHBOARD_TIME_ZONE),
+      end: fromZonedTime(endOfDay(zonedDate), SALES_DASHBOARD_TIME_ZONE)
+    }
+  }
+
+  private getUtcMonthRange(month: number, year: number): {
+    start: Date
+    end: Date
+  } {
+    const paddedMonth = String(month).padStart(2, "0")
+    const lastDayOfMonth = String(new Date(year, month, 0).getDate()).padStart(
+      2,
+      "0"
+    )
+
+    return {
+      start: fromZonedTime(
+        `${year}-${paddedMonth}-01T00:00:00.000`,
+        SALES_DASHBOARD_TIME_ZONE
+      ),
+      end: fromZonedTime(
+        `${year}-${paddedMonth}-${lastDayOfMonth}T23:59:59.999`,
+        SALES_DASHBOARD_TIME_ZONE
+      )
+    }
+  }
+
   async getRevenueStats(
     startDate: Date,
     endDate: Date,
     channel?: string
   ): Promise<RevenueStatsResponse> {
     try {
-      // Set time boundaries using UTC to avoid timezone issues
-      const start = new Date(startDate)
-      start.setUTCHours(0, 0, 0, 0)
-      const end = new Date(endDate)
-      end.setUTCHours(23, 59, 59, 999)
+      const { start } = this.getUtcDayRange(startDate)
+      const { end } = this.getUtcDayRange(endDate)
 
       // Get all orders in date range (only official status)
       let ordersQuery = await this.salesOrderModel
@@ -323,9 +359,8 @@ export class SalesDashboardService {
     channel?: string
   ): Promise<MetricsResponse> {
     try {
-      // Month boundaries using UTC to avoid timezone issues
-      const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0))
-      const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
+      const { start: startOfMonth, end: endOfMonth } =
+        this.getUtcMonthRange(month, year)
 
       // Get all orders in this month (only official status)
       let ordersQuery = await this.salesOrderModel
@@ -572,9 +607,8 @@ export class SalesDashboardService {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
 
-      // Month boundaries using UTC to avoid timezone issues
-      const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0))
-      const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
+      const { start: startOfMonth, end: endOfMonth } =
+        this.getUtcMonthRange(month, year)
 
       // Get all orders in this month (only official status)
       let ordersQuery = await this.salesOrderModel
