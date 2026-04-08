@@ -529,6 +529,47 @@ export class IncomeService {
     }
   }
 
+  async totalOrdersByMonthSplit(
+    month: number,
+    year: number,
+    channelId?: string
+  ): Promise<{ live: number; shop: number }> {
+    try {
+      // Adjust for GMT+7 timezone (Vietnam time)
+      const start = new Date(Date.UTC(year, month, 1))
+      start.setUTCHours(start.getUTCHours() - 7)
+
+      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+      end.setUTCHours(end.getUTCHours() - 7)
+
+      const filter: any = { date: { $gte: start, $lte: end } }
+      if (channelId) filter.channel = channelId
+
+      const incomes = await this.incomeModel.find(filter).lean()
+
+      let live = 0
+      let shop = 0
+      for (const income of incomes) {
+        const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
+          income.products || []
+        )
+
+        // Count an order in each bucket where it contains at least one
+        // matching product. Current prod data is mutually exclusive.
+        if (liveProducts.length > 0) live += 1
+        if (shopProducts.length > 0) shop += 1
+      }
+
+      return { live, shop }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tính số đơn hàng theo kênh",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   async KPIPercentageByMonthSplit(
     month: number,
     year: number,

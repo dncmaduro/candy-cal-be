@@ -216,17 +216,24 @@ export class IncomeController {
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")
   @Get("quantity-split-by-month")
   @HttpCode(HttpStatus.OK)
-  async totalQuantityByMonthSplit(
+  async totalOrdersByMonthSplit(
     @Query("month") month: string,
     @Query("year") year: string,
     @Query("channelId") channelId?: string
-  ): Promise<{ totalQuantity: { live: number; shop: number } }> {
-    const totalQuantity = await this.incomeService.totalQuantityByMonthSplit(
+  ): Promise<{
+    totalOrders: { live: number; shop: number }
+    totalQuantity: { live: number; shop: number }
+  }> {
+    const totalOrders = await this.incomeService.totalOrdersByMonthSplit(
       Number(month),
       Number(year),
       channelId
     )
-    return { totalQuantity }
+    return {
+      totalOrders,
+      // Deprecated alias for existing consumers of this endpoint.
+      totalQuantity: totalOrders
+    }
   }
 
   @Roles("admin", "accounting-emp", "order-emp", "system-emp")
