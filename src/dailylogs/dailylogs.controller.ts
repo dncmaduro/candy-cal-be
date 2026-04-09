@@ -25,7 +25,7 @@ export class DailyLogsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "order-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createDailyLog(
