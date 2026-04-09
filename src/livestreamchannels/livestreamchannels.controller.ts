@@ -61,20 +61,24 @@ export class LivestreamchannelsController {
     "livestream-emp",
     "livestream-ast",
     "tiktokshop-emp",
+    "shopee-emp",
     "accounting-emp",
-    "livestream-accounting"
+    "livestream-accounting",
+    "system-emp"
   )
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchLivestreamChannels(
     @Query("searchText") searchText?: string,
     @Query("page") page?: number,
-    @Query("limit") limit?: number
+    @Query("limit") limit?: number,
+    @Query("platform") platform?: "tiktokshop" | "shopee"
   ) {
     return this.livestreamchannelsService.searchLivestreamChannels(
       searchText,
       page,
-      limit
+      limit,
+      platform
     )
   }
 
@@ -83,7 +87,9 @@ export class LivestreamchannelsController {
     "livestream-leader",
     "livestream-emp",
     "livestream-ast",
-    "livestream-accounting"
+    "livestream-accounting",
+    "shopee-emp",
+    "system-emp"
   )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
