@@ -839,23 +839,36 @@ export const AI_DB_TABLES: DbTableContext[] = [
     collection: "shopeeincomes",
     schemaFile: "ShopeeIncome",
     keyFields: [
-      "affPercentage",
       "channel",
-      "creator",
-      "customer",
-      "date",
+      "orderDate",
       "orderId",
+      "packageId",
+      "orderStatus",
+      "cancelReason",
+      "trackingNumber",
+      "expectedDeliveryDate",
+      "shippedDate",
+      "deliveryTime",
       "products",
-      "source",
-      "total"
     ],
     description:
-      "Schema ShopeeIncome. Cac truong chinh: affPercentage, channel, creator, customer, date, orderId, products, source, total. Day la bang quan ly doanh thu cho kenh ban hang Shopee.",
+      "Schema ShopeeIncome. Cac truong chinh: channel, orderId, packageId, orderDate, orderStatus, cancelReason, trackingNumber, expectedDeliveryDate, shippedDate, deliveryTime, products. products gom cac truong variantSku, originalPrice, sellerDiscount, buyerPaidTotal; trong do variantSku la ObjectId FK toi bang shopeeproducts. Day la bang quan ly doanh thu don hang Shopee theo tung kenh.",
     primaryKeys: ["orderId"],
-    searchableFields: ["orderId"],
-    dateFields: ["date"],
+    searchableFields: [
+      "orderId",
+      "packageId",
+      "trackingNumber",
+      "orderStatus",
+      "products.variantSku"
+    ],
+    dateFields: [
+      "orderDate",
+      "expectedDeliveryDate",
+      "shippedDate",
+      "deliveryTime"
+    ],
     statusFields: [],
-    relationships: [],
+    relationships: ["products.variantSku -> shopeeproducts._id"],
     commonFilters: [],
     queryHints: [],
     examples: [

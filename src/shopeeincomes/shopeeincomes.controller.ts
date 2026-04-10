@@ -40,6 +40,7 @@ export class ShopeeIncomesController {
   @Get("search")
   async searchIncomes(
     @Query("productCode") productCode?: string,
+    @Query("variantSku") variantSku?: string,
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
     @Query("channelId") channelId?: string,
@@ -47,7 +48,7 @@ export class ShopeeIncomesController {
     @Query("limit") limit?: string
   ) {
     return this.shopeeIncomesService.searchIncomes({
-      productCode,
+      productCode: variantSku || productCode,
       startDate,
       endDate,
       channelId,
