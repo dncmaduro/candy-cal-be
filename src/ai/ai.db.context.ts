@@ -875,5 +875,66 @@ export const AI_DB_TABLES: DbTableContext[] = [
       "Lay du lieu tu bang shopeeincomes theo dieu kien phu hop",
       "Tim kiem trong bang shopeeincomes"
     ]
+  },
+  {
+    collection: "shopeedailyads",
+    schemaFile: "ShopeeDailyAds",
+    keyFields: ["date", "channel", "adsCost"],
+    description:
+      "Schema ShopeeDailyAds. Cac truong chinh: date, channel, adsCost. Day la bang quan ly chi phi ads theo ngay cho tung kenh Shopee.",
+    primaryKeys: ["date", "channel"],
+    searchableFields: [],
+    dateFields: ["date"],
+    statusFields: [],
+    relationships: [],
+    commonFilters: [],
+    queryHints: [],
+    examples: [
+      "Lay du lieu tu bang shopeedailyads theo ngay va kenh",
+      "Tim chi phi ads Shopee cua 1 kenh trong 1 ngay"
+    ]
+  },
+  {
+    collection: "shopeedailyliverevenues",
+    schemaFile: "ShopeeDailyLiveRevenue",
+    keyFields: ["date", "channel", "liveRevenue"],
+    description:
+      "Schema ShopeeDailyLiveRevenue. Cac truong chinh: date, channel, liveRevenue. Day la bang quan ly doanh so live theo ngay cho tung kenh Shopee.",
+    primaryKeys: ["date", "channel"],
+    searchableFields: [],
+    dateFields: ["date"],
+    statusFields: [],
+    relationships: [],
+    commonFilters: [],
+    queryHints: [],
+    examples: [
+      "Lay du lieu tu bang shopeedailyliverevenues theo ngay va kenh",
+      "Tim doanh so live Shopee cua 1 kenh trong 1 ngay"
+    ]
+  },
+  {
+    collection: "shopeemonthkpis",
+    schemaFile: "ShopeeMonthKpi",
+    keyFields: [
+      "month",
+      "year",
+      "channel",
+      "revenueKpi",
+      "adsCostKpi",
+      "roasKpi"
+    ],
+    description:
+      "Schema ShopeeMonthKpi. Cac truong chinh: month, year, channel, revenueKpi, adsCostKpi, roasKpi. Day la bang quan ly KPI thang cua tung kenh Shopee.",
+    primaryKeys: ["month", "year", "channel"],
+    searchableFields: [],
+    dateFields: [],
+    statusFields: [],
+    relationships: [],
+    commonFilters: [],
+    queryHints: [],
+    examples: [
+      "Lay du lieu tu bang shopeemonthkpis theo dieu kien phu hop",
+      "Tim kiem KPI thang cua kenh Shopee"
+    ]
   }
 ]

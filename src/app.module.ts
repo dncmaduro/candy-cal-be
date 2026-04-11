@@ -49,6 +49,10 @@ import { AppController } from "./app.controller"
 import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.module"
 import { GreetModule } from "./greet/greet.module"
 import { ShopeeIncomesModule } from "./shopeeincomes/shopeeincomes.module"
+import { ShopeeDailyAdsModule } from "./shopeedailyads/shopeedailyads.module"
+import { ShopeeDailyLiveRevenuesModule } from "./shopeedailyliverevenues/shopeedailyliverevenues.module"
+import { ShopeeMonthKpisModule } from "./shopeemonthkpis/shopeemonthkpis.module"
+import { ShopeeDashboardModule } from "./shopeedashboard/shopeedashboard.module"
 import { AiModule } from "./ai/ai.module"
 
 @Module({
@@ -100,6 +104,10 @@ import { AiModule } from "./ai/ai.module"
     SalesDailyReportsModule,
     GreetModule,
     ShopeeIncomesModule,
+    ShopeeDailyAdsModule,
+    ShopeeDailyLiveRevenuesModule,
+    ShopeeMonthKpisModule,
+    ShopeeDashboardModule,
     AiModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
