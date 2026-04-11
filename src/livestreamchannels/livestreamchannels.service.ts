@@ -50,12 +50,19 @@ export class LivestreamchannelsService {
   async searchLivestreamChannels(
     searchText?: string,
     page = 1,
-    limit = 10
+    limit = 10,
+    platform?: "tiktokshop" | "shopee"
   ): Promise<{ data: LivestreamChannel[]; total: number }> {
     try {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
       const filter: any = {}
+      if (platform) {
+        if (platform !== "tiktokshop" && platform !== "shopee") {
+          throw new HttpException("Platform không hợp lệ", HttpStatus.BAD_REQUEST)
+        }
+        filter.platform = platform
+      }
       if (typeof searchText === "string" && searchText.trim() !== "") {
         const regex = new RegExp(searchText.trim(), "i")
         filter.$or = [{ name: regex }, { username: regex }, { usernames: regex }]
@@ -63,6 +70,7 @@ export class LivestreamchannelsService {
       const [data, total] = await Promise.all([
         this.livestreamChannelModel
           .find(filter)
+          .sort({ name: 1, username: 1 })
           .skip((safePage - 1) * safeLimit)
           .limit(safeLimit)
           .exec(),
@@ -71,6 +79,7 @@ export class LivestreamchannelsService {
       return { data, total }
     } catch (error) {
       console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -86,6 +95,7 @@ export class LivestreamchannelsService {
       return doc
     } catch (error) {
       console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Internal server error",
         HttpStatus.INTERNAL_SERVER_ERROR

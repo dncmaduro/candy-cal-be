@@ -19,7 +19,10 @@ export const viLabels = {
     income: "Doanh thu",
     packingrules: "Quy tắc đóng gói",
     system: "Hệ thống",
-    security: "Bảo mật"
+    security: "Bảo mật",
+    shopee_daily_ads: "Chi phí ads Shopee theo ngày",
+    shopee_daily_live_revenue: "Doanh số live Shopee theo ngày",
+    shopee_month_kpi: "KPI Shopee theo kênh"
   } as Record<string, string>,
   action: {
     // auth
@@ -98,7 +101,10 @@ export const viLabels = {
     packing_rule: "Quy tắc đóng gói",
     common_order: "Đơn hàng chung",
     delivered_request: "Yêu cầu xuất kho",
-    income: "Doanh thu"
+    income: "Doanh thu",
+    shopee_daily_ads: "Chi phí ads Shopee theo ngày",
+    shopee_daily_live_revenue: "Doanh số live Shopee theo ngày",
+    shopee_month_kpi: "KPI Shopee theo kênh"
   } as Record<string, string>,
   result: {
     success: "Thành công",

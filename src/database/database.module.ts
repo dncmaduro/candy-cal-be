@@ -37,6 +37,9 @@ import { LivestreamAltRequestSchema } from "./mongoose/schemas/LivestreamAltRequ
 import { LivestreamPerformanceSchema } from "./mongoose/schemas/LivestreamPerformance"
 import { LivestreamSalarySchema } from "./mongoose/schemas/LivestreamSalary"
 import { ShopeeIncomeSchema } from "./mongoose/schemas/ShopeeIncome"
+import { ShopeeMonthKpiSchema } from "./mongoose/schemas/ShopeeMonthKpi"
+import { ShopeeDailyAdsSchema } from "./mongoose/schemas/ShopeeDailyAds"
+import { ShopeeDailyLiveRevenueSchema } from "./mongoose/schemas/ShopeeDailyLiveRevenue"
 
 @Module({
   imports: [
@@ -77,7 +80,13 @@ import { ShopeeIncomeSchema } from "./mongoose/schemas/ShopeeIncome"
       { name: "livestreamaltrequests", schema: LivestreamAltRequestSchema },
       { name: "livestreamperformance", schema: LivestreamPerformanceSchema },
       { name: "livestreamsalary", schema: LivestreamSalarySchema },
-      { name: "shopeeincomes", schema: ShopeeIncomeSchema }
+      { name: "shopeeincomes", schema: ShopeeIncomeSchema },
+      { name: "shopeemonthkpis", schema: ShopeeMonthKpiSchema },
+      { name: "shopeedailyads", schema: ShopeeDailyAdsSchema },
+      {
+        name: "shopeedailyliverevenues",
+        schema: ShopeeDailyLiveRevenueSchema
+      }
     ])
   ],
   exports: [MongooseModule] // Export MongooseModule for use in other modules

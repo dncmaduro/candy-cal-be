@@ -1,21 +1,25 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
   Query,
   UploadedFile,
   UseInterceptors,
-  Body
+  UseGuards
 } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ShopeeIncomesService } from "./shopeeincomes.service"
 import { Roles } from "../roles/roles.decorator"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { RolesGuard } from "../roles/roles.guard"
 
 @Controller("shopeeincomes")
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ShopeeIncomesController {
   constructor(private readonly shopeeIncomesService: ShopeeIncomesService) {}
 
-  @Roles("admin", "livestream-leader")
+  @Roles("admin", "livestream-leader", "shopee-emp")
   @Post("upload")
   @UseInterceptors(FileInterceptor("file"))
   async uploadIncomeFile(
@@ -36,7 +40,14 @@ export class ShopeeIncomesController {
     })
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Roles(
+    "admin",
+    "livestream-leader",
+    "livestream-emp",
+    "livestream-ast",
+    "shopee-emp",
+    "system-emp"
+  )
   @Get("search")
   async searchIncomes(
     @Query("productCode") productCode?: string,
