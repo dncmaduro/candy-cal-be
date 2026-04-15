@@ -102,7 +102,7 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp", "system-emp")
+  @Roles("admin", "tiktokshop-emp", "system-emp", "accounting-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllProducts(): Promise<ProductResponse[]> {
@@ -116,12 +116,7 @@ export class ProductsController {
     return this.productsService.getProduct(id)
   }
 
-  @Roles(
-    "admin",
-    "tiktokshop-emp",
-    "system-emp",
-    "accounting-emp"
-  )
+  @Roles("admin", "tiktokshop-emp", "system-emp", "accounting-emp")
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
