@@ -27,7 +27,7 @@ export class DeliveredRequestsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp")
+  @Roles("admin", "tiktokshop-emp", "accounting-emp")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createDeliveredRequest(
