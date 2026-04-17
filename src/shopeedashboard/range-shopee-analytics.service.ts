@@ -35,7 +35,8 @@ export class RangeShopeeAnalyticsService {
       return {
         channel: "all",
         channelIds,
-        channelFilter: channelIds.length === 1 ? channelIds[0] : { $in: channelIds }
+        channelFilter:
+          channelIds.length === 1 ? channelIds[0] : { $in: channelIds }
       }
     }
 
@@ -102,9 +103,21 @@ export class RangeShopeeAnalyticsService {
     }
 
     const [incomeAgg, adsAgg, liveAgg, lastSyncedAt] = await Promise.all([
-      this.repo.aggregateIncomesSummary(scope.channelFilter, range.start, range.end),
-      this.repo.aggregateAdsSummary(scope.channelFilter, range.start, range.end),
-      this.repo.aggregateLiveRevenueSummary(scope.channelFilter, range.start, range.end),
+      this.repo.aggregateIncomesSummary(
+        scope.channelFilter,
+        range.start,
+        range.end
+      ),
+      this.repo.aggregateAdsSummary(
+        scope.channelFilter,
+        range.start,
+        range.end
+      ),
+      this.repo.aggregateLiveRevenueSummary(
+        scope.channelFilter,
+        range.start,
+        range.end
+      ),
       this.repo.getLastSyncedAt(scope.channelFilter)
     ])
 
@@ -186,9 +199,21 @@ export class RangeShopeeAnalyticsService {
     }
 
     const [incomes, ads, live, lastSyncedAt] = await Promise.all([
-      this.repo.aggregateIncomeTimeseries(scope.channelFilter, range.start, range.end),
-      this.repo.aggregateAdsTimeseries(scope.channelFilter, range.start, range.end),
-      this.repo.aggregateLiveRevenueTimeseries(scope.channelFilter, range.start, range.end),
+      this.repo.aggregateIncomeTimeseries(
+        scope.channelFilter,
+        range.start,
+        range.end
+      ),
+      this.repo.aggregateAdsTimeseries(
+        scope.channelFilter,
+        range.start,
+        range.end
+      ),
+      this.repo.aggregateLiveRevenueTimeseries(
+        scope.channelFilter,
+        range.start,
+        range.end
+      ),
       this.repo.getLastSyncedAt(scope.channelFilter)
     ])
 
@@ -233,6 +258,8 @@ export class RangeShopeeAnalyticsService {
         aov: round(safeDivide(item.revenue, item.orders), 2)
       }))
 
+    console.log(range)
+
     return {
       scope: {
         type: "range",
@@ -258,10 +285,7 @@ export class RangeShopeeAnalyticsService {
     compare?: string
   }) {
     if (query.compare !== "previous_period") {
-      fail(
-        "INVALID_COMPARE_MODE",
-        "compare must be previous_period."
-      )
+      fail("INVALID_COMPARE_MODE", "compare must be previous_period.")
     }
 
     const current = await this.getRangeSummary(query)
@@ -279,7 +303,10 @@ export class RangeShopeeAnalyticsService {
       current: current.summary,
       previous: previous.summary,
       delta: {
-        revenue: round(current.summary.netRevenue - previous.summary.netRevenue, 2),
+        revenue: round(
+          current.summary.netRevenue - previous.summary.netRevenue,
+          2
+        ),
         liveRevenue: round(
           current.summary.liveRevenue - previous.summary.liveRevenue,
           2
