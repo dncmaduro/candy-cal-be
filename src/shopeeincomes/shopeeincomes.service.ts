@@ -4,6 +4,10 @@ import { Model, Types } from "mongoose"
 import { ShopeeIncome } from "../database/mongoose/schemas/ShopeeIncome"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 import { ShopeeProduct } from "../database/mongoose/schemas/ShopeeProduct"
+import {
+  parseOrderDateFilterEnd,
+  parseOrderDateFilterStart
+} from "../shopeedashboard/shopee-dashboard.utils"
 import * as XLSX from "xlsx"
 import * as moment from "moment"
 
@@ -311,12 +315,16 @@ export class ShopeeIncomesService {
       if (filters.orderStartDate || filters.orderEndDate) {
         query.orderDate = {}
         if (filters.orderStartDate) {
-          query.orderDate.$gte = new Date(filters.orderStartDate)
+          query.orderDate.$gte = parseOrderDateFilterStart(
+            filters.orderStartDate,
+            "orderStartDate"
+          )
         }
         if (filters.orderEndDate) {
-          const endDate = new Date(filters.orderEndDate)
-          endDate.setHours(23, 59, 59, 999)
-          query.orderDate.$lte = endDate
+          query.orderDate.$lte = parseOrderDateFilterEnd(
+            filters.orderEndDate,
+            "orderEndDate"
+          )
         }
       }
 

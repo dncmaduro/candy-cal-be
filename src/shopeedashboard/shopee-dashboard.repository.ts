@@ -125,7 +125,7 @@ export class ShopeeDashboardRepository {
               $dateToString: {
                 format: "%Y-%m-%d",
                 date: "$orderDate",
-                timezone: SHOPEE_TZ
+                timezone: "UTC"
               }
             },
             revenue: { $sum: { $sum: "$products.buyerPaidTotal" } },
@@ -276,7 +276,7 @@ export class ShopeeDashboardRepository {
             $dateToString: {
               format: "%Y-%m-%d",
               date: "$orderDate",
-              timezone: SHOPEE_TZ
+              timezone: "UTC"
             }
           },
           productCount: { $size: { $ifNull: ["$products", []] } },
