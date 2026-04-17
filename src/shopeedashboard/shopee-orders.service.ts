@@ -2,10 +2,10 @@ import { Injectable } from "@nestjs/common"
 import { Types } from "mongoose"
 import { ShopeeDashboardRepository } from "./shopee-dashboard.repository"
 import {
-  dateRange,
   fail,
   formatMetaDate,
   monthRange,
+  orderDateRange,
   ORDER_SORT_FIELDS,
   parseMonthYear,
   SHOPEE_CURRENCY,
@@ -24,7 +24,7 @@ export class ShopeeOrdersService {
     channelFilter: Types.ObjectId | { $in: Types.ObjectId[] } | null
   }> {
     if (!channel || channel === "all") {
-      const channelIds = await this.repo.listShopeeChannelIds()
+      const channelIds = await this.repo.listShopeeLivestreamChannelIds()
       if (channelIds.length === 0) {
         return { channel: "all", channelIds: [], channelFilter: null }
       }
@@ -39,7 +39,7 @@ export class ShopeeOrdersService {
       fail("INVALID_CHANNEL", "Channel is invalid.")
     }
 
-    const doc = await this.repo.findShopeeChannelById(channel)
+    const doc = await this.repo.findShopeeLivestreamChannelById(channel)
     if (!doc) {
       fail("CHANNEL_NOT_FOUND", "Shopee channel not found.")
     }
@@ -55,8 +55,8 @@ export class ShopeeOrdersService {
     channel?: string
     month?: string
     year?: string
-    from?: string
-    to?: string
+    orderFrom?: string
+    orderTo?: string
     page?: string
     pageSize?: string
     sortBy?: string
@@ -64,34 +64,35 @@ export class ShopeeOrdersService {
   }): Promise<OrdersListResponse> {
     const hasMonth = typeof query.month === "string" && query.month !== ""
     const hasYear = typeof query.year === "string" && query.year !== ""
-    const hasFrom = typeof query.from === "string" && query.from !== ""
-    const hasTo = typeof query.to === "string" && query.to !== ""
+    const hasOrderFrom =
+      typeof query.orderFrom === "string" && query.orderFrom !== ""
+    const hasOrderTo = typeof query.orderTo === "string" && query.orderTo !== ""
     const hasMonthlyMode = hasMonth || hasYear
-    const hasRangeMode = hasFrom || hasTo
+    const hasRangeMode = hasOrderFrom || hasOrderTo
 
     if (hasMonthlyMode && hasRangeMode) {
       fail(
         "INVALID_FILTER_MODE",
-        "Do not provide month/year together with from/to."
+        "Do not provide month/year together with orderFrom/orderTo."
       )
     }
     if (!hasMonthlyMode && !hasRangeMode) {
       fail(
         "INVALID_FILTER_MODE",
-        "Provide exactly one mode: month/year or from/to."
+        "Provide exactly one mode: month/year or orderFrom/orderTo."
       )
     }
     if (hasMonthlyMode && (!hasMonth || !hasYear)) {
       fail("INVALID_FILTER_MODE", "Both month and year are required.")
     }
-    if (hasRangeMode && (!hasFrom || !hasTo)) {
-      fail("INVALID_FILTER_MODE", "Both from and to are required.")
+    if (hasRangeMode && (!hasOrderFrom || !hasOrderTo)) {
+      fail("INVALID_FILTER_MODE", "Both orderFrom and orderTo are required.")
     }
 
     const page = Math.max(1, toNumber(query.page || 1, 1))
     const pageSize = Math.max(1, Math.min(100, toNumber(query.pageSize || 10, 10)))
-    const sortBy = (query.sortBy || "date") as
-      | "date"
+    const sortBy = (query.sortBy || "orderDate") as
+      | "orderDate"
       | "revenue"
       | "orderCode"
       | "productCount"
@@ -117,18 +118,21 @@ export class ShopeeOrdersService {
               type: "monthly" as const,
               month: monthYear.month,
               year: monthYear.year,
-              from: monthR.fromText,
-              to: monthR.toText,
+              orderFrom: monthR.fromText,
+              orderTo: monthR.toText,
               start: monthR.start,
               end: monthR.end
             }
           })()
         : (() => {
-            const r = dateRange(query.from as string, query.to as string)
+            const r = orderDateRange(
+              query.orderFrom as string,
+              query.orderTo as string
+            )
             return {
               type: "range" as const,
-              from: r.from,
-              to: r.to,
+              orderFrom: r.orderFrom,
+              orderTo: r.orderTo,
               start: r.start,
               end: r.end
             }
@@ -147,8 +151,8 @@ export class ShopeeOrdersService {
             : {
                 type: "range",
                 channel: scope.channel,
-                from: time.from,
-                to: time.to
+                orderFrom: time.orderFrom,
+                orderTo: time.orderTo
               },
         pagination: {
           page,
@@ -195,8 +199,8 @@ export class ShopeeOrdersService {
           : {
               type: "range",
               channel: scope.channel,
-              from: time.from,
-              to: time.to
+              orderFrom: time.orderFrom,
+              orderTo: time.orderTo
             },
       pagination: {
         page,

@@ -52,16 +52,16 @@ export class ShopeeIncomesController {
   async searchIncomes(
     @Query("productCode") productCode?: string,
     @Query("variantSku") variantSku?: string,
-    @Query("startDate") startDate?: string,
-    @Query("endDate") endDate?: string,
+    @Query("orderStartDate") orderStartDate?: string,
+    @Query("orderEndDate") orderEndDate?: string,
     @Query("channelId") channelId?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ) {
     return this.shopeeIncomesService.searchIncomes({
       productCode: variantSku || productCode,
-      startDate,
-      endDate,
+      orderStartDate,
+      orderEndDate,
       channelId,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined

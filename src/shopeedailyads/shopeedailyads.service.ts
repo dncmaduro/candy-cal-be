@@ -55,7 +55,7 @@ export class ShopeeDailyAdsService {
     }
   }
 
-  private async getShopeeChannelOrThrow(
+  private async getShopeeLivestreamChannelOrThrow(
     channelId: string
   ): Promise<LivestreamChannel> {
     if (!Types.ObjectId.isValid(channelId)) {
@@ -83,7 +83,7 @@ export class ShopeeDailyAdsService {
       const date = this.parseAndNormalizeDate(dto.date)
       this.validateAdsCost(Number(dto.adsCost))
 
-      const channel = await this.getShopeeChannelOrThrow(dto.channel)
+      const channel = await this.getShopeeLivestreamChannelOrThrow(dto.channel)
       const channelObjectId = channel._id as Types.ObjectId
 
       const existed = await this.shopeeDailyAdsModel
@@ -131,7 +131,9 @@ export class ShopeeDailyAdsService {
       const query: any = {}
 
       if (typeof filters.channel === "string" && filters.channel.trim() !== "") {
-        const channel = await this.getShopeeChannelOrThrow(filters.channel.trim())
+        const channel = await this.getShopeeLivestreamChannelOrThrow(
+          filters.channel.trim()
+        )
         query.channel = channel._id
       }
 
@@ -228,7 +230,9 @@ export class ShopeeDailyAdsService {
 
       let nextChannelId = existing.channel
       if (typeof dto.channel === "string" && dto.channel.trim() !== "") {
-        const channel = await this.getShopeeChannelOrThrow(dto.channel.trim())
+        const channel = await this.getShopeeLivestreamChannelOrThrow(
+          dto.channel.trim()
+        )
         nextChannelId = channel._id as Types.ObjectId
       }
 

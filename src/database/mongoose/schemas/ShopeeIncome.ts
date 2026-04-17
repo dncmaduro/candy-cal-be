@@ -40,7 +40,7 @@ export const ShopeeIncomeProductSchema = new Schema<ShopeeIncomeProduct>(
 export const ShopeeIncomeSchema = new Schema<ShopeeIncome>({
   channel: {
     type: Schema.Types.ObjectId,
-    ref: "shopeechannels",
+    ref: "livestreamchannels",
     required: true
   },
   orderId: { type: String, required: true },

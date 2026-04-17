@@ -3,10 +3,10 @@ import { Types } from "mongoose"
 import { ShopeeDashboardRepository } from "./shopee-dashboard.repository"
 import {
   addDays,
-  dateRange,
   fail,
   formatMetaDate,
   isPartialToday,
+  orderDateRange,
   round,
   safeDivide,
   SHOPEE_CURRENCY,
@@ -28,7 +28,7 @@ export class RangeShopeeAnalyticsService {
     channelFilter: Types.ObjectId | { $in: Types.ObjectId[] } | null
   }> {
     if (!channel || channel === "all") {
-      const channelIds = await this.repo.listShopeeChannelIds()
+      const channelIds = await this.repo.listShopeeLivestreamChannelIds()
       if (channelIds.length === 0) {
         return { channel: "all", channelIds: [], channelFilter: null }
       }
@@ -43,7 +43,7 @@ export class RangeShopeeAnalyticsService {
       fail("INVALID_CHANNEL", "Channel is invalid.")
     }
 
-    const doc = await this.repo.findShopeeChannelById(channel)
+    const doc = await this.repo.findShopeeLivestreamChannelById(channel)
     if (!doc) {
       fail("CHANNEL_NOT_FOUND", "Shopee channel not found.")
     }
@@ -54,15 +54,19 @@ export class RangeShopeeAnalyticsService {
     }
   }
 
-  private buildRangeScope(query: { channel?: string; from: string; to: string }) {
-    const range = dateRange(query.from, query.to)
+  private buildRangeScope(query: {
+    channel?: string
+    orderFrom: string
+    orderTo: string
+  }) {
+    const range = orderDateRange(query.orderFrom, query.orderTo)
     return { range }
   }
 
   async getRangeSummary(query: {
     channel?: string
-    from: string
-    to: string
+    orderFrom: string
+    orderTo: string
   }): Promise<RangeSummaryResponse> {
     const scope = await this.resolveChannelScope(query.channel)
     const { range } = this.buildRangeScope(query)
@@ -72,8 +76,8 @@ export class RangeShopeeAnalyticsService {
         scope: {
           type: "range",
           channel: scope.channel,
-          from: range.from,
-          to: range.to,
+          orderFrom: range.orderFrom,
+          orderTo: range.orderTo,
           days: range.days
         },
         summary: {
@@ -92,7 +96,7 @@ export class RangeShopeeAnalyticsService {
           lastSyncedAt: null,
           timezone: SHOPEE_TZ,
           currency: SHOPEE_CURRENCY,
-          isPartialToday: isPartialToday(range.to)
+          isPartialToday: isPartialToday(range.orderTo)
         }
       }
     }
@@ -116,8 +120,8 @@ export class RangeShopeeAnalyticsService {
       scope: {
         type: "range",
         channel: scope.channel,
-        from: range.from,
-        to: range.to,
+        orderFrom: range.orderFrom,
+        orderTo: range.orderTo,
         days: range.days
       },
       summary: {
@@ -136,15 +140,15 @@ export class RangeShopeeAnalyticsService {
         lastSyncedAt: formatMetaDate(lastSyncedAt),
         timezone: SHOPEE_TZ,
         currency: SHOPEE_CURRENCY,
-        isPartialToday: isPartialToday(range.to)
+        isPartialToday: isPartialToday(range.orderTo)
       }
     }
   }
 
   async getRangeTimeseries(query: {
     channel?: string
-    from: string
-    to: string
+    orderFrom: string
+    orderTo: string
   }): Promise<RangeTimeseriesResponse> {
     const scope = await this.resolveChannelScope(query.channel)
     const { range } = this.buildRangeScope(query)
@@ -152,9 +156,9 @@ export class RangeShopeeAnalyticsService {
     if (!scope.channelFilter) {
       const series: RangeTimeseriesPoint[] = []
       for (let i = 0; i < range.days; i++) {
-        const d = addDays(range.from, i)
+        const d = addDays(range.orderFrom, i)
         series.push({
-          date: d,
+          orderDate: d,
           revenue: 0,
           liveRevenue: 0,
           adsCost: 0,
@@ -167,8 +171,8 @@ export class RangeShopeeAnalyticsService {
         scope: {
           type: "range",
           channel: scope.channel,
-          from: range.from,
-          to: range.to,
+          orderFrom: range.orderFrom,
+          orderTo: range.orderTo,
           days: range.days
         },
         series,
@@ -176,7 +180,7 @@ export class RangeShopeeAnalyticsService {
           lastSyncedAt: null,
           timezone: SHOPEE_TZ,
           currency: SHOPEE_CURRENCY,
-          isPartialToday: isPartialToday(range.to)
+          isPartialToday: isPartialToday(range.orderTo)
         }
       }
     }
@@ -190,9 +194,9 @@ export class RangeShopeeAnalyticsService {
 
     const map = new Map<string, RangeTimeseriesPoint>()
     for (let i = 0; i < range.days; i++) {
-      const date = addDays(range.from, i)
-      map.set(date, {
-        date,
+      const orderDate = addDays(range.orderFrom, i)
+      map.set(orderDate, {
+        orderDate,
         revenue: 0,
         liveRevenue: 0,
         adsCost: 0,
@@ -203,7 +207,7 @@ export class RangeShopeeAnalyticsService {
     }
 
     incomes.forEach((item) => {
-      const row = map.get(item.date)
+      const row = map.get(item.orderDate)
       if (!row) return
       row.revenue = Number(item.revenue || 0)
       row.orders = Number(item.orders || 0)
@@ -222,7 +226,7 @@ export class RangeShopeeAnalyticsService {
     })
 
     const series = Array.from(map.values())
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((a, b) => a.orderDate.localeCompare(b.orderDate))
       .map((item) => ({
         ...item,
         roas: round(safeDivide(item.revenue, item.adsCost), 4),
@@ -233,8 +237,8 @@ export class RangeShopeeAnalyticsService {
       scope: {
         type: "range",
         channel: scope.channel,
-        from: range.from,
-        to: range.to,
+        orderFrom: range.orderFrom,
+        orderTo: range.orderTo,
         days: range.days
       },
       series,
@@ -242,15 +246,15 @@ export class RangeShopeeAnalyticsService {
         lastSyncedAt: formatMetaDate(lastSyncedAt),
         timezone: SHOPEE_TZ,
         currency: SHOPEE_CURRENCY,
-        isPartialToday: isPartialToday(range.to)
+        isPartialToday: isPartialToday(range.orderTo)
       }
     }
   }
 
   async getRangeCompare(query: {
     channel?: string
-    from: string
-    to: string
+    orderFrom: string
+    orderTo: string
     compare?: string
   }) {
     if (query.compare !== "previous_period") {
@@ -261,12 +265,12 @@ export class RangeShopeeAnalyticsService {
     }
 
     const current = await this.getRangeSummary(query)
-    const previousTo = addDays(current.scope.from, -1)
+    const previousTo = addDays(current.scope.orderFrom, -1)
     const previousFrom = addDays(previousTo, -(current.scope.days - 1))
     const previous = await this.getRangeSummary({
       channel: query.channel,
-      from: previousFrom,
-      to: previousTo
+      orderFrom: previousFrom,
+      orderTo: previousTo
     })
 
     return {

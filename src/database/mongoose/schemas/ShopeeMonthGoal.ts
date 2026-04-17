@@ -12,7 +12,7 @@ export const ShopeeMonthGoalSchema = new Schema<ShopeeMonthGoal>({
   year: { type: Number, required: true },
   channel: {
     type: Schema.Types.ObjectId,
-    ref: "shopeechannels",
+    ref: "livestreamchannels",
     required: true
   },
   income: { type: Number, required: true, default: 0 }

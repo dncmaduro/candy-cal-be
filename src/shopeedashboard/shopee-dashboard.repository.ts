@@ -23,11 +23,13 @@ export class ShopeeDashboardRepository {
     private readonly incomeModel: Model<ShopeeIncome>
   ) {}
 
-  async findShopeeChannelById(id: string): Promise<LivestreamChannel | null> {
+  async findShopeeLivestreamChannelById(
+    id: string
+  ): Promise<LivestreamChannel | null> {
     return this.channelModel.findOne({ _id: id, platform: "shopee" }).exec()
   }
 
-  async listShopeeChannelIds(): Promise<Types.ObjectId[]> {
+  async listShopeeLivestreamChannelIds(): Promise<Types.ObjectId[]> {
     const docs = await this.channelModel
       .find({ platform: "shopee" }, { _id: 1 })
       .lean()
@@ -67,11 +69,13 @@ export class ShopeeDashboardRepository {
   ) {
     return this.incomeModel
       .aggregate([
-        { $match: { channel: channelFilter, date: { $gte: start, $lte: end } } },
+        {
+          $match: { channel: channelFilter, orderDate: { $gte: start, $lte: end } }
+        },
         {
           $group: {
             _id: null,
-            totalRevenue: { $sum: "$total" },
+            totalRevenue: { $sum: { $sum: "$products.buyerPaidTotal" } },
             totalOrders: { $sum: 1 }
           }
         }
@@ -109,25 +113,27 @@ export class ShopeeDashboardRepository {
     channelFilter: Types.ObjectId | { $in: Types.ObjectId[] },
     start: Date,
     end: Date
-  ): Promise<Array<{ date: string; revenue: number; orders: number }>> {
+  ): Promise<Array<{ orderDate: string; revenue: number; orders: number }>> {
     return this.incomeModel
       .aggregate([
-        { $match: { channel: channelFilter, date: { $gte: start, $lte: end } } },
+        {
+          $match: { channel: channelFilter, orderDate: { $gte: start, $lte: end } }
+        },
         {
           $group: {
             _id: {
               $dateToString: {
                 format: "%Y-%m-%d",
-                date: "$date",
+                date: "$orderDate",
                 timezone: SHOPEE_TZ
               }
             },
-            revenue: { $sum: "$total" },
+            revenue: { $sum: { $sum: "$products.buyerPaidTotal" } },
             orders: { $sum: 1 }
           }
         },
-        { $project: { _id: 0, date: "$_id", revenue: 1, orders: 1 } },
-        { $sort: { date: 1 } }
+        { $project: { _id: 0, orderDate: "$_id", revenue: 1, orders: 1 } },
+        { $sort: { orderDate: 1 } }
       ])
       .exec()
   }
@@ -189,9 +195,9 @@ export class ShopeeDashboardRepository {
   ): Promise<Date | null> {
     const [income, ads, live] = await Promise.all([
       this.incomeModel
-        .findOne({ channel: channelFilter }, { date: 1 })
-        .sort({ date: -1 })
-        .lean<{ date: Date }>(),
+        .findOne({ channel: channelFilter }, { orderDate: 1 })
+        .sort({ orderDate: -1 })
+        .lean<{ orderDate: Date }>(),
       this.dailyAdsModel
         .findOne({ channel: channelFilter }, { date: 1 })
         .sort({ date: -1 })
@@ -202,7 +208,7 @@ export class ShopeeDashboardRepository {
         .lean()
     ])
 
-    const dates = [income?.date, ads?.date, live?.date].filter(Boolean) as Date[]
+    const dates = [income?.orderDate, ads?.date, live?.date].filter(Boolean) as Date[]
     if (dates.length === 0) return null
     return new Date(Math.max(...dates.map((d) => d.getTime())))
   }
@@ -213,12 +219,12 @@ export class ShopeeDashboardRepository {
     end: Date
     page: number
     pageSize: number
-    sortBy: "date" | "revenue" | "orderCode" | "productCount"
+    sortBy: "orderDate" | "revenue" | "orderCode" | "productCount"
     sortOrder: 1 | -1
   }): Promise<{
     totalItems: number
     items: Array<{
-      date: string
+      orderDate: string
       orderCode: string
       customerName: string | null
       shop: string | null
@@ -228,7 +234,7 @@ export class ShopeeDashboardRepository {
     }>
   }> {
     const sortFieldMap = {
-      date: "date",
+      orderDate: "orderDate",
       revenue: "revenue",
       orderCode: "orderCode",
       productCount: "productCount"
@@ -239,7 +245,7 @@ export class ShopeeDashboardRepository {
       {
         $match: {
           channel: params.channelFilter,
-          date: { $gte: params.start, $lte: params.end }
+          orderDate: { $gte: params.start, $lte: params.end }
         }
       },
       {
@@ -251,6 +257,14 @@ export class ShopeeDashboardRepository {
         }
       },
       {
+        $lookup: {
+          from: "shopeeproducts",
+          localField: "products.variantSku",
+          foreignField: "_id",
+          as: "productDocs"
+        }
+      },
+      {
         $unwind: {
           path: "$channelDoc",
           preserveNullAndEmptyArrays: true
@@ -258,31 +272,24 @@ export class ShopeeDashboardRepository {
       },
       {
         $addFields: {
-          dateText: {
+          orderDateText: {
             $dateToString: {
               format: "%Y-%m-%d",
-              date: "$date",
+              date: "$orderDate",
               timezone: SHOPEE_TZ
             }
           },
-          productCount: {
-            $sum: {
-              $map: {
-                input: "$products",
-                as: "p",
-                in: "$$p.quantity"
-              }
-            }
-          },
+          productCount: { $size: { $ifNull: ["$products", []] } },
+          revenue: { $sum: "$products.buyerPaidTotal" },
           productName: {
             $reduce: {
-              input: "$products",
+              input: "$productDocs.name",
               initialValue: "",
               in: {
                 $concat: [
                   "$$value",
                   { $cond: [{ $eq: ["$$value", ""] }, "", ", "] },
-                  "$$this.name"
+                  "$$this"
                 ]
               }
             }
@@ -292,14 +299,12 @@ export class ShopeeDashboardRepository {
       {
         $project: {
           _id: 0,
-          date: "$dateText",
+          orderDate: "$orderDateText",
           orderCode: "$orderId",
-          customerName: {
-            $cond: [{ $eq: [{ $ifNull: ["$customer", ""] }, ""] }, null, "$customer"]
-          },
+          customerName: null,
           shop: "$channelDoc.name",
           productName: 1,
-          revenue: "$total",
+          revenue: 1,
           productCount: 1
         }
       },
@@ -323,7 +328,7 @@ export class ShopeeDashboardRepository {
     const result = await this.incomeModel.aggregate(pipeline).exec()
     const totalItems = Number(result[0]?.total?.[0]?.count || 0)
     const items = (result[0]?.items || []) as Array<{
-      date: string
+      orderDate: string
       orderCode: string
       customerName: string | null
       shop: string | null
