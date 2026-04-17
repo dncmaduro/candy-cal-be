@@ -12,6 +12,10 @@ export const ORDER_SORT_FIELDS = [
   "productCount"
 ]
 
+function isDateOnlyInput(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
 export function fail(
   code: string,
   message: string,
@@ -48,7 +52,7 @@ export function parseMonthYear(monthRaw: string, yearRaw: string) {
 
 export function parseDateOnly(
   value: string,
-  fieldName: "orderFrom" | "orderTo"
+  fieldName: string
 ): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     fail(
@@ -65,6 +69,68 @@ export function startOfBusinessDate(dateText: string): Date {
 
 export function endOfBusinessDate(dateText: string): Date {
   return fromZonedTime(`${dateText}T23:59:59.999`, SHOPEE_TZ)
+}
+
+export function startOfUtcDate(dateText: string): Date {
+  return new Date(`${dateText}T00:00:00.000Z`)
+}
+
+export function endOfUtcDate(dateText: string): Date {
+  return new Date(`${dateText}T23:59:59.999Z`)
+}
+
+export function parseOrderDateFilterDate(
+  value: string,
+  fieldName: string
+): {
+  date: Date
+  dateText: string
+  hasExplicitTime: boolean
+} {
+  const raw = String(value ?? "").trim()
+
+  if (!raw) {
+    fail("INVALID_DATE", `${fieldName} is required.`)
+  }
+
+  if (isDateOnlyInput(raw)) {
+    const dateText = parseDateOnly(raw, fieldName)
+    return {
+      date: startOfUtcDate(dateText),
+      dateText,
+      hasExplicitTime: false
+    }
+  }
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) {
+    fail(
+      "INVALID_DATE",
+      `${fieldName} must be a valid YYYY-MM-DD or datetime value.`
+    )
+  }
+
+  return {
+    date: parsed,
+    dateText: toBusinessDateText(parsed),
+    hasExplicitTime: true
+  }
+}
+
+export function parseOrderDateFilterStart(
+  value: string,
+  fieldName: string
+): Date {
+  const parsed = parseOrderDateFilterDate(value, fieldName)
+  return parsed.hasExplicitTime ? parsed.date : startOfUtcDate(parsed.dateText)
+}
+
+export function parseOrderDateFilterEnd(
+  value: string,
+  fieldName: string
+): Date {
+  const parsed = parseOrderDateFilterDate(value, fieldName)
+  return parsed.hasExplicitTime ? parsed.date : endOfUtcDate(parsed.dateText)
 }
 
 export function toBusinessDateText(date: Date): string {
@@ -103,10 +169,18 @@ export function orderDateRange(
   end: Date
   days: number
 } {
-  const orderFrom = parseDateOnly(orderFromRaw, "orderFrom")
-  const orderTo = parseDateOnly(orderToRaw, "orderTo")
+  const fromInput = parseOrderDateFilterDate(orderFromRaw, "orderFrom")
+  const toInput = parseOrderDateFilterDate(orderToRaw, "orderTo")
+  const orderFrom = fromInput.dateText
+  const orderTo = toInput.dateText
+  const start = fromInput.hasExplicitTime
+    ? fromInput.date
+    : startOfUtcDate(orderFrom)
+  const end = toInput.hasExplicitTime
+    ? toInput.date
+    : endOfUtcDate(orderTo)
   const days = inclusiveDays(orderFrom, orderTo)
-  if (days <= 0) {
+  if (start.getTime() > end.getTime() || days <= 0) {
     fail("INVALID_DATE_RANGE", "orderFrom must be before or equal to orderTo.")
   }
   if (days > MAX_RANGE_DAYS) {
@@ -118,8 +192,8 @@ export function orderDateRange(
   return {
     orderFrom,
     orderTo,
-    start: startOfBusinessDate(orderFrom),
-    end: endOfBusinessDate(orderTo),
+    start,
+    end,
     days
   }
 }
