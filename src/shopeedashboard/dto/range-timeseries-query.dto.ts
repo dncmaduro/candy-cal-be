@@ -1,5 +1,5 @@
 export class RangeTimeseriesQueryDto {
   channel?: string
-  from: string
-  to: string
+  orderFrom: string
+  orderTo: string
 }

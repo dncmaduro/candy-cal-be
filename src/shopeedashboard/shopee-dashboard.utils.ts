@@ -5,7 +5,12 @@ export const SHOPEE_TZ = "Asia/Ho_Chi_Minh"
 export const SHOPEE_CURRENCY = "VND"
 export const MAX_RANGE_DAYS = 92
 
-export const ORDER_SORT_FIELDS = ["date", "revenue", "orderCode", "productCount"]
+export const ORDER_SORT_FIELDS = [
+  "orderDate",
+  "revenue",
+  "orderCode",
+  "productCount"
+]
 
 export function fail(
   code: string,
@@ -41,7 +46,10 @@ export function parseMonthYear(monthRaw: string, yearRaw: string) {
   return { month, year }
 }
 
-export function parseDateOnly(value: string, fieldName: "from" | "to"): string {
+export function parseDateOnly(
+  value: string,
+  fieldName: "orderFrom" | "orderTo"
+): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     fail(
       "INVALID_DATE",
@@ -85,18 +93,21 @@ export function monthRange(month: number, year: number): {
   }
 }
 
-export function dateRange(fromRaw: string, toRaw: string): {
-  from: string
-  to: string
+export function orderDateRange(
+  orderFromRaw: string,
+  orderToRaw: string
+): {
+  orderFrom: string
+  orderTo: string
   start: Date
   end: Date
   days: number
 } {
-  const from = parseDateOnly(fromRaw, "from")
-  const to = parseDateOnly(toRaw, "to")
-  const days = inclusiveDays(from, to)
+  const orderFrom = parseDateOnly(orderFromRaw, "orderFrom")
+  const orderTo = parseDateOnly(orderToRaw, "orderTo")
+  const days = inclusiveDays(orderFrom, orderTo)
   if (days <= 0) {
-    fail("INVALID_DATE_RANGE", "from must be before or equal to to.")
+    fail("INVALID_DATE_RANGE", "orderFrom must be before or equal to orderTo.")
   }
   if (days > MAX_RANGE_DAYS) {
     fail(
@@ -105,10 +116,10 @@ export function dateRange(fromRaw: string, toRaw: string): {
     )
   }
   return {
-    from,
-    to,
-    start: startOfBusinessDate(from),
-    end: endOfBusinessDate(to),
+    orderFrom,
+    orderTo,
+    start: startOfBusinessDate(orderFrom),
+    end: endOfBusinessDate(orderTo),
     days
   }
 }

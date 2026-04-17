@@ -46,7 +46,7 @@ export class ShopeeMonthKpisService {
     }
   }
 
-  private async getShopeeChannelOrThrow(
+  private async getShopeeLivestreamChannelOrThrow(
     channelId: string
   ): Promise<LivestreamChannel> {
     if (!Types.ObjectId.isValid(channelId)) {
@@ -77,7 +77,7 @@ export class ShopeeMonthKpisService {
       this.validateKpiValue(dto.adsCostKpi, "KPI chi phí ads")
       this.validateKpiValue(dto.roasKpi, "KPI ROAS")
 
-      const channel = await this.getShopeeChannelOrThrow(dto.channel)
+      const channel = await this.getShopeeLivestreamChannelOrThrow(dto.channel)
       const channelObjectId = channel._id as Types.ObjectId
 
       const existed = await this.shopeeMonthKpiModel
@@ -140,7 +140,9 @@ export class ShopeeMonthKpisService {
       }
 
       if (typeof filters.channel === "string" && filters.channel.trim() !== "") {
-        const channel = await this.getShopeeChannelOrThrow(filters.channel.trim())
+        const channel = await this.getShopeeLivestreamChannelOrThrow(
+          filters.channel.trim()
+        )
         query.channel = channel._id
       }
 
@@ -222,7 +224,9 @@ export class ShopeeMonthKpisService {
 
       let nextChannelId = existing.channel
       if (typeof dto.channel === "string" && dto.channel.trim() !== "") {
-        const channel = await this.getShopeeChannelOrThrow(dto.channel.trim())
+        const channel = await this.getShopeeLivestreamChannelOrThrow(
+          dto.channel.trim()
+        )
         nextChannelId = channel._id as Types.ObjectId
       }
 

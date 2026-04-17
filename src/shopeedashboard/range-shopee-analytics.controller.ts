@@ -32,14 +32,14 @@ export class RangeShopeeAnalyticsController {
   @HttpCode(HttpStatus.OK)
   async getRangeCompare(
     @Query("channel") channel: string,
-    @Query("from") from: string,
-    @Query("to") to: string,
+    @Query("orderFrom") orderFrom: string,
+    @Query("orderTo") orderTo: string,
     @Query("compare") compare: string
   ) {
     return this.rangeShopeeAnalyticsService.getRangeCompare({
       channel,
-      from,
-      to,
+      orderFrom,
+      orderTo,
       compare
     })
   }

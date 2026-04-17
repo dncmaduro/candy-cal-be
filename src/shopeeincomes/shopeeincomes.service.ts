@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import { ShopeeIncome } from "../database/mongoose/schemas/ShopeeIncome"
-import { ShopeeChannel } from "../database/mongoose/schemas/ShopeeChannel"
+import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 import { ShopeeProduct } from "../database/mongoose/schemas/ShopeeProduct"
 import * as XLSX from "xlsx"
 import * as moment from "moment"
@@ -30,8 +30,8 @@ export class ShopeeIncomesService {
   constructor(
     @InjectModel("shopeeincomes")
     private readonly shopeeIncomeModel: Model<ShopeeIncome>,
-    @InjectModel("shopeechannels")
-    private readonly channelModel: Model<ShopeeChannel>,
+    @InjectModel("livestreamchannels")
+    private readonly livestreamChannelModel: Model<LivestreamChannel>,
     @InjectModel("shopeeproducts")
     private readonly shopeeProductModel: Model<ShopeeProduct>
   ) {}
@@ -99,6 +99,27 @@ export class ShopeeIncomesService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 
+  private async getShopeeLivestreamChannelOrThrow(
+    channelId: string
+  ): Promise<LivestreamChannel> {
+    if (!Types.ObjectId.isValid(channelId)) {
+      throw new HttpException("ID kênh không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const channel = await this.livestreamChannelModel
+      .findOne({ _id: channelId, platform: "shopee" })
+      .exec()
+
+    if (!channel) {
+      throw new HttpException(
+        "Không tìm thấy kênh Livestream platform Shopee",
+        HttpStatus.NOT_FOUND
+      )
+    }
+
+    return channel
+  }
+
   async insertIncomeFromXlsx(dto: {
     incomeFile: Express.Multer.File
     channel: string
@@ -113,13 +134,8 @@ export class ShopeeIncomesService {
         throw new HttpException("ID kênh không hợp lệ", HttpStatus.BAD_REQUEST)
       }
 
-      const channel = await this.channelModel.findById(dto.channel).exec()
-      if (!channel) {
-        throw new HttpException(
-          "Không tìm thấy kênh Shopee này",
-          HttpStatus.NOT_FOUND
-        )
-      }
+      const channel = await this.getShopeeLivestreamChannelOrThrow(dto.channel)
+      const channelObjectId = channel._id as Types.ObjectId
 
       const workbook = XLSX.read(dto.incomeFile.buffer, { type: "buffer" })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -230,13 +246,13 @@ export class ShopeeIncomesService {
           await this.shopeeIncomeModel
             .findOneAndDelete({
               orderId,
-              channel: new Types.ObjectId(dto.channel)
+              channel: channelObjectId
             })
             .exec()
 
           await this.shopeeIncomeModel.create({
             ...orderData,
-            channel: new Types.ObjectId(dto.channel)
+            channel: channelObjectId
           })
 
           inserted++
@@ -265,8 +281,8 @@ export class ShopeeIncomesService {
 
   async searchIncomes(filters: {
     productCode?: string
-    startDate?: string
-    endDate?: string
+    orderStartDate?: string
+    orderEndDate?: string
     channelId?: string
     page?: number
     limit?: number
@@ -286,19 +302,19 @@ export class ShopeeIncomesService {
 
       // Filter by channel
       if (filters.channelId) {
-        if (!Types.ObjectId.isValid(filters.channelId)) {
-          throw new HttpException("Invalid channel ID", HttpStatus.BAD_REQUEST)
-        }
-        query.channel = new Types.ObjectId(filters.channelId)
+        const channel = await this.getShopeeLivestreamChannelOrThrow(
+          filters.channelId
+        )
+        query.channel = channel._id
       }
 
-      if (filters.startDate || filters.endDate) {
+      if (filters.orderStartDate || filters.orderEndDate) {
         query.orderDate = {}
-        if (filters.startDate) {
-          query.orderDate.$gte = new Date(filters.startDate)
+        if (filters.orderStartDate) {
+          query.orderDate.$gte = new Date(filters.orderStartDate)
         }
-        if (filters.endDate) {
-          const endDate = new Date(filters.endDate)
+        if (filters.orderEndDate) {
+          const endDate = new Date(filters.orderEndDate)
           endDate.setHours(23, 59, 59, 999)
           query.orderDate.$lte = endDate
         }
