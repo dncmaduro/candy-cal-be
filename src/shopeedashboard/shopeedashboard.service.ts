@@ -255,12 +255,17 @@ export class ShopeeDashboardService {
           { $group: { _id: null, totalLiveRevenue: { $sum: "$liveRevenue" } } }
         ]),
         this.shopeeIncomeModel.aggregate([
-          { $match: { channel: channelFilter, date: { $gte: start, $lte: end } } },
+          {
+            $match: {
+              channel: channelFilter,
+              orderDate: { $gte: start, $lte: end }
+            }
+          },
           {
             $group: {
               _id: null,
               totalOrders: { $sum: 1 },
-              totalIncomeRevenue: { $sum: "$total" }
+              totalIncomeRevenue: { $sum: { $sum: "$products.buyerPaidTotal" } }
             }
           }
         ])

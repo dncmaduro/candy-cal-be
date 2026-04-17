@@ -30,7 +30,7 @@ export class MonthlyShopeeDashboardService {
     channelFilter: Types.ObjectId | { $in: Types.ObjectId[] } | null
   }> {
     if (!channel || channel === "all") {
-      const channelIds = await this.repo.listShopeeChannelIds()
+      const channelIds = await this.repo.listShopeeLivestreamChannelIds()
       if (channelIds.length === 0) {
         return { channel: "all", channelIds: [], channelFilter: null }
       }
@@ -45,7 +45,7 @@ export class MonthlyShopeeDashboardService {
       fail("INVALID_CHANNEL", "Channel is invalid.")
     }
 
-    const doc = await this.repo.findShopeeChannelById(channel)
+    const doc = await this.repo.findShopeeLivestreamChannelById(channel)
     if (!doc) {
       fail("CHANNEL_NOT_FOUND", "Shopee channel not found.")
     }

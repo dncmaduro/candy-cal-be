@@ -1133,6 +1133,7 @@ export class LivestreamperformanceService {
       const contentTypeKeys = ["Loại nội dung", "Content Type"]
       const sourceOrderIdKeys = ["ID đơn hàng", "Order ID"]
       const createdTimeKeys = ["Thời gian đã tạo", "Created Time"]
+      const paidTimeKeys = ["Thời gian thanh toán", "Paid Time"]
 
       let liveRows = 0
       let liveRowsInTargetDate = 0
@@ -1172,7 +1173,12 @@ export class LivestreamperformanceService {
           continue
         }
 
-        // Step 2: Parse time from created time (dd/MM/YYYY hh:mm:ss)
+        // Step 2: Only record rows that already have paid time,
+        // but still match snapshots by created time.
+        const paidTime = String(pickField(row, paidTimeKeys) ?? "").trim()
+        if (!paidTime) continue
+
+        // Step 3: Parse time from created time (dd/MM/YYYY hh:mm:ss)
         const createdTime = String(pickField(row, createdTimeKeys) ?? "").trim()
         if (!createdTime) continue
 
@@ -1194,11 +1200,11 @@ export class LivestreamperformanceService {
 
         if (processedOrderIdsInLive.has(orderId)) continue
 
-        // Step 3: Get income from totalIncome map (đúng theo yêu cầu)
+        // Step 4: Get income from totalIncome map (đúng theo yêu cầu)
         const incomeAmount = orderIncomeMap.get(orderId) ?? 0
         if (incomeAmount <= 0) continue
 
-        // Step 4: Find matching snapshots based on time
+        // Step 5: Find matching snapshots based on created time
         const orderTimeMinutes = toMinutes(hour, minute)
 
         const matchingSnapshotIds: string[] = []
