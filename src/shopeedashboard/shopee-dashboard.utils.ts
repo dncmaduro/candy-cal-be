@@ -167,6 +167,8 @@ export function orderDateRange(
   orderTo: string
   start: Date
   end: Date
+  businessStart: Date
+  businessEnd: Date
   days: number
 } {
   const fromInput = parseOrderDateFilterDate(orderFromRaw, "orderFrom")
@@ -179,6 +181,12 @@ export function orderDateRange(
   const end = toInput.hasExplicitTime
     ? toInput.date
     : endOfUtcDate(orderTo)
+  const businessStart = fromInput.hasExplicitTime
+    ? fromInput.date
+    : startOfBusinessDate(orderFrom)
+  const businessEnd = toInput.hasExplicitTime
+    ? toInput.date
+    : endOfBusinessDate(orderTo)
   const days = inclusiveDays(orderFrom, orderTo)
   if (start.getTime() > end.getTime() || days <= 0) {
     fail("INVALID_DATE_RANGE", "orderFrom must be before or equal to orderTo.")
@@ -194,6 +202,8 @@ export function orderDateRange(
     orderTo,
     start,
     end,
+    businessStart,
+    businessEnd,
     days
   }
 }

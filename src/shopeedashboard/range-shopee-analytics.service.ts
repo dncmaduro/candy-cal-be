@@ -110,13 +110,13 @@ export class RangeShopeeAnalyticsService {
       ),
       this.repo.aggregateAdsSummary(
         scope.channelFilter,
-        range.start,
-        range.end
+        range.businessStart,
+        range.businessEnd
       ),
       this.repo.aggregateLiveRevenueSummary(
         scope.channelFilter,
-        range.start,
-        range.end
+        range.businessStart,
+        range.businessEnd
       ),
       this.repo.getLastSyncedAt(scope.channelFilter)
     ])
@@ -206,13 +206,13 @@ export class RangeShopeeAnalyticsService {
       ),
       this.repo.aggregateAdsTimeseries(
         scope.channelFilter,
-        range.start,
-        range.end
+        range.businessStart,
+        range.businessEnd
       ),
       this.repo.aggregateLiveRevenueTimeseries(
         scope.channelFilter,
-        range.start,
-        range.end
+        range.businessStart,
+        range.businessEnd
       ),
       this.repo.getLastSyncedAt(scope.channelFilter)
     ])
@@ -257,8 +257,6 @@ export class RangeShopeeAnalyticsService {
         roas: round(safeDivide(item.revenue, item.adsCost), 4),
         aov: round(safeDivide(item.revenue, item.orders), 2)
       }))
-
-    console.log(range)
 
     return {
       scope: {
