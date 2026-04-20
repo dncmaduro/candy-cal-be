@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
-import { Model } from "mongoose"
+import { Model, Types } from "mongoose"
 import { User } from "../database/mongoose/schemas/User"
 import {
   ForgotPasswordDto,
@@ -20,6 +20,28 @@ export class UsersService {
     private readonly jwtService: JwtService,
     private readonly systemLogsService: SystemLogsService
   ) {}
+
+  private normalizeUserStatus(status = "all"): "all" | "active" | "unactive" {
+    const safeStatus = String(status || "all").trim().toLowerCase()
+    if (safeStatus === "all" || safeStatus === "active" || safeStatus === "unactive") {
+      return safeStatus
+    }
+    throw new HttpException(
+      "status must be one of: active, unactive, all",
+      HttpStatus.BAD_REQUEST
+    )
+  }
+
+  private buildUserStatusFilter(status = "all"): Record<string, any> {
+    const safeStatus = this.normalizeUserStatus(status)
+    if (safeStatus === "active") {
+      return { active: { $ne: false } }
+    }
+    if (safeStatus === "unactive") {
+      return { active: false }
+    }
+    return {}
+  }
 
   async login(
     credential: LoginDto
@@ -60,6 +82,21 @@ export class UsersService {
           existingUser._id.toString()
         )
         throw new HttpException("Wrong password", HttpStatus.UNAUTHORIZED)
+      }
+
+      if (existingUser.active === false) {
+        void this.systemLogsService.createSystemLog(
+          {
+            type: "auth",
+            action: "login_failed",
+            entity: "user",
+            entityId: username,
+            result: "failed",
+            meta: { reason: "deactivated" }
+          },
+          existingUser._id.toString()
+        )
+        throw new HttpException("User is deactivated", HttpStatus.FORBIDDEN)
       }
 
       const payload = {
@@ -145,6 +182,7 @@ export class UsersService {
     name: string
     roles: string[]
     avatarUrl?: string
+    active: boolean
     _id: string
   }> {
     try {
@@ -163,6 +201,7 @@ export class UsersService {
         name: existingUser.name,
         roles: existingUser.roles,
         avatarUrl: existingUser.avatarUrl,
+        active: existingUser.active !== false,
         _id: existingUser._id.toString()
       }
     } catch (error) {
@@ -293,9 +332,147 @@ export class UsersService {
     }
   }
 
+  async updateUserActive(
+    userId: string,
+    active: boolean,
+    actorUsername: string
+  ): Promise<{ message: string; data: { _id: string; active: boolean } }> {
+    try {
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new HttpException("Invalid user id", HttpStatus.BAD_REQUEST)
+      }
+
+      const existingUser = await this.userModel.findById(userId).exec()
+
+      if (!existingUser) {
+        throw new HttpException("User not found", HttpStatus.NOT_FOUND)
+      }
+
+      existingUser.active = active
+      await existingUser.save()
+
+      const actor = await this.userModel
+        .findOne({ username: actorUsername }, { _id: 1 })
+        .lean()
+
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "users",
+          action: "active_updated",
+          entity: "user",
+          entityId: existingUser._id.toString(),
+          result: "success",
+          meta: {
+            active,
+            actorUsername
+          }
+        },
+        actor?._id?.toString() || existingUser._id.toString()
+      )
+
+      return {
+        message: `User ${active ? "activated" : "deactivated"} successfully`,
+        data: {
+          _id: existingUser._id.toString(),
+          active: existingUser.active !== false
+        }
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error
+      }
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async adminListUsers(
+    searchText: string,
+    role?: string,
+    status = "all",
+    page = 1,
+    limit = 10
+  ): Promise<{
+    data: {
+      _id: string
+      username: string
+      name: string
+      roles: string[]
+      avatarUrl?: string
+      active: boolean
+    }[]
+    total: number
+  }> {
+    try {
+      const safePage = Math.max(1, Number(page) || 1)
+      const safeLimit = Math.max(1, Number(limit) || 10)
+
+      const filter: any = {
+        ...this.buildUserStatusFilter(status)
+      }
+
+      if (searchText && String(searchText).trim().length > 0) {
+        const safeSearchText = String(searchText).trim()
+        filter.$or = [
+          {
+            name: {
+              $regex: `.*${safeSearchText}.*`,
+              $options: "i"
+            }
+          },
+          {
+            username: {
+              $regex: `.*${safeSearchText}.*`,
+              $options: "i"
+            }
+          }
+        ]
+      }
+
+      if (role && String(role).trim().length > 0) {
+        filter.roles = role
+      }
+
+      const [users, total] = await Promise.all([
+        this.userModel
+          .find(filter)
+          .sort({ name: 1, username: 1 })
+          .skip((safePage - 1) * safeLimit)
+          .limit(safeLimit)
+          .lean(),
+        this.userModel.countDocuments(filter)
+      ])
+
+      return {
+        data: users.map((u) => ({
+          _id: u._id.toString(),
+          username: u.username,
+          name: u.name,
+          roles: Array.isArray(u.roles) ? u.roles : [],
+          avatarUrl: u.avatarUrl,
+          active: u.active !== false
+        })),
+        total
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error
+      }
+      console.error(error)
+      throw new HttpException(
+        "Internal server error",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   async publicSearchUsers(
     searchText: string,
     role?: string,
+    status = "all",
     page = 1,
     limit = 10
   ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
@@ -303,7 +480,9 @@ export class UsersService {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
 
-      const filter: any = {}
+      const filter: any = {
+        ...this.buildUserStatusFilter(status)
+      }
       if (searchText && String(searchText).trim().length > 0) {
         filter.name = {
           $regex: `.*${String(searchText).trim()}.*`,
@@ -328,6 +507,9 @@ export class UsersService {
         total
       }
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error
+      }
       console.error(error)
       throw new HttpException(
         "Internal server error",
