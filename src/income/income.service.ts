@@ -1188,6 +1188,7 @@ export class IncomeService {
       boxes: { box: string; quantity: number }[]
       shippingProviders: { provider: string; orders: number }[]
       ads: {
+        totalAdsCost: number
         liveAdsCost: number
         shopAdsCost: number
         percentages: {
@@ -1251,6 +1252,7 @@ export class IncomeService {
         }
       }
       ads: {
+        totalAdsCostPct: number
         liveAdsCostPct: number
         shopAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
@@ -1427,6 +1429,7 @@ export class IncomeService {
           .exec()
         const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
         const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
+        const totalAdsCost = liveAdsCost + shopAdsCost
         const percentages = {
           liveAdsToLiveIncome:
             liveIncomeAfterDiscount === 0
@@ -1474,7 +1477,7 @@ export class IncomeService {
           },
           boxes,
           shippingProviders,
-          ads: { liveAdsCost, shopAdsCost, percentages },
+          ads: { totalAdsCost, liveAdsCost, shopAdsCost, percentages },
           discounts: {
             totalPlatformDiscount,
             totalSellerDiscount,
@@ -1685,6 +1688,10 @@ export class IncomeService {
           }
         },
         ads: {
+          totalAdsCostPct: pct(
+            current.ads.totalAdsCost,
+            previous.ads.totalAdsCost
+          ),
           liveAdsCostPct: pct(
             current.ads.liveAdsCost,
             previous.ads.liveAdsCost
