@@ -409,6 +409,7 @@ export class IncomeController {
       boxes: { box: string; quantity: number }[]
       shippingProviders: { provider: string; orders: number }[]
       ads: {
+        totalAdsCost: number
         liveAdsCost: number
         shopAdsCost: number
         percentages: {
@@ -452,6 +453,7 @@ export class IncomeController {
         }
       }
       ads: {
+        totalAdsCostPct: number
         liveAdsCostPct: number
         shopAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
