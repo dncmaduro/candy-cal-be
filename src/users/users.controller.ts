@@ -8,11 +8,14 @@ import {
   UseGuards,
   Req,
   Patch,
-  Query
+  Query,
+  Param
 } from "@nestjs/common"
 import { UsersService } from "./users.service"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
+import { Roles } from "../roles/roles.decorator"
+import { RolesGuard } from "../roles/roles.guard"
 
 @Controller("users")
 export class UsersController {
@@ -50,6 +53,7 @@ export class UsersController {
     name: string
     roles: string[]
     avatarUrl?: string
+    active: boolean
     _id: string
   }> {
     return this.usersService.getMe(req.user.username)
@@ -89,18 +93,66 @@ export class UsersController {
     return this.usersService.updateUser(req.user.username, { name: body.name })
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
+  @Get("admin/list")
+  @HttpCode(HttpStatus.OK)
+  async adminListUsers(
+    @Query("searchText") searchText: string,
+    @Query("role") role?: string,
+    @Query("status") status = "all",
+    @Query("page") page = 1,
+    @Query("limit") limit = 10
+  ): Promise<{
+    data: {
+      _id: string
+      username: string
+      name: string
+      roles: string[]
+      avatarUrl?: string
+      active: boolean
+    }[]
+    total: number
+  }> {
+    return this.usersService.adminListUsers(
+      searchText,
+      role,
+      status,
+      Number(page),
+      Number(limit)
+    )
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
+  @Patch(":userId/active")
+  @HttpCode(HttpStatus.OK)
+  async updateUserActive(
+    @Req() req,
+    @Body() body: { active: boolean },
+    @Param("userId") userId: string
+  ): Promise<{ message: string; data: { _id: string; active: boolean } }> {
+    return this.usersService.updateUserActive(
+      userId,
+      body.active,
+      req.user.username
+    )
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get("publicsearch")
   @HttpCode(HttpStatus.OK)
   async publicSearchUsers(
     @Query("searchText") searchText: string,
     @Query("role") role?: string,
+    @Query("status") status = "all",
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
     return this.usersService.publicSearchUsers(
       searchText,
       role,
+      status,
       Number(page),
       Number(limit)
     )
