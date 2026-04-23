@@ -122,4 +122,36 @@ export class ShopeeDailyAdsController {
       req.user.userId
     )
   }
+
+  @Roles("admin", "shopee-emp")
+  @Delete()
+  @HttpCode(HttpStatus.OK)
+  async deleteShopeeDailyAdsByDateAndChannel(
+    @Query("date") date: string,
+    @Query("channel") channel: string,
+    @Req() req
+  ): Promise<{ deletedId: string }> {
+    const deleted =
+      await this.shopeeDailyAdsService.deleteShopeeDailyAdsByDateAndChannel(
+        date,
+        channel
+      )
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "shopee_daily_ads",
+        action: "deleted_by_date_channel",
+        entity: "shopee_daily_ads",
+        entityId: deleted._id.toString(),
+        result: "success",
+        meta: {
+          date,
+          channel
+        }
+      },
+      req.user.userId
+    )
+
+    return { deletedId: deleted._id.toString() }
+  }
 }
