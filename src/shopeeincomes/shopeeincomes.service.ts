@@ -29,6 +29,14 @@ type ShopeeIncomeOrderDraft = {
   }[]
 }
 
+type DeleteShopeeIncomesFilters = {
+  orderId?: string
+  orderDate?: string
+  orderStartDate?: string
+  orderEndDate?: string
+  channelId?: string
+}
+
 @Injectable()
 export class ShopeeIncomesService {
   constructor(
@@ -101,6 +109,42 @@ export class ShopeeIncomesService {
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  }
+
+  private async buildIncomeDateQuery(filters: {
+    orderDate?: string
+    orderStartDate?: string
+    orderEndDate?: string
+  }): Promise<Record<string, Date> | undefined> {
+    if (filters.orderDate) {
+      if (filters.orderStartDate || filters.orderEndDate) {
+        throw new HttpException(
+          "Chỉ dùng orderDate hoặc orderStartDate/orderEndDate",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      return {
+        $gte: parseOrderDateFilterStart(filters.orderDate, "orderDate"),
+        $lte: parseOrderDateFilterEnd(filters.orderDate, "orderDate")
+      }
+    }
+
+    if (filters.orderStartDate || filters.orderEndDate) {
+      if (!filters.orderStartDate || !filters.orderEndDate) {
+        throw new HttpException(
+          "Cần truyền đủ orderStartDate và orderEndDate",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      return {
+        $gte: parseOrderDateFilterStart(filters.orderStartDate, "orderStartDate"),
+        $lte: parseOrderDateFilterEnd(filters.orderEndDate, "orderEndDate")
+      }
+    }
+
+    return undefined
   }
 
   private async getShopeeLivestreamChannelOrThrow(
@@ -379,6 +423,65 @@ export class ShopeeIncomesService {
       if (error instanceof HttpException) throw error
       throw new HttpException(
         "Error searching incomes",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async deleteIncomes(
+    filters: DeleteShopeeIncomesFilters
+  ): Promise<{ deletedCount: number }> {
+    try {
+      if (!filters.channelId) {
+        throw new HttpException(
+          "Channel ID is required",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const channel = await this.getShopeeLivestreamChannelOrThrow(
+        filters.channelId
+      )
+
+      const orderId = String(filters.orderId ?? "").trim()
+      const orderDateQuery = await this.buildIncomeDateQuery(filters)
+
+      if (!orderId && !orderDateQuery) {
+        throw new HttpException(
+          "Cần truyền orderId hoặc orderDate/orderStartDate/orderEndDate",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const query: any = {
+        channel: channel._id
+      }
+
+      if (orderId) {
+        query.orderId = orderId
+      }
+
+      if (orderDateQuery) {
+        query.orderDate = orderDateQuery
+      }
+
+      const result = await this.shopeeIncomeModel.deleteMany(query).exec()
+
+      if (!result.deletedCount) {
+        throw new HttpException(
+          "Không tìm thấy Shopee income phù hợp để xóa",
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      return {
+        deletedCount: result.deletedCount
+      }
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Lỗi khi xóa Shopee incomes",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

@@ -308,4 +308,44 @@ export class ShopeeDailyLiveRevenuesService {
       )
     }
   }
+
+  async deleteShopeeDailyLiveRevenueByDateAndChannel(
+    date: string,
+    channelId: string
+  ): Promise<ShopeeDailyLiveRevenue> {
+    try {
+      if (!date || !date.trim()) {
+        throw new HttpException(
+          "Ngày là bắt buộc",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const normalizedDate = this.parseAndNormalizeDate(date.trim())
+      const channel = await this.getShopeeLivestreamChannelOrThrow(channelId)
+
+      const deleted = await this.shopeeDailyLiveRevenueModel
+        .findOneAndDelete({
+          date: normalizedDate,
+          channel: channel._id
+        })
+        .exec()
+
+      if (!deleted) {
+        throw new HttpException(
+          "Không tìm thấy doanh số live Shopee",
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      return deleted
+    } catch (error) {
+      console.error(error)
+      if (error instanceof HttpException) throw error
+      throw new HttpException(
+        "Lỗi khi xóa doanh số live Shopee",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
 }
