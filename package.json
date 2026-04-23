@@ -7,6 +7,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "tsc",
+    "test:shopee-delete-api": "node scripts/test-shopee-delete-api.js",
     "start:prod": "node dist/main",
     "up:prod": "docker buildx build --platform linux/amd64 -t gunnyrealer9/candy-cal-be:latest --push .",
     "up:staging": "docker buildx build --platform linux/amd64 -f Dockerfile.staging -t gunnyrealer9/candy-cal-be:staging --push .",
