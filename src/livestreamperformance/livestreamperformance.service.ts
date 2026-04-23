@@ -978,14 +978,22 @@ export class LivestreamperformanceService {
       requestedDate.setUTCHours(0, 0, 0, 0)
 
       // ===== Normalize date to 00:00:00 UTC for livestream lookup =====
-      const livestreamDate = new Date(date)
-      livestreamDate.setUTCHours(0, 0, 0, 0)
-      livestreamDate.setDate(livestreamDate.getDate() + 1)
+      // Prefer the exact requested day. Fall back to +1 day only for legacy data
+      // that may have been stored with a shifted date.
+      const legacyLivestreamDate = new Date(requestedDate)
+      legacyLivestreamDate.setDate(legacyLivestreamDate.getDate() + 1)
 
-      // ===== Find livestream for this date first =====
-      const livestreamCandidates = await this.livestreamModel
+      let livestreamDate = requestedDate
+      let livestreamCandidates = await this.livestreamModel
         .find({ date: livestreamDate })
         .exec()
+
+      if (livestreamCandidates.length === 0) {
+        livestreamDate = legacyLivestreamDate
+        livestreamCandidates = await this.livestreamModel
+          .find({ date: livestreamDate })
+          .exec()
+      }
 
       const candidatesWithSnapshots = livestreamCandidates.filter(
         (candidate) =>
@@ -1081,13 +1089,16 @@ export class LivestreamperformanceService {
       const totalData = totalReadData.filter((r) => !isDescriptionRow(r))
 
       // Build maps:
-      // - orderStatusMap: để skip Đã hủy
+      // - orderCancellationTypeMap: để skip đơn có Cancelation/Return Type = Cancel
       // - orderIncomeMap: orderId -> sum(income) theo SKU rows
-      const orderStatusMap = new Map<string, string>()
+      const orderCancellationTypeMap = new Map<string, string>()
       const orderIncomeMap = new Map<string, number>()
 
       const totalOrderIdKeys = ["Order ID", "ID đơn hàng"]
-      const totalStatusKeys = ["Order Status", "Trạng thái đơn hàng"]
+      const cancellationTypeKeys = [
+        "Cancelation/Return Type",
+        "Cancellation/Return Type"
+      ]
       const subtotalKeys = [
         "SKU Subtotal Before Discount",
         "SKU Subtotal Before Discount (SKU)"
@@ -1101,8 +1112,12 @@ export class LivestreamperformanceService {
         const orderId = normalizeOrderKey(pickField(row, totalOrderIdKeys))
         if (!orderId) continue
 
-        const status = String(pickField(row, totalStatusKeys) ?? "").trim()
-        if (status) orderStatusMap.set(orderId, status)
+        const cancellationType = String(
+          pickField(row, cancellationTypeKeys) ?? ""
+        ).trim()
+        if (cancellationType) {
+          orderCancellationTypeMap.set(orderId, cancellationType)
+        }
 
         const subtotal = parseMoney(pickField(row, subtotalKeys))
         const sellerDiscount = parseMoney(pickField(row, sellerDiscountKeys))
@@ -1133,23 +1148,6 @@ export class LivestreamperformanceService {
       const contentTypeKeys = ["Loại nội dung", "Content Type"]
       const sourceOrderIdKeys = ["ID đơn hàng", "Order ID"]
       const createdTimeKeys = ["Thời gian đã tạo", "Created Time"]
-      const paidTimeKeys = ["Thời gian thanh toán", "Paid Time"]
-
-      let liveRows = 0
-      let liveRowsInTargetDate = 0
-      let hasIncome = 0
-      let cancelled = 0
-      let hasMatchingSnapshot = 0
-      let processed = 0
-
-      const sampleNoIncome: string[] = []
-      const sampleHasIncome: string[] = []
-
-      const targetY = requestedDate.getUTCFullYear()
-      const targetM = requestedDate.getUTCMonth() + 1
-      const targetD = requestedDate.getUTCDate()
-
-      const onlyDigits = (s: string) => s.replace(/\D/g, "")
 
       const processedOrderIdsInLive = new Set()
 
@@ -1164,21 +1162,15 @@ export class LivestreamperformanceService {
         const orderId = normalizeOrderKey(pickField(row, sourceOrderIdKeys))
         if (!orderId) continue
 
-        // Step 1: Skip cancelled orders (status from totalIncome)
-        const orderStatus = orderStatusMap.get(orderId) ?? ""
-        if (
-          orderStatus.includes("Đã hủy") ||
-          orderStatus.toLowerCase().includes("cancel")
-        ) {
+        // Step 1: Skip orders that are marked as Cancel in sheet 1
+        const cancellationType = (
+          orderCancellationTypeMap.get(orderId) ?? ""
+        ).trim()
+        if (cancellationType.toLowerCase() === "cancel") {
           continue
         }
 
-        // Step 2: Only record rows that already have paid time,
-        // but still match snapshots by created time.
-        const paidTime = String(pickField(row, paidTimeKeys) ?? "").trim()
-        if (!paidTime) continue
-
-        // Step 3: Parse time from created time (dd/MM/YYYY hh:mm:ss)
+        // Step 2: Parse time from created time (dd/MM/YYYY hh:mm:ss)
         const createdTime = String(pickField(row, createdTimeKeys) ?? "").trim()
         if (!createdTime) continue
 
@@ -1200,11 +1192,11 @@ export class LivestreamperformanceService {
 
         if (processedOrderIdsInLive.has(orderId)) continue
 
-        // Step 4: Get income from totalIncome map (đúng theo yêu cầu)
+        // Step 3: Get income from totalIncome map (giữ nguyên cách tính)
         const incomeAmount = orderIncomeMap.get(orderId) ?? 0
         if (incomeAmount <= 0) continue
 
-        // Step 5: Find matching snapshots based on created time
+        // Step 4: Find matching snapshots based on created time
         const orderTimeMinutes = toMinutes(hour, minute)
 
         const matchingSnapshotIds: string[] = []
