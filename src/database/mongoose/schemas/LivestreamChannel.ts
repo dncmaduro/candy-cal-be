@@ -6,6 +6,7 @@ export interface LivestreamChannel extends Document {
   usernames: string[]
   link: string
   platform: "tiktokshop" | "shopee"
+  sortOrder?: number
 }
 
 export const LivestreamChannelSchema = new Schema<LivestreamChannel>({
@@ -17,7 +18,8 @@ export const LivestreamChannelSchema = new Schema<LivestreamChannel>({
     type: String,
     enum: ["tiktokshop", "shopee"],
     required: true
-  }
+  },
+  sortOrder: { type: Number, required: false }
 })
 
 export const LivestreamChannelModel = model<LivestreamChannel>(
