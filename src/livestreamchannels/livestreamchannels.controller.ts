@@ -36,6 +36,7 @@ export class LivestreamchannelsController {
       username: string
       usernames?: string[]
       link: string
+      sortOrder?: number
     },
     @Req() req
   ) {
@@ -108,6 +109,7 @@ export class LivestreamchannelsController {
       username?: string
       usernames?: string[]
       link?: string
+      sortOrder?: number
     },
     @Req() req
   ) {
