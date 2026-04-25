@@ -15,6 +15,7 @@ export class LivestreamchannelsService {
     username: string
     usernames?: string[]
     link: string
+    sortOrder?: number
   }): Promise<LivestreamChannel> {
     try {
       const exists = await this.livestreamChannelModel
@@ -70,7 +71,7 @@ export class LivestreamchannelsService {
       const [data, total] = await Promise.all([
         this.livestreamChannelModel
           .find(filter)
-          .sort({ name: 1, username: 1 })
+          .sort({ sortOrder: -1, name: 1, username: 1 })
           .skip((safePage - 1) * safeLimit)
           .limit(safeLimit)
           .exec(),
@@ -110,6 +111,7 @@ export class LivestreamchannelsService {
       username?: string
       usernames?: string[]
       link?: string
+      sortOrder?: number
     }
   ): Promise<LivestreamChannel> {
     try {
@@ -127,6 +129,8 @@ export class LivestreamchannelsService {
         )
       }
       if (typeof payload.link !== "undefined") updateObj.link = payload.link
+      if (typeof payload.sortOrder !== "undefined")
+        updateObj.sortOrder = payload.sortOrder
 
       const updated = await this.livestreamChannelModel
         .findByIdAndUpdate(id, { $set: updateObj }, { new: true })
