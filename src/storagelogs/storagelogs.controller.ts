@@ -63,7 +63,8 @@ export class StorageLogsController {
     @Query("endDate") endDate?: string,
     @Query("status") status?: string,
     @Query("tag") tag?: string,
-    @Query("itemId") itemId?: string // Works with both old and new format
+    @Query("itemId") itemId?: string, // Works with both old and new format
+    @Query("channelId") channelId?: string
   ): Promise<{ data: StorageLog[]; total: number }> {
     return this.storageLogsService.getStorageLogs(
       page,
@@ -72,7 +73,8 @@ export class StorageLogsController {
       endDate,
       status,
       tag,
-      itemId
+      itemId,
+      channelId
     )
   }
 
