@@ -1,18 +1,22 @@
 import { InjectModel } from "@nestjs/mongoose"
-import { Model } from "mongoose"
+import { BadRequestException } from "@nestjs/common"
+import { Model, Types } from "mongoose"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { StorageLogDto } from "./dto/storagelog.dto"
 import { startOfMonth, endOfMonth, getDate } from "date-fns"
 import { GetMonthStorageLogsReponse } from "./dto/month"
 import { StorageItem } from "../database/mongoose/schemas/StorageItem"
 import { toZonedTime, getTimezoneOffset } from "date-fns-tz"
+import { DeliveredRequest } from "../database/mongoose/schemas/DeliveredRequest"
 
 export class StorageLogsService {
   constructor(
     @InjectModel("storagelogs")
     private readonly storageLogsModel: Model<StorageLog>,
     @InjectModel("storageitems")
-    private readonly storageItemModel: Model<StorageItem>
+    private readonly storageItemModel: Model<StorageItem>,
+    @InjectModel("deliveredrequests")
+    private readonly deliveredRequestModel: Model<DeliveredRequest>
   ) {}
 
   // Helper function to get items from both old and new format
@@ -74,6 +78,7 @@ export class StorageLogsService {
       return result[0]?.totalQuantity ?? 0
     } catch (error) {
       console.error(error)
+      if (error instanceof BadRequestException) throw error
       throw new Error("Internal server error")
     }
   }
@@ -227,7 +232,8 @@ export class StorageLogsService {
     endDate?: string,
     status?: string,
     tag?: string,
-    itemId?: string
+    itemId?: string,
+    channelId?: string
   ): Promise<{
     data: StorageLog[]
     total: number
@@ -256,6 +262,24 @@ export class StorageLogsService {
           { "item._id": itemId }, // Old format
           { "items._id": itemId } // New format
         ]
+      }
+
+      if (channelId) {
+        if (!Types.ObjectId.isValid(channelId)) {
+          throw new BadRequestException("channelId is invalid")
+        }
+
+        const deliveredRequestIds = await this.deliveredRequestModel
+          .find(
+            { channel: new Types.ObjectId(channelId) },
+            { _id: 1 }
+          )
+          .lean()
+          .exec()
+
+        query.deliveredRequestId = {
+          $in: deliveredRequestIds.map((request) => request._id)
+        }
       }
 
       const [data, total] = await Promise.all([
