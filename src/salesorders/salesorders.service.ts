@@ -66,11 +66,13 @@ export class SalesOrdersService {
         .findById(payload.salesFunnelId)
         .populate("channel")
         .lean()
-      const phoneNumber = (thisFunnel.channel as any)?.phoneNumber || ""
+      const phoneNumber = (thisFunnel?.channel as any)?.phoneNumber || undefined
 
       // Get funnel address and province
-      const address = funnel.address || ""
-      const province = await this.provinceModel.findById(funnel.province).lean()
+      const address = funnel.address || undefined
+      const province = funnel.province
+        ? await this.provinceModel.findById(funnel.province).lean()
+        : null
 
       // Determine returning based on hasBuyed
       const returning = funnel.hasBuyed
@@ -539,11 +541,13 @@ export class SalesOrdersService {
         .populate("channel")
         .lean()
       const phoneNumber =
-        (funnel.channel as any)?.phoneNumber || order.phoneNumber || ""
+        (funnel?.channel as any)?.phoneNumber || order.phoneNumber || undefined
 
       // Get address and province from funnel
-      const address = funnel.address || ""
-      const province = await this.provinceModel.findById(funnel.province).lean()
+      const address = funnel?.address || order.address || undefined
+      const province = funnel?.province
+        ? await this.provinceModel.findById(funnel.province).lean()
+        : null
 
       // Build sales items with all details from SalesItem
       const itemsWithDetails = await Promise.all(
