@@ -31,9 +31,9 @@ export interface SalesOrder extends Document {
   shippingCost: number
   storage: SalesOrderStorage
   status: SalesOrderStatus
-  phoneNumber: string
-  address: string
-  province: {
+  phoneNumber?: string
+  address?: string
+  province?: {
     id: string
     name: string
   }
@@ -86,11 +86,11 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
     default: "draft",
     required: true
   },
-  phoneNumber: { type: String, required: true },
-  address: { type: String, required: true },
+  phoneNumber: { type: String, required: false },
+  address: { type: String, required: false },
   province: {
-    id: { type: String, required: true },
-    name: { type: String, required: true }
+    id: { type: String, required: false },
+    name: { type: String, required: false }
   },
   receivedDate: { type: Date, required: false },
   createdAt: { type: Date, default: Date.now },
