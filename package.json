@@ -7,6 +7,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "tsc",
+    "test:range-stats-orders": "npm run build && node scripts/test-range-stats-order-split.js",
     "test:shopee-delete-api": "node scripts/test-shopee-delete-api.js",
     "start:prod": "node dist/main",
     "up:prod": "docker buildx build --platform linux/amd64 -t gunnyrealer9/candy-cal-be:latest --push .",
