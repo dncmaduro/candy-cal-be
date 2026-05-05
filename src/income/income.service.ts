@@ -17,6 +17,7 @@ import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { format as formatDateFns } from "date-fns"
 import { OWN_USERS } from "../constants/own-users"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
+import { countOrdersByChannel } from "./utils/order-channel.util"
 
 @Injectable()
 export class IncomeService {
@@ -1203,6 +1204,11 @@ export class IncomeService {
         avgDiscountPerOrder: number
         discountPercentage: number
       }
+      orders: {
+        total: number
+        live: number
+        shop: number
+      }
       productsQuantity: {
         [code: string]: number
       }
@@ -1264,6 +1270,11 @@ export class IncomeService {
         totalDiscountPct: number
         avgDiscountPerOrderPct: number
         discountPercentageDiff: number
+      }
+      orders: {
+        totalPct: number
+        livePct: number
+        shopPct: number
       }
     }
   }> {
@@ -1455,6 +1466,7 @@ export class IncomeService {
         const productsQuantity = Object.fromEntries(
           Object.entries(productsQuantityMap).sort(([, a], [, b]) => b - a)
         )
+        const orders = countOrdersByChannel(incomes)
 
         return {
           beforeDiscount: {
@@ -1485,6 +1497,7 @@ export class IncomeService {
             avgDiscountPerOrder,
             discountPercentage: Math.round(discountPercentage * 100) / 100
           },
+          orders,
           productsQuantity
         }
       }
@@ -1736,6 +1749,11 @@ export class IncomeService {
                 previous.discounts.discountPercentage) *
                 100
             ) / 100
+        },
+        orders: {
+          totalPct: pct(current.orders.total, previous.orders.total),
+          livePct: pct(current.orders.live, previous.orders.live),
+          shopPct: pct(current.orders.shop, previous.orders.shop)
         }
       }
 
