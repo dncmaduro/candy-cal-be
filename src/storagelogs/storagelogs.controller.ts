@@ -188,7 +188,10 @@ export class StorageLogsController {
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteStorageLog(@Param("id") id: string, @Req() req): Promise<void> {
-    await this.storageLogsService.deleteStorageLog(id)
+    const isAdmin = req.user.roles?.includes("admin") || false
+    await this.storageLogsService.deleteStorageLog(id, {
+      allowNegativeQuantities: isAdmin
+    })
     void this.systemLogsService.createSystemLog(
       {
         type: "storagelogs",
