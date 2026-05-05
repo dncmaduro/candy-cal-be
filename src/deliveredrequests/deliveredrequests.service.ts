@@ -6,6 +6,7 @@ import {
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import { DeliveredRequest } from "../database/mongoose/schemas/DeliveredRequest"
+import { StorageItem } from "../database/mongoose/schemas/StorageItem"
 import { DeliveredRequestDto } from "./dto/deliveredrequests.dto"
 import { startOfDay, endOfDay } from "date-fns"
 import { StorageLogsService } from "../storagelogs/storagelogs.service"
@@ -17,6 +18,8 @@ export class DeliveredRequestsService {
   constructor(
     @InjectModel("deliveredrequests")
     private readonly deliveredRequestModel: Model<DeliveredRequest>,
+    @InjectModel("storageitems")
+    private readonly storageItemModel: Model<StorageItem>,
     private readonly storageLogsService: StorageLogsService,
     private readonly notificationsService: NotificationsService
   ) {}
@@ -103,6 +106,36 @@ export class DeliveredRequestsService {
         .populate("channel")
       if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
       if (req.accepted) throw new BadRequestException("Đã được chấp nhận rồi")
+
+      const requestedByItemId = new Map<string, number>()
+      for (const reqItem of req.items) {
+        const itemId = reqItem._id.toString()
+        requestedByItemId.set(
+          itemId,
+          (requestedByItemId.get(itemId) || 0) + reqItem.quantity
+        )
+      }
+
+      const itemIds = Array.from(requestedByItemId.keys())
+      const storageItems = await this.storageItemModel.find({
+        _id: { $in: itemIds }
+      })
+      const storageItemById = new Map(
+        storageItems.map((item) => [item._id.toString(), item])
+      )
+
+      for (const [itemId, requestedQuantity] of requestedByItemId.entries()) {
+        const item = storageItemById.get(itemId)
+        if (!item) {
+          throw new BadRequestException(`Không tìm thấy mặt hàng ${itemId}`)
+        }
+        const nextRestQuantity = item.restQuantity.quantity - requestedQuantity
+        if (nextRestQuantity < 0) {
+          throw new BadRequestException(
+            `Không thể duyệt yêu cầu vì sẽ làm số lượng kho bị âm cho mặt hàng ${item.name}. Vui lòng kiểm tra lại số lượng kho hoặc lịch sử nhập/xuất kho.`
+          )
+        }
+      }
 
       req.accepted = true
       req.updatedAt = new Date()
@@ -220,14 +253,18 @@ export class DeliveredRequestsService {
       if (!req) throw new BadRequestException("Không tìm thấy yêu cầu")
       if (!req.accepted) throw new BadRequestException("Chưa được chấp nhận")
 
+      // Undo all storage logs related to this request
+      await this.storageLogsService.deleteStorageLogsCreatedByDeliveredRequest(
+        requestId,
+        {
+          allowNegativeQuantities: false,
+          precheckNegative: true
+        }
+      )
+
       req.accepted = false
       req.updatedAt = new Date()
       await req.save()
-
-      // Undo all storage logs related to this request
-      await this.storageLogsService.deleteStorageLogsCreatedByDeliveredRequest(
-        requestId
-      )
 
       return req
     } catch (error) {

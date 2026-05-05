@@ -39,6 +39,108 @@ export class StorageLogsService {
     return []
   }
 
+  private getQuantitiesAfterDeletingLog(
+    receivedQuantity: number,
+    deliveredQuantity: number,
+    status: string,
+    quantity: number
+  ): {
+    receivedQuantity: number
+    deliveredQuantity: number
+    restQuantity: number
+  } {
+    let nextReceivedQuantity = receivedQuantity
+    let nextDeliveredQuantity = deliveredQuantity
+
+    if (status === "received") {
+      nextReceivedQuantity -= quantity
+    } else if (status === "delivered") {
+      nextDeliveredQuantity -= quantity
+    } else if (status === "returned") {
+      nextDeliveredQuantity += quantity
+    }
+
+    return {
+      receivedQuantity: nextReceivedQuantity,
+      deliveredQuantity: nextDeliveredQuantity,
+      restQuantity: nextReceivedQuantity - nextDeliveredQuantity
+    }
+  }
+
+  private buildNegativeDeletionErrorMessage(itemName: string): string {
+    return `Không thể thực hiện thao tác vì sẽ làm số lượng kho bị âm cho mặt hàng ${itemName}. Vui lòng kiểm tra lại lịch sử nhập/xuất kho liên quan trước khi tiếp tục.`
+  }
+
+  private assertNonNegativeQuantities(
+    itemName: string,
+    receivedQuantity: number,
+    deliveredQuantity: number,
+    restQuantity: number
+  ): void {
+    if (
+      receivedQuantity < 0 ||
+      deliveredQuantity < 0 ||
+      restQuantity < 0
+    ) {
+      throw new BadRequestException(
+        this.buildNegativeDeletionErrorMessage(itemName)
+      )
+    }
+  }
+
+  async validateCanDeleteStorageLogsCreatedByDeliveredRequest(
+    deliveredRequestId: string
+  ): Promise<void> {
+    const logs = await this.storageLogsModel.find({
+      deliveredRequestId
+    })
+
+    if (logs.length === 0) return
+
+    const itemStateMap = new Map<
+      string,
+      { name: string; receivedQuantity: number; deliveredQuantity: number }
+    >()
+
+    for (const log of logs) {
+      const logItems = this.getItemsFromLog(log)
+      for (const logItem of logItems) {
+        const itemId = logItem._id
+        let state = itemStateMap.get(itemId)
+
+        if (!state) {
+          const item = await this.storageItemModel.findById(itemId)
+          if (!item) {
+            throw new BadRequestException(`Không tìm thấy mặt hàng ${itemId}`)
+          }
+          state = {
+            name: item.name,
+            receivedQuantity: item.receivedQuantity.quantity,
+            deliveredQuantity: item.deliveredQuantity.quantity
+          }
+          itemStateMap.set(itemId, state)
+        }
+
+        const next = this.getQuantitiesAfterDeletingLog(
+          state.receivedQuantity,
+          state.deliveredQuantity,
+          log.status,
+          logItem.quantity
+        )
+
+        this.assertNonNegativeQuantities(
+          state.name,
+          next.receivedQuantity,
+          next.deliveredQuantity,
+          next.restQuantity
+        )
+
+        state.receivedQuantity = next.receivedQuantity
+        state.deliveredQuantity = next.deliveredQuantity
+      }
+    }
+  }
+
   async getDeliveredQuantitySumByDateRange(
     startDate: Date,
     endDate: Date
@@ -480,62 +582,83 @@ export class StorageLogsService {
     }
   }
 
-  async deleteStorageLog(id: string): Promise<void> {
+  async deleteStorageLog(
+    id: string,
+    options?: { allowNegativeQuantities?: boolean }
+  ): Promise<void> {
     try {
       const log = await this.storageLogsModel.findById(id)
-      if (!log) throw new Error("Storage log not found")
+      if (!log) throw new BadRequestException("Không tìm thấy log kho")
 
       const items = this.getItemsFromLog(log)
+      const allowNegativeQuantities = options?.allowNegativeQuantities === true
 
       // Revert quantities for all items in the log
       for (const logItem of items) {
         const item = await this.storageItemModel.findById(logItem._id)
-        if (!item) throw new Error(`Item with id ${logItem._id} not found`)
-
-        if (log.status === "received") {
-          item.receivedQuantity.quantity -= logItem.quantity
-        } else if (log.status === "delivered") {
-          item.deliveredQuantity.quantity -= logItem.quantity
-        } else if (log.status === "returned") {
-          item.deliveredQuantity.quantity += logItem.quantity
-        }
-
-        item.restQuantity.quantity =
-          item.receivedQuantity.quantity - item.deliveredQuantity.quantity
-
-        if (
-          item.receivedQuantity.quantity < 0 ||
-          item.deliveredQuantity.quantity < 0 ||
-          item.restQuantity.quantity < 0
-        ) {
-          throw new Error(
-            `Item ${item.name} quantity cannot be negative after deletion`
+        if (!item) {
+          throw new BadRequestException(
+            `Không tìm thấy mặt hàng ${logItem._id}`
           )
         }
 
+        const next = this.getQuantitiesAfterDeletingLog(
+          item.receivedQuantity.quantity,
+          item.deliveredQuantity.quantity,
+          log.status,
+          logItem.quantity
+        )
+
+        if (!allowNegativeQuantities) {
+          this.assertNonNegativeQuantities(
+            item.name,
+            next.receivedQuantity,
+            next.deliveredQuantity,
+            next.restQuantity
+          )
+        }
+
+        item.receivedQuantity.quantity = next.receivedQuantity
+        item.deliveredQuantity.quantity = next.deliveredQuantity
+        item.restQuantity.quantity = next.restQuantity
         await item.save()
       }
 
       await this.storageLogsModel.findByIdAndDelete(id)
     } catch (error) {
       console.error(error)
+      if (error instanceof BadRequestException) throw error
       throw new Error("Internal server error")
     }
   }
 
-  async deleteStorageLogsCreatedByDeliveredRequest(deliveredRequestId: string) {
+  async deleteStorageLogsCreatedByDeliveredRequest(
+    deliveredRequestId: string,
+    options?: { allowNegativeQuantities?: boolean; precheckNegative?: boolean }
+  ) {
     try {
       const logs = await this.storageLogsModel.find({
         deliveredRequestId
       })
 
       if (logs.length === 0) return
+      const allowNegativeQuantities = options?.allowNegativeQuantities === true
+      const precheckNegative = options?.precheckNegative !== false
 
-      logs.forEach(async (log) => {
-        await this.deleteStorageLog(log._id.toString())
-      })
+      if (!allowNegativeQuantities && precheckNegative) {
+        await this.validateCanDeleteStorageLogsCreatedByDeliveredRequest(
+          deliveredRequestId
+        )
+      }
+
+      for (const log of logs) {
+        await this.deleteStorageLog(log._id.toString(), {
+          allowNegativeQuantities
+        })
+      }
     } catch (error) {
       console.error(error)
+      if (error instanceof BadRequestException) throw error
       throw new Error("Internal server error")
     }
   }
