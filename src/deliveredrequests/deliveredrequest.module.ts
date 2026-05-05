@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common"
 import { MongooseModule } from "@nestjs/mongoose"
 import { DeliveredRequestSchema } from "../database/mongoose/schemas/DeliveredRequest"
+import { StorageItemSchema } from "../database/mongoose/schemas/StorageItem"
 import { StorageLogsModule } from "../storagelogs/storagelogs.module"
 import { DeliveredRequestsController } from "./deliveredrequest.controller"
 import { DeliveredRequestsService } from "./deliveredrequests.service"
@@ -10,7 +11,8 @@ import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: "deliveredrequests", schema: DeliveredRequestSchema }
+      { name: "deliveredrequests", schema: DeliveredRequestSchema },
+      { name: "storageitems", schema: StorageItemSchema }
     ]),
     StorageLogsModule,
     NotificationsModule,
