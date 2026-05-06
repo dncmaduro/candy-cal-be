@@ -288,12 +288,16 @@ export class SalesOrdersController {
     @Query("shippingType") shippingType?: SalesOrderShippingType,
     @Query("status") status?: SalesOrderStatus,
     @Query("page") page = 1,
-    @Query("limit") limit = 10
+    @Query("limit") limit = 10,
+    @Req() req: any = undefined
   ): Promise<{ data: SalesOrder[]; total: number }> {
+    const isSalesEmp = req?.user?.roles?.includes("sales-emp") || false
+    const effectiveUserId = isSalesEmp ? undefined : userId
+
     return this.salesOrdersService.searchOrders(
       {
         salesFunnelId,
-        userId,
+        userId: effectiveUserId,
         channelId,
         returning:
           returning === "true"
