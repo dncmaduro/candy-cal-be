@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
+import { HttpException, HttpStatus, Injectable, Logger } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import * as XLSX from "xlsx"
@@ -28,8 +28,22 @@ interface XlsxSalesOrderData {
   "Loại vận chuyển"?: string
 }
 
+const ENABLE_SALES_ORDER_PERF_LOG = process.env.SALES_ORDER_PERF_LOG === "true"
+
+type SalesOrderPerfSession = {
+  method: string
+  startedAt: bigint
+  meta?: Record<string, unknown>
+  steps: Array<{
+    step: string
+    durationMs: number
+  }>
+}
+
 @Injectable()
 export class SalesOrdersService {
+  private readonly logger = new Logger(SalesOrdersService.name)
+
   constructor(
     @InjectModel("salesorders")
     private readonly salesOrderModel: Model<SalesOrder>,
@@ -41,6 +55,89 @@ export class SalesOrdersService {
     private readonly provinceModel: Model<Province>
   ) {}
 
+  private startPerfSession(
+    method: string,
+    meta?: Record<string, unknown>
+  ): SalesOrderPerfSession | null {
+    if (!ENABLE_SALES_ORDER_PERF_LOG) {
+      return null
+    }
+
+    return {
+      method,
+      startedAt: process.hrtime.bigint(),
+      meta,
+      steps: []
+    }
+  }
+
+  private async measurePerfStep<T>(
+    perf: SalesOrderPerfSession | null,
+    step: string,
+    operation: () => Promise<T> | T
+  ): Promise<T> {
+    const startedAt = process.hrtime.bigint()
+
+    try {
+      return await operation()
+    } finally {
+      if (perf) {
+        perf.steps.push({
+          step,
+          durationMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000
+        })
+      }
+    }
+  }
+
+  private finishPerfSession(
+    perf: SalesOrderPerfSession | null,
+    extra?: Record<string, unknown>
+  ): void {
+    if (!perf) {
+      return
+    }
+
+    const totalMs = Number(process.hrtime.bigint() - perf.startedAt) / 1_000_000
+
+    this.logger.log(
+      JSON.stringify({
+        tag: "sales-order-perf",
+        method: perf.method,
+        totalMs,
+        meta: {
+          ...perf.meta,
+          ...extra
+        },
+        steps: perf.steps
+      })
+    )
+  }
+
+  private buildFilterPerfMeta(filters: {
+    salesFunnelId?: string
+    userId?: string
+    channelId?: string
+    returning?: boolean
+    startDate?: Date
+    endDate?: Date
+    searchText?: string
+    shippingType?: SalesOrderShippingType
+    status?: SalesOrderStatus
+  }): Record<string, unknown> {
+    return {
+      hasSalesFunnelId: Boolean(filters.salesFunnelId),
+      hasUserId: Boolean(filters.userId),
+      hasChannelId: Boolean(filters.channelId),
+      returning: filters.returning,
+      hasStartDate: Boolean(filters.startDate),
+      hasEndDate: Boolean(filters.endDate),
+      hasSearchText: Boolean(filters.searchText?.trim()),
+      shippingType: filters.shippingType,
+      status: filters.status
+    }
+  }
+
   async createOrder(payload: {
     salesFunnelId: string
     items: { code: string; quantity: number; note?: string }[]
@@ -51,64 +148,88 @@ export class SalesOrdersService {
     deposit?: number
     note?: string
   }): Promise<SalesOrder> {
+    const perf = this.startPerfSession("createOrder", {
+      salesFunnelId: payload.salesFunnelId,
+      itemCount: payload.items.length
+    })
+
     try {
       // Get sales funnel with channel populated
-      const funnel = await this.salesFunnelModel
-        .findById(payload.salesFunnelId)
-        .populate("channel")
-        .exec()
+      const funnel = await this.measurePerfStep(
+        perf,
+        "salesFunnel.findById.populate(channel)",
+        () =>
+          this.salesFunnelModel
+            .findById(payload.salesFunnelId)
+            .populate("channel")
+            .exec()
+      )
       if (!funnel) {
         throw new HttpException("Sales funnel not found", HttpStatus.NOT_FOUND)
       }
 
       // Get phone number from channel
-      const thisFunnel = await this.salesFunnelModel
-        .findById(payload.salesFunnelId)
-        .populate("channel")
-        .lean()
+      const thisFunnel = await this.measurePerfStep(
+        perf,
+        "salesFunnel.findById.populate(channel).lean",
+        () =>
+          this.salesFunnelModel
+            .findById(payload.salesFunnelId)
+            .populate("channel")
+            .lean()
+      )
       const phoneNumber = (thisFunnel?.channel as any)?.phoneNumber || undefined
 
       // Get funnel address and province
       const address = funnel.address || undefined
       const province = funnel.province
-        ? await this.provinceModel.findById(funnel.province).lean()
+        ? await this.measurePerfStep(perf, "province.findById", () =>
+            this.provinceModel.findById(funnel.province).lean()
+          )
         : null
 
       // Determine returning based on hasBuyed
       const returning = funnel.hasBuyed
 
       // Build sales items with all details from SalesItem
-      const itemsWithDetails = await Promise.all(
-        payload.items.map(async (item) => {
-          // Get sales item for all details
-          const salesItem = await this.salesItemModel
-            .findOne({ code: item.code })
-            .lean()
-          if (!salesItem) {
-            throw new HttpException(
-              `Sales item with code ${item.code} not found`,
-              HttpStatus.NOT_FOUND
-            )
-          }
+      const itemsWithDetails = await this.measurePerfStep(
+        perf,
+        "salesItem.findOne.map(items)",
+        () =>
+          Promise.all(
+            payload.items.map(async (item) => {
+              // Get sales item for all details
+              const salesItem = await this.salesItemModel
+                .findOne({ code: item.code })
+                .lean()
+              if (!salesItem) {
+                throw new HttpException(
+                  `Sales item with code ${item.code} not found`,
+                  HttpStatus.NOT_FOUND
+                )
+              }
 
-          return {
-            code: item.code,
-            name: salesItem.name.vn, // Use Vietnamese name
-            price: salesItem.price,
-            quantity: item.quantity,
-            area: salesItem.area,
-            mass: salesItem.mass,
-            specification: salesItem.specification?.toString(),
-            size: salesItem.size,
-            note: item.note
-          }
-        })
+              return {
+                code: item.code,
+                name: salesItem.name.vn, // Use Vietnamese name
+                price: salesItem.price,
+                quantity: item.quantity,
+                area: salesItem.area,
+                mass: salesItem.mass,
+                specification: salesItem.specification?.toString(),
+                size: salesItem.size,
+                note: item.note
+              }
+            })
+          )
       )
 
       // Calculate total
-      const total = itemsWithDetails.reduce(
-        (sum, item) => sum + item.price * item.quantity,
-        0
+      const total = await this.measurePerfStep(perf, "calculateTotal", () =>
+        itemsWithDetails.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0
+        )
       )
 
       // Create order
@@ -129,15 +250,29 @@ export class SalesOrdersService {
           : undefined
       })
 
-      const saved = await order.save()
+      const saved = await this.measurePerfStep(perf, "salesOrder.save", () =>
+        order.save()
+      )
 
       // Update hasBuyed to true if it was false
       if (!funnel.hasBuyed) {
-        await this.markFunnelAsBuyed(payload.salesFunnelId)
+        await this.measurePerfStep(perf, "markFunnelAsBuyed", () =>
+          this.markFunnelAsBuyed(payload.salesFunnelId)
+        )
       }
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        returning,
+        total
+      })
 
       return saved
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       if (error instanceof HttpException) throw error
       console.error(error)
       throw new HttpException(
@@ -520,66 +655,90 @@ export class SalesOrdersService {
     otherDiscount?: number,
     deposit?: number
   ): Promise<SalesOrder> {
+    const perf = this.startPerfSession("updateOrderItems", {
+      orderId,
+      itemCount: items.length
+    })
+
     try {
-      const order = await this.salesOrderModel
-        .findById(orderId)
-        .populate({
-          path: "salesFunnelId",
-          populate: {
-            path: "channel",
-            model: "saleschannels"
-          }
-        })
-        .exec()
+      const order = await this.measurePerfStep(
+        perf,
+        "salesOrder.findById.populate(funnel.channel)",
+        () =>
+          this.salesOrderModel
+            .findById(orderId)
+            .populate({
+              path: "salesFunnelId",
+              populate: {
+                path: "channel",
+                model: "saleschannels"
+              }
+            })
+            .exec()
+      )
       if (!order) {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
 
       // Get phone number from channel
-      const funnel = await this.salesFunnelModel
-        .findById(order.salesFunnelId)
-        .populate("channel")
-        .lean()
+      const funnel = await this.measurePerfStep(
+        perf,
+        "salesFunnel.findById.populate(channel)",
+        () =>
+          this.salesFunnelModel
+            .findById(order.salesFunnelId)
+            .populate("channel")
+            .lean()
+      )
       const phoneNumber =
         (funnel?.channel as any)?.phoneNumber || order.phoneNumber || undefined
 
       // Get address and province from funnel
       const address = funnel?.address || order.address || undefined
       const province = funnel?.province
-        ? await this.provinceModel.findById(funnel.province).lean()
+        ? await this.measurePerfStep(perf, "province.findById", () =>
+            this.provinceModel.findById(funnel.province).lean()
+          )
         : null
 
       // Build sales items with all details from SalesItem
-      const itemsWithDetails = await Promise.all(
-        items.map(async (item) => {
-          const salesItem = await this.salesItemModel
-            .findOne({ code: item.code })
-            .lean()
-          if (!salesItem) {
-            throw new HttpException(
-              `Sales item with code ${item.code} not found`,
-              HttpStatus.NOT_FOUND
-            )
-          }
+      const itemsWithDetails = await this.measurePerfStep(
+        perf,
+        "salesItem.findOne.map(items)",
+        () =>
+          Promise.all(
+            items.map(async (item) => {
+              const salesItem = await this.salesItemModel
+                .findOne({ code: item.code })
+                .lean()
+              if (!salesItem) {
+                throw new HttpException(
+                  `Sales item with code ${item.code} not found`,
+                  HttpStatus.NOT_FOUND
+                )
+              }
 
-          return {
-            code: item.code,
-            name: salesItem.name.vn, // Use Vietnamese name
-            price: salesItem.price,
-            quantity: item.quantity,
-            area: salesItem.area,
-            mass: salesItem.mass,
-            specification: salesItem.specification?.toString(),
-            size: salesItem.size,
-            note: item.note
-          }
-        })
+              return {
+                code: item.code,
+                name: salesItem.name.vn, // Use Vietnamese name
+                price: salesItem.price,
+                quantity: item.quantity,
+                area: salesItem.area,
+                mass: salesItem.mass,
+                specification: salesItem.specification?.toString(),
+                size: salesItem.size,
+                note: item.note
+              }
+            })
+          )
       )
 
       // Recalculate total based on item price * quantity
-      const total = itemsWithDetails.reduce(
-        (sum, item) => sum + item.price * item.quantity,
-        0
+      const total = await this.measurePerfStep(perf, "calculateTotal", () =>
+        itemsWithDetails.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0
+        )
       )
 
       order.items = itemsWithDetails
@@ -603,8 +762,21 @@ export class SalesOrdersService {
       }
       order.updatedAt = new Date()
 
-      return await order.save()
+      const saved = await this.measurePerfStep(perf, "salesOrder.save", () =>
+        order.save()
+      )
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        total
+      })
+
+      return saved
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       if (error instanceof HttpException) throw error
       console.error(error)
       throw new HttpException(
@@ -723,9 +895,21 @@ export class SalesOrdersService {
     total: number
     daysSinceLastPurchase: number | null
   }> {
+    const perf = this.startPerfSession("getOrdersByFunnel", {
+      funnelId,
+      userId,
+      isAdmin,
+      page,
+      limit
+    })
+
     try {
       // Check if funnel exists and get ownership
-      const funnel = await this.salesFunnelModel.findById(funnelId).lean()
+      const funnel = await this.measurePerfStep(
+        perf,
+        "salesFunnel.findById",
+        () => this.salesFunnelModel.findById(funnelId).lean()
+      )
       if (!funnel) {
         throw new HttpException("Funnel not found", HttpStatus.NOT_FOUND)
       }
@@ -744,10 +928,11 @@ export class SalesOrdersService {
       const filter = { salesFunnelId: new Types.ObjectId(funnelId) }
 
       // Get the most recent order to calculate days since last purchase
-      const lastOrder = await this.salesOrderModel
-        .findOne(filter)
-        .sort({ date: -1 })
-        .lean()
+      const lastOrder = await this.measurePerfStep(
+        perf,
+        "salesOrder.findOne(lastOrder)",
+        () => this.salesOrderModel.findOne(filter).sort({ date: -1 }).lean()
+      )
 
       let daysSinceLastPurchase: number | null = null
       if (lastOrder && lastOrder.date) {
@@ -757,49 +942,70 @@ export class SalesOrdersService {
         daysSinceLastPurchase = Math.floor(diffTime / (1000 * 60 * 60 * 24))
       }
 
-      const [orders, total] = await Promise.all([
-        this.salesOrderModel
-          .find(filter)
-          .populate({
-            path: "salesFunnelId",
-            populate: [
-              { path: "channel", model: "saleschannels" },
-              { path: "user", model: "users", select: "name email role" },
-              { path: "province", model: "provinces" }
-            ]
-          })
-          .sort({ createdAt: -1 })
-          .skip((safePage - 1) * safeLimit)
-          .limit(safeLimit)
-          .lean(),
-        this.salesOrderModel.countDocuments(filter)
-      ])
+      const [orders, total] = await this.measurePerfStep(
+        perf,
+        "salesOrder.find.populate + countDocuments",
+        () =>
+          Promise.all([
+            this.salesOrderModel
+              .find(filter)
+              .populate({
+                path: "salesFunnelId",
+                populate: [
+                  { path: "channel", model: "saleschannels" },
+                  { path: "user", model: "users", select: "name email role" },
+                  { path: "province", model: "provinces" }
+                ]
+              })
+              .sort({ createdAt: -1 })
+              .skip((safePage - 1) * safeLimit)
+              .limit(safeLimit)
+              .lean(),
+            this.salesOrderModel.countDocuments(filter)
+          ])
+      )
 
       // Enrich items with factory and source information
-      const enrichedOrders = await Promise.all(
-        orders.map(async (order) => {
-          const enrichedItems = await Promise.all(
-            order.items.map(async (item: any) => {
-              const salesItem = await this.salesItemModel
-                .findOne({ code: item.code })
-                .lean()
+      const enrichedOrders = await this.measurePerfStep(
+        perf,
+        "salesItem.findOne.enrich(orderItems)",
+        () =>
+          Promise.all(
+            orders.map(async (order) => {
+              const enrichedItems = await Promise.all(
+                order.items.map(async (item: any) => {
+                  const salesItem = await this.salesItemModel
+                    .findOne({ code: item.code })
+                    .lean()
+
+                  return {
+                    ...item,
+                    factory: salesItem?.factory,
+                    source: salesItem?.source,
+                    massPerBox: item.massPerBox,
+                    areaPerBox: item.areaPerBox
+                  }
+                })
+              )
 
               return {
-                ...item,
-                factory: salesItem?.factory,
-                source: salesItem?.source,
-                massPerBox: item.massPerBox,
-                areaPerBox: item.areaPerBox
+                ...order,
+                items: enrichedItems
               }
             })
           )
-
-          return {
-            ...order,
-            items: enrichedItems
-          }
-        })
       )
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        total,
+        orderCount: orders.length,
+        itemLookupCount: orders.reduce(
+          (sum, order) => sum + (order.items?.length || 0),
+          0
+        ),
+        daysSinceLastPurchase
+      })
 
       return {
         data: enrichedOrders as SalesOrder[],
@@ -807,6 +1013,10 @@ export class SalesOrdersService {
         daysSinceLastPurchase
       }
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       if (error instanceof HttpException) throw error
       console.error(error)
       throw new HttpException(
@@ -831,45 +1041,66 @@ export class SalesOrdersService {
     page = 1,
     limit = 10
   ): Promise<{ data: SalesOrder[]; total: number }> {
+    const perf = this.startPerfSession("searchOrders", {
+      ...this.buildFilterPerfMeta(filters),
+      page,
+      limit
+    })
+
     try {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
 
       const filter: any = {}
-      if (filters.salesFunnelId)
-        filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
-      if (filters.returning !== undefined) filter.returning = filters.returning
-      if (filters.shippingType) filter.shippingType = filters.shippingType
-      if (filters.status) filter.status = filters.status
+      await this.measurePerfStep(perf, "buildBaseFilter", () => {
+        if (filters.salesFunnelId)
+          filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
+        if (filters.returning !== undefined)
+          filter.returning = filters.returning
+        if (filters.shippingType) filter.shippingType = filters.shippingType
+        if (filters.status) filter.status = filters.status
+      })
 
       // Filter by channel (funnel channel)
       if (filters.channelId) {
-        const funnelIds = await this.salesFunnelModel
-          .find({ channel: new Types.ObjectId(filters.channelId) })
-          .distinct("_id")
+        const funnelIds = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctByChannel",
+          () =>
+            this.salesFunnelModel
+              .find({ channel: new Types.ObjectId(filters.channelId) })
+              .distinct("_id")
+        )
         filter.salesFunnelId = { $in: funnelIds }
       }
 
       // Filter by user (funnel responsible)
       if (filters.userId) {
-        const funnelIds = await this.salesFunnelModel
-          .find({ user: new Types.ObjectId(filters.userId) })
-          .distinct("_id")
+        const funnelIds = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctByUser",
+          () =>
+            this.salesFunnelModel
+              .find({ user: new Types.ObjectId(filters.userId) })
+              .distinct("_id")
+        )
         filter.salesFunnelId = { $in: funnelIds }
       }
 
       if (filters.startDate || filters.endDate) {
-        filter.date = {}
-        if (filters.startDate) {
-          const startDate = new Date(filters.startDate)
-          startDate.setUTCHours(startDate.getUTCHours() - 7)
-          filter.date.$gte = startDate
-        }
-        if (filters.endDate) {
-          const endDate = new Date(filters.endDate)
-          endDate.setUTCHours(endDate.getUTCHours() - 7)
-          filter.date.$lte = endDate
-        }
+        await this.measurePerfStep(perf, "applyDateFilter", () => {
+          filter.date = {}
+          if (filters.startDate) {
+            const startDate = new Date(filters.startDate)
+            startDate.setUTCHours(startDate.getUTCHours() - 7)
+            filter.date.$gte = startDate
+          }
+          if (filters.endDate) {
+            const endDate = new Date(filters.endDate)
+            endDate.setUTCHours(endDate.getUTCHours() - 7)
+            filter.date.$lte = endDate
+          }
+        })
       }
 
       // Handle search text - search by funnel name, phone number, shipping code, item code, item name
@@ -877,80 +1108,113 @@ export class SalesOrdersService {
         const searchText = filters.searchText.trim()
 
         // First, find funnels matching name or phone number
-        const matchingFunnels = await this.salesFunnelModel
-          .find({
-            $or: [
-              { name: { $regex: `.*${searchText}.*`, $options: "i" } },
-              { phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" } },
-              {
-                secondaryPhoneNumbers: {
-                  $regex: `.*${searchText}.*`,
-                  $options: "i"
-                }
-              }
-            ]
-          })
-          .distinct("_id")
+        const matchingFunnels = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctBySearchText",
+          () =>
+            this.salesFunnelModel
+              .find({
+                $or: [
+                  { name: { $regex: `.*${searchText}.*`, $options: "i" } },
+                  {
+                    phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" }
+                  },
+                  {
+                    secondaryPhoneNumbers: {
+                      $regex: `.*${searchText}.*`,
+                      $options: "i"
+                    }
+                  }
+                ]
+              })
+              .distinct("_id")
+        )
 
         const searchRegex = {
           $regex: `.*${searchText}.*`,
           $options: "i"
         }
 
-        filter.$or = [
-          { shippingCode: searchRegex },
-          { "items.code": searchRegex },
-          { "items.name": searchRegex },
-          { salesFunnelId: { $in: matchingFunnels } }
-        ]
+        await this.measurePerfStep(perf, "applySearchTextFilter", () => {
+          filter.$or = [
+            { shippingCode: searchRegex },
+            { "items.code": searchRegex },
+            { "items.name": searchRegex },
+            { salesFunnelId: { $in: matchingFunnels } }
+          ]
+        })
       }
 
-      const [orders, total] = await Promise.all([
-        this.salesOrderModel
-          .find(filter)
-          .populate({
-            path: "salesFunnelId",
-            populate: [
-              { path: "channel", model: "saleschannels" },
-              { path: "user", model: "users", select: "name email role" },
-              { path: "province", model: "provinces" }
-            ]
-          })
-          .sort({ createdAt: -1 })
-          .skip((safePage - 1) * safeLimit)
-          .limit(safeLimit)
-          .lean(),
-        this.salesOrderModel.countDocuments(filter)
-      ])
+      const [orders, total] = await this.measurePerfStep(
+        perf,
+        "salesOrder.find.populate + countDocuments",
+        () =>
+          Promise.all([
+            this.salesOrderModel
+              .find(filter)
+              .populate({
+                path: "salesFunnelId",
+                populate: [
+                  { path: "channel", model: "saleschannels" },
+                  { path: "user", model: "users", select: "name email role" },
+                  { path: "province", model: "provinces" }
+                ]
+              })
+              .sort({ createdAt: -1 })
+              .skip((safePage - 1) * safeLimit)
+              .limit(safeLimit)
+              .lean(),
+            this.salesOrderModel.countDocuments(filter)
+          ])
+      )
 
       // Enrich items with factory and source information
-      const enrichedOrders = await Promise.all(
-        orders.map(async (order) => {
-          const enrichedItems = await Promise.all(
-            order.items.map(async (item: any) => {
-              const salesItem = await this.salesItemModel
-                .findOne({ code: item.code })
-                .lean()
+      const enrichedOrders = await this.measurePerfStep(
+        perf,
+        "salesItem.findOne.enrich(orderItems)",
+        () =>
+          Promise.all(
+            orders.map(async (order) => {
+              const enrichedItems = await Promise.all(
+                order.items.map(async (item: any) => {
+                  const salesItem = await this.salesItemModel
+                    .findOne({ code: item.code })
+                    .lean()
+
+                  return {
+                    ...item,
+                    factory: salesItem?.factory,
+                    source: salesItem?.source,
+                    massPerBox: item.massPerBox,
+                    areaPerBox: item.areaPerBox
+                  }
+                })
+              )
 
               return {
-                ...item,
-                factory: salesItem?.factory,
-                source: salesItem?.source,
-                massPerBox: item.massPerBox,
-                areaPerBox: item.areaPerBox
+                ...order,
+                items: enrichedItems
               }
             })
           )
-
-          return {
-            ...order,
-            items: enrichedItems
-          }
-        })
       )
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        total,
+        orderCount: orders.length,
+        itemLookupCount: orders.reduce(
+          (sum, order) => sum + (order.items?.length || 0),
+          0
+        )
+      })
 
       return { data: enrichedOrders as SalesOrder[], total }
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       console.error(error)
       throw new HttpException(
         "Lỗi khi tìm kiếm đơn hàng",
@@ -960,45 +1224,98 @@ export class SalesOrdersService {
   }
 
   async getOrderById(orderId: string): Promise<SalesOrder | null> {
+    const perf = this.startPerfSession("getOrderById", { orderId })
+
     try {
-      const order = await this.salesOrderModel
-        .findById(orderId)
-        .populate({
-          path: "salesFunnelId",
-          populate: [
-            { path: "channel", model: "saleschannels" },
-            { path: "user", model: "users", select: "name email role" },
-            { path: "province", model: "provinces" }
-          ]
-        })
-        .lean()
+      const order = await this.measurePerfStep(
+        perf,
+        "salesOrder.findById.populate",
+        () =>
+          this.salesOrderModel
+            .findById(orderId)
+            .populate({
+              path: "salesFunnelId",
+              populate: [
+                { path: "channel", model: "saleschannels" },
+                { path: "user", model: "users", select: "name email role" },
+                { path: "province", model: "provinces" }
+              ]
+            })
+            .lean()
+      )
 
       if (!order) {
+        this.finishPerfSession(perf, {
+          status: "not_found"
+        })
         return null
       }
 
-      // Enrich items with factory and source information
-      const enrichedItems = await Promise.all(
-        order.items.map(async (item: any) => {
-          const salesItem = await this.salesItemModel
-            .findOne({ code: item.code })
-            .lean()
-
-          return {
-            ...item,
-            factory: salesItem?.factory,
-            source: salesItem?.source,
-            massPerBox: item.massPerBox,
-            areaPerBox: item.areaPerBox
-          }
-        })
+      const itemCodes = await this.measurePerfStep(
+        perf,
+        "collectItemCodes",
+        () => [
+          ...new Set(order.items.map((item: any) => item.code).filter(Boolean))
+        ]
       )
 
-      return {
+      const salesItems = itemCodes.length
+        ? await this.measurePerfStep(perf, "salesItem.findByCodes", () =>
+            this.salesItemModel
+              .find({ code: { $in: itemCodes } })
+              .select("code factory source")
+              .lean()
+          )
+        : []
+
+      const salesItemByCode = await this.measurePerfStep(
+        perf,
+        "buildSalesItemMap",
+        () =>
+          new Map(
+            salesItems
+              .filter((salesItem: any) => salesItem.code)
+              .map((salesItem: any) => [salesItem.code, salesItem])
+          )
+      )
+
+      // Avoid N+1 lookups when enriching order items.
+      const enrichedItems = await this.measurePerfStep(
+        perf,
+        "enrichOrderItems",
+        () =>
+          order.items.map((item: any) => {
+            const salesItem = item.code
+              ? salesItemByCode.get(item.code)
+              : undefined
+
+            return {
+              ...item,
+              factory: salesItem?.factory,
+              source: salesItem?.source,
+              massPerBox: item.massPerBox,
+              areaPerBox: item.areaPerBox
+            }
+          })
+      )
+
+      const result = {
         ...order,
         items: enrichedItems
       } as SalesOrder
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        itemCodeCount: itemCodes.length,
+        orderItemCount: order.items.length
+      })
+
+      return result
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       console.error(error)
       throw new HttpException(
         "Lỗi khi lấy thông tin đơn hàng",
@@ -2001,6 +2318,10 @@ export class SalesOrdersService {
   // }
 
   async exportOrdersToExcelByOrderIds(orderIds: string[]): Promise<Buffer> {
+    const perf = this.startPerfSession("exportOrdersToExcelByOrderIds", {
+      requestedOrderIds: Array.isArray(orderIds) ? orderIds.length : 0
+    })
+
     try {
       if (!Array.isArray(orderIds) || orderIds.length === 0) {
         throw new HttpException("orderIds is required", HttpStatus.BAD_REQUEST)
@@ -2018,26 +2339,47 @@ export class SalesOrdersService {
         )
       }
 
-      const orders = await this.salesOrderModel
-        .find({ _id: { $in: validObjectIds } })
-        .populate({
-          path: "salesFunnelId",
-          populate: [
-            { path: "channel", model: "saleschannels" },
-            { path: "user", model: "users", select: "name email role" },
-            { path: "province", model: "provinces" }
-          ]
-        })
-        // sort này không ảnh hưởng output cuối vì bạn vẫn sort theo date theo nhóm ở dưới
-        .sort({ createdAt: -1 })
-        .lean()
+      const orders = await this.measurePerfStep(
+        perf,
+        "salesOrder.findByIds.populate",
+        () =>
+          this.salesOrderModel
+            .find({ _id: { $in: validObjectIds } })
+            .populate({
+              path: "salesFunnelId",
+              populate: [
+                { path: "channel", model: "saleschannels" },
+                { path: "user", model: "users", select: "name email role" },
+                { path: "province", model: "provinces" }
+              ]
+            })
+            // sort này không ảnh hưởng output cuối vì bạn vẫn sort theo date theo nhóm ở dưới
+            .sort({ createdAt: -1 })
+            .lean()
+      )
 
       if (!orders || orders.length === 0) {
         throw new HttpException("No orders found", HttpStatus.NOT_FOUND)
       }
 
-      return await this.buildOrdersExcelBuffer(orders)
+      const buffer = await this.measurePerfStep(
+        perf,
+        "buildOrdersExcelBuffer",
+        () => this.buildOrdersExcelBuffer(orders)
+      )
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        validOrderIds: validObjectIds.length,
+        orderCount: orders.length
+      })
+
+      return buffer
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       if (error instanceof HttpException) throw error
       console.error(error)
       throw new HttpException(
@@ -2061,86 +2403,134 @@ export class SalesOrdersService {
     shippingType?: SalesOrderShippingType
     status?: SalesOrderStatus
   }): Promise<Buffer> {
+    const perf = this.startPerfSession("exportOrdersToExcel", {
+      ...this.buildFilterPerfMeta(filters)
+    })
+
     try {
       // --- GIỮ NGUYÊN đoạn build filter + fetch orders như hiện tại của bạn ---
       const filter: any = {}
-      if (filters.salesFunnelId)
-        filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
-      if (filters.returning !== undefined) filter.returning = filters.returning
-      if (filters.shippingType) filter.shippingType = filters.shippingType
-      if (filters.status) filter.status = filters.status
+      await this.measurePerfStep(perf, "buildBaseFilter", () => {
+        if (filters.salesFunnelId)
+          filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
+        if (filters.returning !== undefined)
+          filter.returning = filters.returning
+        if (filters.shippingType) filter.shippingType = filters.shippingType
+        if (filters.status) filter.status = filters.status
+      })
 
       if (filters.channelId) {
-        const funnelIds = await this.salesFunnelModel
-          .find({ channel: new Types.ObjectId(filters.channelId) })
-          .distinct("_id")
+        const funnelIds = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctByChannel",
+          () =>
+            this.salesFunnelModel
+              .find({ channel: new Types.ObjectId(filters.channelId) })
+              .distinct("_id")
+        )
         filter.salesFunnelId = { $in: funnelIds }
       }
 
       if (filters.userId) {
-        const funnelIds = await this.salesFunnelModel
-          .find({ user: new Types.ObjectId(filters.userId) })
-          .distinct("_id")
+        const funnelIds = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctByUser",
+          () =>
+            this.salesFunnelModel
+              .find({ user: new Types.ObjectId(filters.userId) })
+              .distinct("_id")
+        )
         filter.salesFunnelId = { $in: funnelIds }
       }
 
       if (filters.startDate || filters.endDate) {
-        filter.date = {}
-        if (filters.startDate) {
-          const startDate = new Date(filters.startDate)
-          startDate.setUTCHours(startDate.getUTCHours() - 7)
-          filter.date.$gte = startDate
-        }
-        if (filters.endDate) {
-          const endDate = new Date(filters.endDate)
-          endDate.setUTCHours(endDate.getUTCHours() - 7)
-          filter.date.$lte = endDate
-        }
+        await this.measurePerfStep(perf, "applyDateFilter", () => {
+          filter.date = {}
+          if (filters.startDate) {
+            const startDate = new Date(filters.startDate)
+            startDate.setUTCHours(startDate.getUTCHours() - 7)
+            filter.date.$gte = startDate
+          }
+          if (filters.endDate) {
+            const endDate = new Date(filters.endDate)
+            endDate.setUTCHours(endDate.getUTCHours() - 7)
+            filter.date.$lte = endDate
+          }
+        })
       }
 
       if (filters.searchText && filters.searchText.trim().length > 0) {
         const searchText = filters.searchText.trim()
 
-        const matchingFunnels = await this.salesFunnelModel
-          .find({
-            $or: [
-              { name: { $regex: `.*${searchText}.*`, $options: "i" } },
-              { phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" } },
-              {
-                secondaryPhoneNumbers: {
-                  $regex: `.*${searchText}.*`,
-                  $options: "i"
-                }
-              }
-            ]
-          })
-          .distinct("_id")
+        const matchingFunnels = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctBySearchText",
+          () =>
+            this.salesFunnelModel
+              .find({
+                $or: [
+                  { name: { $regex: `.*${searchText}.*`, $options: "i" } },
+                  {
+                    phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" }
+                  },
+                  {
+                    secondaryPhoneNumbers: {
+                      $regex: `.*${searchText}.*`,
+                      $options: "i"
+                    }
+                  }
+                ]
+              })
+              .distinct("_id")
+        )
 
         const searchRegex = { $regex: `.*${searchText}.*`, $options: "i" }
 
-        filter.$or = [
-          { shippingCode: searchRegex },
-          { "items.code": searchRegex },
-          { "items.name": searchRegex },
-          { salesFunnelId: { $in: matchingFunnels } }
-        ]
-      }
-
-      const orders = await this.salesOrderModel
-        .find(filter)
-        .populate({
-          path: "salesFunnelId",
-          populate: [
-            { path: "channel", model: "saleschannels" },
-            { path: "user", model: "users", select: "name email role" },
-            { path: "province", model: "provinces" }
+        await this.measurePerfStep(perf, "applySearchTextFilter", () => {
+          filter.$or = [
+            { shippingCode: searchRegex },
+            { "items.code": searchRegex },
+            { "items.name": searchRegex },
+            { salesFunnelId: { $in: matchingFunnels } }
           ]
         })
-        .sort({ createdAt: -1 })
-        .lean()
+      }
 
-      return await this.buildOrdersExcelBuffer(orders)
+      const orders = await this.measurePerfStep(
+        perf,
+        "salesOrder.find.populate",
+        () =>
+          this.salesOrderModel
+            .find(filter)
+            .populate({
+              path: "salesFunnelId",
+              populate: [
+                { path: "channel", model: "saleschannels" },
+                { path: "user", model: "users", select: "name email role" },
+                { path: "province", model: "provinces" }
+              ]
+            })
+            .sort({ createdAt: -1 })
+            .lean()
+      )
+
+      const buffer = await this.measurePerfStep(
+        perf,
+        "buildOrdersExcelBuffer",
+        () => this.buildOrdersExcelBuffer(orders)
+      )
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        orderCount: orders.length
+      })
+
+      return buffer
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       console.error(error)
       throw new HttpException(
         "Lỗi khi export đơn hàng",
@@ -2992,86 +3382,134 @@ export class SalesOrdersService {
     shippingType?: SalesOrderShippingType
     status?: SalesOrderStatus
   }): Promise<Buffer> {
+    const perf = this.startPerfSession("exportOrdersToExcelForAccounting", {
+      ...this.buildFilterPerfMeta(filters)
+    })
+
     try {
       // Build filter - same as exportOrdersToExcel
       const filter: any = {}
-      if (filters.salesFunnelId)
-        filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
-      if (filters.returning !== undefined) filter.returning = filters.returning
-      if (filters.shippingType) filter.shippingType = filters.shippingType
-      if (filters.status) filter.status = filters.status
+      await this.measurePerfStep(perf, "buildBaseFilter", () => {
+        if (filters.salesFunnelId)
+          filter.salesFunnelId = new Types.ObjectId(filters.salesFunnelId)
+        if (filters.returning !== undefined)
+          filter.returning = filters.returning
+        if (filters.shippingType) filter.shippingType = filters.shippingType
+        if (filters.status) filter.status = filters.status
+      })
 
       if (filters.channelId) {
-        const funnelIds = await this.salesFunnelModel
-          .find({ channel: new Types.ObjectId(filters.channelId) })
-          .distinct("_id")
+        const funnelIds = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctByChannel",
+          () =>
+            this.salesFunnelModel
+              .find({ channel: new Types.ObjectId(filters.channelId) })
+              .distinct("_id")
+        )
         filter.salesFunnelId = { $in: funnelIds }
       }
 
       if (filters.userId) {
-        const funnelIds = await this.salesFunnelModel
-          .find({ user: new Types.ObjectId(filters.userId) })
-          .distinct("_id")
+        const funnelIds = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctByUser",
+          () =>
+            this.salesFunnelModel
+              .find({ user: new Types.ObjectId(filters.userId) })
+              .distinct("_id")
+        )
         filter.salesFunnelId = { $in: funnelIds }
       }
 
       if (filters.startDate || filters.endDate) {
-        filter.date = {}
-        if (filters.startDate) {
-          const startDate = new Date(filters.startDate)
-          startDate.setUTCHours(startDate.getUTCHours() - 7)
-          filter.date.$gte = startDate
-        }
-        if (filters.endDate) {
-          const endDate = new Date(filters.endDate)
-          endDate.setUTCHours(endDate.getUTCHours() - 7)
-          filter.date.$lte = endDate
-        }
+        await this.measurePerfStep(perf, "applyDateFilter", () => {
+          filter.date = {}
+          if (filters.startDate) {
+            const startDate = new Date(filters.startDate)
+            startDate.setUTCHours(startDate.getUTCHours() - 7)
+            filter.date.$gte = startDate
+          }
+          if (filters.endDate) {
+            const endDate = new Date(filters.endDate)
+            endDate.setUTCHours(endDate.getUTCHours() - 7)
+            filter.date.$lte = endDate
+          }
+        })
       }
 
       if (filters.searchText && filters.searchText.trim().length > 0) {
         const searchText = filters.searchText.trim()
 
-        const matchingFunnels = await this.salesFunnelModel
-          .find({
-            $or: [
-              { name: { $regex: `.*${searchText}.*`, $options: "i" } },
-              { phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" } },
-              {
-                secondaryPhoneNumbers: {
-                  $regex: `.*${searchText}.*`,
-                  $options: "i"
-                }
-              }
-            ]
-          })
-          .distinct("_id")
+        const matchingFunnels = await this.measurePerfStep(
+          perf,
+          "salesFunnel.distinctBySearchText",
+          () =>
+            this.salesFunnelModel
+              .find({
+                $or: [
+                  { name: { $regex: `.*${searchText}.*`, $options: "i" } },
+                  {
+                    phoneNumber: { $regex: `.*${searchText}.*`, $options: "i" }
+                  },
+                  {
+                    secondaryPhoneNumbers: {
+                      $regex: `.*${searchText}.*`,
+                      $options: "i"
+                    }
+                  }
+                ]
+              })
+              .distinct("_id")
+        )
 
         const searchRegex = { $regex: `.*${searchText}.*`, $options: "i" }
 
-        filter.$or = [
-          { shippingCode: searchRegex },
-          { "items.code": searchRegex },
-          { "items.name": searchRegex },
-          { salesFunnelId: { $in: matchingFunnels } }
-        ]
-      }
-
-      const orders = await this.salesOrderModel
-        .find(filter)
-        .populate({
-          path: "salesFunnelId",
-          populate: [
-            { path: "channel", model: "saleschannels" },
-            { path: "user", model: "users", select: "name email role" },
-            { path: "province", model: "provinces" }
+        await this.measurePerfStep(perf, "applySearchTextFilter", () => {
+          filter.$or = [
+            { shippingCode: searchRegex },
+            { "items.code": searchRegex },
+            { "items.name": searchRegex },
+            { salesFunnelId: { $in: matchingFunnels } }
           ]
         })
-        .sort({ createdAt: -1 })
-        .lean()
+      }
 
-      return await this.buildOrdersExcelBufferForAccounting(orders)
+      const orders = await this.measurePerfStep(
+        perf,
+        "salesOrder.find.populate",
+        () =>
+          this.salesOrderModel
+            .find(filter)
+            .populate({
+              path: "salesFunnelId",
+              populate: [
+                { path: "channel", model: "saleschannels" },
+                { path: "user", model: "users", select: "name email role" },
+                { path: "province", model: "provinces" }
+              ]
+            })
+            .sort({ createdAt: -1 })
+            .lean()
+      )
+
+      const buffer = await this.measurePerfStep(
+        perf,
+        "buildOrdersExcelBufferForAccounting",
+        () => this.buildOrdersExcelBufferForAccounting(orders)
+      )
+
+      this.finishPerfSession(perf, {
+        status: "success",
+        orderCount: orders.length
+      })
+
+      return buffer
     } catch (error) {
+      this.finishPerfSession(perf, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      })
       console.error(error)
       throw new HttpException(
         "Lỗi khi export đơn hàng",

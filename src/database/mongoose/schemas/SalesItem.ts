@@ -51,4 +51,6 @@ export const SalesItemSchema = new Schema<SalesItem>({
   updatedAt: { type: Date, default: Date.now }
 })
 
+SalesItemSchema.index({ code: 1 })
+
 export const SalesItemModel = model<SalesItem>("SalesItem", SalesItemSchema)
