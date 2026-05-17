@@ -4,7 +4,7 @@ export type SalesOrderStorage = "position_HaNam" | "position_MKT"
 
 export type SalesOrderShippingType = "shipping_vtp" | "shipping_cargo"
 
-export type SalesOrderStatus = "draft" | "official"
+export type SalesOrderStatus = "draft" | "confirmed" | "official"
 
 export type SalesOrderDiscountType = "percent" | "value"
 
@@ -90,7 +90,7 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   },
   status: {
     type: String,
-    enum: ["draft", "official"],
+    enum: ["draft", "confirmed", "official"],
     default: "draft",
     required: true
   },

@@ -76,6 +76,7 @@ export const viLabels = {
     update_affiliate: "Cập nhật affiliate",
     update_box: "Cập nhật box",
     export_xlsx: "Xuất Excel",
+    updated_status: "Cập nhật trạng thái",
 
     // errors/security
     unexpected_error: "Lỗi không mong muốn",

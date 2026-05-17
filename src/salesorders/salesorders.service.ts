@@ -2548,13 +2548,16 @@ export class SalesOrdersService {
     }
   }
 
-  async convertToOfficial(
+  async transitionOrderStatus(
     orderId: string,
-    shippingCode: string,
-    shippingType: SalesOrderShippingType,
-    tax: number,
-    shippingCost: number,
-    receivedDate?: Date
+    nextStatus: SalesOrderStatus,
+    payload: {
+      shippingCode?: string
+      shippingType?: SalesOrderShippingType
+      tax?: number
+      shippingCost?: number
+      receivedDate?: Date
+    } = {}
   ): Promise<SalesOrder> {
     try {
       const order = await this.salesOrderModel.findById(orderId)
@@ -2562,25 +2565,66 @@ export class SalesOrdersService {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
 
-      if (order.status === "official") {
+      if (order.status === nextStatus) {
         throw new HttpException(
-          "Đơn hàng đã ở trạng thái chính thức",
+          "Đơn hàng đã ở trạng thái này",
           HttpStatus.BAD_REQUEST
         )
       }
 
-      order.status = "official"
-      order.shippingCode = shippingCode
-      order.shippingType = shippingType
-      order.tax = tax
-      order.shippingCost = shippingCost
-      if (receivedDate !== undefined) {
-        order.receivedDate = receivedDate
+      if (order.status === "official") {
+        throw new HttpException(
+          "Không thể chuyển trạng thái từ đơn hàng chính thức",
+          HttpStatus.BAD_REQUEST
+        )
       }
-      // minus 7 hours
-      order.date = new Date(
-        new Date().setUTCHours(0, 0, 0, 0) - 7 * 3600 * 1000
-      )
+
+      const allowedTransitions: Record<SalesOrderStatus, SalesOrderStatus[]> = {
+        draft: ["confirmed", "official"],
+        confirmed: ["draft", "official"],
+        official: []
+      }
+
+      if (!allowedTransitions[order.status].includes(nextStatus)) {
+        throw new HttpException(
+          "Chuyển trạng thái đơn hàng không hợp lệ",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      if (nextStatus === "official") {
+        if (!payload.shippingCode || !payload.shippingType) {
+          throw new HttpException(
+            "Thiếu thông tin vận chuyển để chuyển sang chính thức",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        if (payload.tax === undefined || payload.shippingCost === undefined) {
+          throw new HttpException(
+            "Thiếu thông tin thuế hoặc phí vận chuyển để chuyển sang chính thức",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        order.shippingCode = payload.shippingCode
+        order.shippingType = payload.shippingType
+        order.tax = payload.tax
+        order.shippingCost = payload.shippingCost
+
+        if (payload.receivedDate !== undefined) {
+          order.receivedDate = payload.receivedDate
+        }
+
+        // Keep the current behavior: official orders get re-dated to the transition day.
+        order.date = new Date(
+          new Date().setUTCHours(0, 0, 0, 0) - 7 * 3600 * 1000
+        )
+      } else if (payload.receivedDate !== undefined) {
+        order.receivedDate = payload.receivedDate
+      }
+
+      order.status = nextStatus
       order.updatedAt = new Date()
 
       const savedOrder = await order.save()
