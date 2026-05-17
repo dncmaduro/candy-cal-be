@@ -6,6 +6,8 @@ export type SalesOrderShippingType = "shipping_vtp" | "shipping_cargo"
 
 export type SalesOrderStatus = "draft" | "official"
 
+export type SalesOrderDiscountType = "percent" | "value"
+
 export interface SalesOrder extends Document {
   salesFunnelId: Types.ObjectId
   items: {
@@ -25,6 +27,7 @@ export interface SalesOrder extends Document {
   date: Date
   total: number
   orderDiscount: number
+  orderDiscountType?: SalesOrderDiscountType | null
   otherDiscount: number
   deposit: number
   tax: number
@@ -71,6 +74,11 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   date: { type: Date, required: true },
   total: { type: Number, required: true },
   orderDiscount: { type: Number, required: true, default: 0 },
+  orderDiscountType: {
+    type: String,
+    enum: ["percent", "value"],
+    required: false
+  },
   otherDiscount: { type: Number, required: true, default: 0 },
   deposit: { type: Number, required: true, default: 0 },
   tax: { type: Number, required: true, default: 0 },

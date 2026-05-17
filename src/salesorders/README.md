@@ -20,7 +20,9 @@ Tạo đơn hàng mới.
     }
   ],
   "storage": "position_HaNam",
-  "date": "2024-11-03T00:00:00.000Z"
+  "date": "2024-11-03T00:00:00.000Z",
+  "orderDiscount": 100000,
+  "orderDiscountType": "percent"
 }
 ```
 
@@ -42,6 +44,8 @@ Tạo đơn hàng mới.
   "storage": "position_HaNam",
   "date": "2024-11-03T00:00:00.000Z",
   "total": 100000,
+  "orderDiscount": 100000,
+  "orderDiscountType": "percent",
   "tax": 0,
   "shippingCost": 0,
   "createdAt": "2024-11-03T10:00:00.000Z",
@@ -53,6 +57,9 @@ Tạo đơn hàng mới.
 
 - `price` và `name` của mỗi item sẽ được tự động lấy từ bảng `SalesItem` dựa trên `code`
 - `total` được tính tự động: `sum(item.price * item.quantity)`
+- `orderDiscount` luôn là số tiền giảm thực tế của đơn hàng
+- `orderDiscountType` chỉ mô tả cách FE hiển thị/diễn giải discount: `percent` hoặc `value`
+- Nếu `orderDiscountType` là `null` hoặc không có thì FE hiểu là `value`
 - `returning` được tự động xác định dựa trên `hasBuyed` của funnel
 - Sau khi tạo đơn đầu tiên, funnel sẽ được đánh dấu `hasBuyed = true`
 
@@ -79,7 +86,9 @@ Cập nhật items của đơn hàng.
       "quantity": 1
     }
   ],
-  "storage": "position_MKT"
+  "storage": "position_MKT",
+  "orderDiscount": 50000,
+  "orderDiscountType": "value"
 }
 ```
 
@@ -103,6 +112,8 @@ Cập nhật items của đơn hàng.
     }
   ],
   "storage": "position_MKT",
+  "orderDiscount": 50000,
+  "orderDiscountType": "value",
   "total": 215000,
   "updatedAt": "2024-11-03T11:00:00.000Z"
 }
@@ -116,6 +127,8 @@ Cập nhật items của đơn hàng.
 - `name` luôn được lấy từ bảng `SalesItem` để đảm bảo nhất quán
 - `total` được tính lại: `sum(item.price * item.quantity)`
 - `storage` là optional, nếu không truyền thì giữ nguyên storage cũ
+- `orderDiscountType` là optional, nếu không truyền thì giữ nguyên type cũ
+- Nếu `orderDiscountType` là `null` hoặc không truyền thì FE hiểu là `value`
 
 **Authorization:** Requires role `admin` or `sales-emp`
 
