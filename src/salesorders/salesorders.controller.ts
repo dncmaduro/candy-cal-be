@@ -444,35 +444,42 @@ export class SalesOrdersController {
   }
 
   @Roles("admin", "sales-emp")
-  @Patch(":id/convert-official")
+  @Patch(":id/status")
   @HttpCode(HttpStatus.OK)
-  async convertToOfficial(
+  async transitionOrderStatus(
     @Param("id") id: string,
     @Body()
     body: {
-      shippingCode: string
-      shippingType: SalesOrderShippingType
-      tax: number
-      shippingCost: number
+      status: SalesOrderStatus
+      shippingCode?: string
+      shippingType?: SalesOrderShippingType
+      tax?: number
+      shippingCost?: number
       receivedDate?: string
     },
     @Req() req
   ): Promise<SalesOrder> {
-    const updated = await this.salesOrdersService.convertToOfficial(
+    const updated = await this.salesOrdersService.transitionOrderStatus(
       id,
-      body.shippingCode,
-      body.shippingType,
-      body.tax,
-      body.shippingCost,
-      body.receivedDate ? new Date(body.receivedDate) : undefined
+      body.status,
+      {
+        shippingCode: body.shippingCode,
+        shippingType: body.shippingType,
+        tax: body.tax,
+        shippingCost: body.shippingCost,
+        receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined
+      }
     )
     void this.systemLogsService.createSystemLog(
       {
         type: "salesorders",
-        action: "converted_to_official",
+        action: "updated_status",
         entity: "salesorder",
         entityId: updated._id.toString(),
-        result: "success"
+        result: "success",
+        meta: {
+          status: body.status
+        }
       },
       req.user.userId
     )
