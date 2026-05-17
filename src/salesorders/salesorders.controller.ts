@@ -24,6 +24,7 @@ import { Roles } from "../roles/roles.decorator"
 import { SalesOrdersService } from "./salesorders.service"
 import {
   SalesOrder,
+  SalesOrderDiscountType,
   SalesOrderShippingType,
   SalesOrderStorage,
   SalesOrderStatus
@@ -49,6 +50,7 @@ export class SalesOrdersController {
       storage: SalesOrderStorage
       date: string
       orderDiscount?: number
+      orderDiscountType?: SalesOrderDiscountType
       otherDiscount?: number
       deposit?: number
       note?: string
@@ -61,6 +63,7 @@ export class SalesOrdersController {
       storage: body.storage,
       date: new Date(body.date),
       orderDiscount: body.orderDiscount,
+      orderDiscountType: body.orderDiscountType,
       otherDiscount: body.otherDiscount,
       deposit: body.deposit
     })
@@ -143,6 +146,7 @@ export class SalesOrdersController {
       }[]
       storage?: SalesOrderStorage
       orderDiscount?: number
+      orderDiscountType?: SalesOrderDiscountType
       otherDiscount?: number
       deposit?: number
       note?: string
@@ -154,6 +158,7 @@ export class SalesOrdersController {
       body.items,
       body.storage,
       body.orderDiscount,
+      body.orderDiscountType,
       body.otherDiscount,
       body.deposit
     )
