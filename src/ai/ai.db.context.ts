@@ -590,6 +590,7 @@ export const AI_DB_TABLES: DbTableContext[] = [
       "deposit",
       "items",
       "orderDiscount",
+      "orderDiscountType",
       "otherDiscount",
       "phoneNumber",
       "province",
@@ -606,7 +607,7 @@ export const AI_DB_TABLES: DbTableContext[] = [
       "updatedAt"
     ],
     description:
-      "Schema SalesOrder. Cac truong chinh: address, createdAt, date, deposit, items, orderDiscount, otherDiscount, phoneNumber, province, receivedDate, returning, salesFunnelId, shippingCode, shippingCost, shippingType, status, storage, tax, total, updatedAt. Day la bang quan ly cac don hang cho kenh ban hang si le.",
+      "Schema SalesOrder. Cac truong chinh: address, createdAt, date, deposit, items, orderDiscount, orderDiscountType, otherDiscount, phoneNumber, province, receivedDate, returning, salesFunnelId, shippingCode, shippingCost, shippingType, status, storage, tax, total, updatedAt. Day la bang quan ly cac don hang cho kenh ban hang si le.",
     primaryKeys: ["shippingCode"],
     searchableFields: ["shippingCode"],
     dateFields: ["createdAt", "date", "receivedDate", "updatedAt"],

@@ -5,6 +5,7 @@ import * as XLSX from "xlsx"
 import * as ExcelJS from "exceljs"
 import {
   SalesOrder,
+  SalesOrderDiscountType,
   SalesOrderShippingType,
   SalesOrderStorage,
   SalesOrderStatus
@@ -144,6 +145,7 @@ export class SalesOrdersService {
     storage: SalesOrderStorage
     date: Date
     orderDiscount?: number
+    orderDiscountType?: SalesOrderDiscountType
     otherDiscount?: number
     deposit?: number
     note?: string
@@ -249,6 +251,9 @@ export class SalesOrdersService {
           ? { id: province._id.toString(), name: province.name }
           : undefined
       })
+      if (payload.orderDiscountType !== undefined) {
+        order.orderDiscountType = payload.orderDiscountType
+      }
 
       const saved = await this.measurePerfStep(perf, "salesOrder.save", () =>
         order.save()
@@ -652,6 +657,7 @@ export class SalesOrdersService {
     }[],
     storage?: SalesOrderStorage,
     orderDiscount?: number,
+    orderDiscountType?: SalesOrderDiscountType,
     otherDiscount?: number,
     deposit?: number
   ): Promise<SalesOrder> {
@@ -753,6 +759,9 @@ export class SalesOrdersService {
       }
       if (orderDiscount !== undefined) {
         order.orderDiscount = orderDiscount
+      }
+      if (orderDiscountType !== undefined) {
+        order.orderDiscountType = orderDiscountType
       }
       if (otherDiscount !== undefined) {
         order.otherDiscount = otherDiscount
