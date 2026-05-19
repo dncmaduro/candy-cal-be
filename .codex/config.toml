@@ -1,4 +1,0 @@
-[mcp_servers.mongodb]
-command = "npx"
-args = ["-y", "mongodb-mcp-server"]
-env = { MDB_MCP_CONNECTION_STRING = "mongodb+srv://maduro:madurc.29@cluster0.hkeyxn2.mongodb.net/" }
