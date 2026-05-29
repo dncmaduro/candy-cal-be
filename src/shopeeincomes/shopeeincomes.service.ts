@@ -9,7 +9,7 @@ import {
   parseOrderDateFilterStart
 } from "../shopeedashboard/shopee-dashboard.utils"
 import * as XLSX from "xlsx"
-import * as moment from "moment"
+import moment = require("moment")
 
 type ShopeeIncomeOrderDraft = {
   orderId: string
