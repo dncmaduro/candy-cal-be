@@ -17,6 +17,23 @@ export class SalesDashboardController {
   constructor(private readonly salesDashboardService: SalesDashboardService) {}
 
   @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Get("province-stats")
+  @HttpCode(HttpStatus.OK)
+  async getProvinceSalesStats(
+    @Query("date") date?: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("channel") channel?: string
+  ) {
+    return this.salesDashboardService.getProvinceSalesStats({
+      date,
+      startDate,
+      endDate,
+      channel
+    })
+  }
+
+  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
   @Get("revenue-stats")
   @HttpCode(HttpStatus.OK)
   async getRevenueStats(
