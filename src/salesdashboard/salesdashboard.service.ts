@@ -38,6 +38,18 @@ export interface RevenueByUser {
   }
 }
 
+export interface ProvinceSalesStat {
+  provinceName: string
+  revenue: number
+  orderCount: number
+}
+
+export interface ProvinceSalesStatsResponse {
+  totalRevenue: number
+  totalOrders: number
+  provinces: ProvinceSalesStat[]
+}
+
 export interface RevenueStatsResponse {
   totalRevenue: number
   totalRevenueBeforeDiscount: number
@@ -121,6 +133,174 @@ export class SalesDashboardService {
       end: fromZonedTime(
         `${year}-${paddedMonth}-${lastDayOfMonth}T23:59:59.999`,
         SALES_DASHBOARD_TIME_ZONE
+      )
+    }
+  }
+
+  private parseDateInput(value: string, fieldName: string): Date {
+    const parsed = new Date(value)
+
+    if (Number.isNaN(parsed.getTime())) {
+      throw new HttpException(
+        `${fieldName} không hợp lệ`,
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    return parsed
+  }
+
+  private resolveProvinceStatsRange(filters: {
+    date?: string
+    startDate?: string
+    endDate?: string
+  }): { start: Date; end: Date } {
+    if (filters.date) {
+      if (filters.startDate || filters.endDate) {
+        throw new HttpException(
+          "Chỉ dùng date hoặc startDate/endDate",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const parsedDate = this.parseDateInput(filters.date, "date")
+      return this.getUtcDayRange(parsedDate)
+    }
+
+    if (filters.startDate || filters.endDate) {
+      if (!filters.startDate || !filters.endDate) {
+        throw new HttpException(
+          "Cần truyền đủ startDate và endDate",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const startRange = this.getUtcDayRange(
+        this.parseDateInput(filters.startDate, "startDate")
+      )
+      const endRange = this.getUtcDayRange(
+        this.parseDateInput(filters.endDate, "endDate")
+      )
+
+      if (startRange.start > endRange.end) {
+        throw new HttpException(
+          "startDate phải nhỏ hơn hoặc bằng endDate",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      return {
+        start: startRange.start,
+        end: endRange.end
+      }
+    }
+
+    throw new HttpException(
+      "Cần truyền date hoặc startDate/endDate",
+      HttpStatus.BAD_REQUEST
+    )
+  }
+
+  private normalizeProvinceName(name?: string): string {
+    const normalized = String(name || "").trim()
+
+    if (!normalized) {
+      return "Không rõ"
+    }
+
+    const withoutPrefix = normalized.replace(/^(Tỉnh|Thành phố)\s+/i, "").trim()
+    return withoutPrefix || "Không rõ"
+  }
+
+  async getProvinceSalesStats(filters: {
+    date?: string
+    startDate?: string
+    endDate?: string
+    channel?: string
+  }): Promise<ProvinceSalesStatsResponse> {
+    try {
+      const { start, end } = this.resolveProvinceStatsRange(filters)
+      const query: Record<string, any> = {
+        date: { $gte: start, $lte: end },
+        status: "official"
+      }
+
+      if (filters.channel) {
+        if (!Types.ObjectId.isValid(filters.channel)) {
+          throw new HttpException("channel không hợp lệ", HttpStatus.BAD_REQUEST)
+        }
+
+        const funnels = await this.salesFunnelModel
+          .find({ channel: new Types.ObjectId(filters.channel) })
+          .select("_id")
+          .lean()
+
+        if (funnels.length === 0) {
+          return {
+            totalRevenue: 0,
+            totalOrders: 0,
+            provinces: []
+          }
+        }
+
+        query.salesFunnelId = { $in: funnels.map((funnel) => funnel._id) }
+      }
+
+      const orders = await this.salesOrderModel
+        .find(query)
+        .select("province total orderDiscount otherDiscount")
+        .lean()
+
+      const provincesMap = new Map<string, ProvinceSalesStat>()
+      let totalRevenue = 0
+
+      orders.forEach((order) => {
+        const totalDiscount =
+          (order.orderDiscount || 0) + (order.otherDiscount || 0)
+        const actualRevenue = order.total - totalDiscount
+        const provinceName = this.normalizeProvinceName(order.province?.name)
+
+        totalRevenue += actualRevenue
+
+        const existing = provincesMap.get(provinceName)
+        if (existing) {
+          existing.revenue += actualRevenue
+          existing.orderCount += 1
+        } else {
+          provincesMap.set(provinceName, {
+            provinceName,
+            revenue: actualRevenue,
+            orderCount: 1
+          })
+        }
+      })
+
+      const provinces = Array.from(provincesMap.values()).sort((a, b) => {
+        if (b.revenue !== a.revenue) {
+          return b.revenue - a.revenue
+        }
+
+        if (b.orderCount !== a.orderCount) {
+          return b.orderCount - a.orderCount
+        }
+
+        return a.provinceName.localeCompare(b.provinceName, "vi")
+      })
+
+      return {
+        totalRevenue,
+        totalOrders: orders.length,
+        provinces
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error
+      }
+
+      console.error("Error in getProvinceSalesStats:", error)
+      throw new HttpException(
+        "Lỗi khi lấy thống kê tỉnh/thành",
+        HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
   }
