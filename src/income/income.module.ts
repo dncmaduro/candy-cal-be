@@ -7,6 +7,7 @@ import { PackingRulesModule } from "../packingrules/packingrules.module"
 import { MonthGoalSchema } from "../database/mongoose/schemas/MonthGoal"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 import { DailyAdsSchema } from "../database/mongoose/schemas/DailyAds"
+import { DailyAdsMetricsSchema } from "../database/mongoose/schemas/DailyAdsMetrics"
 import { NotificationsModule } from "../notifications/notifications.module"
 import { LivestreamChannelSchema } from "../database/mongoose/schemas/LivestreamChannel"
 
@@ -16,6 +17,7 @@ import { LivestreamChannelSchema } from "../database/mongoose/schemas/Livestream
       { name: "incomes", schema: IncomeSchema },
       { name: "monthgoals", schema: MonthGoalSchema },
       { name: "dailyads", schema: DailyAdsSchema },
+      { name: "dailyadsmetrics", schema: DailyAdsMetricsSchema },
       { name: "livestreamchannels", schema: LivestreamChannelSchema }
     ]),
     PackingRulesModule,

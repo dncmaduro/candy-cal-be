@@ -13,6 +13,8 @@ export class InsertIncomeRequest {
 
 export class XlsxIncomeData {
   "Order ID": string
+  "Order Status"?: string
+  "Order Substatus"?: string
   "Seller SKU": string
   "Product Name": string
   "Buyer Username": string
@@ -24,6 +26,7 @@ export class XlsxIncomeData {
   "SKU Seller Discount": number
   "SKU Subtotal After Discount": number
   "Cancelation/Return Type": string
+  "Order Refund Amount"?: number
   "Shipping Provider Name"?: string
 }
 
