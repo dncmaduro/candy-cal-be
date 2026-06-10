@@ -5,6 +5,10 @@ export interface Income {
   customer: string
   province: string
   shippingProvider?: string
+  orderStatus?: string
+  orderSubstatus?: string
+  cancelationOrReturnType?: string
+  orderRefundAmount?: number
   channel: Types.ObjectId
   date: Date
   products: {
@@ -33,6 +37,10 @@ export const IncomeSchema = new Schema<Income>({
   customer: { type: String, required: true },
   province: { type: String, required: true },
   shippingProvider: { type: String, required: false },
+  orderStatus: { type: String, required: false },
+  orderSubstatus: { type: String, required: false },
+  cancelationOrReturnType: { type: String, required: false },
+  orderRefundAmount: { type: Number, required: false, default: 0 },
   channel: {
     type: Schema.Types.ObjectId,
     ref: "livestreamchannels",

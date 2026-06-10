@@ -2,6 +2,8 @@ import { Injectable, HttpException, HttpStatus } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
+import { DailyAdsMetrics } from "../database/mongoose/schemas/DailyAdsMetrics"
+import { Income } from "../database/mongoose/schemas/Income"
 import * as XLSX from "xlsx"
 import { CurrencyExchangeService } from "../common/currency-exchange.service"
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz"
@@ -13,12 +15,161 @@ export class DailyAdsService {
   constructor(
     @InjectModel("dailyads")
     private readonly dailyAdsModel: Model<DailyAds>,
+    @InjectModel("dailyadsmetrics")
+    private readonly dailyAdsMetricsModel: Model<DailyAdsMetrics>,
+    @InjectModel("incomes")
+    private readonly incomeModel: Model<Income>,
     private readonly currencyExchangeService: CurrencyExchangeService
   ) {}
 
   private normalizeDateToBusinessDay(date: Date): Date {
     const localDate = formatInTimeZone(date, DAILY_ADS_TIME_ZONE, "yyyy-MM-dd")
     return fromZonedTime(`${localDate}T00:00:00`, DAILY_ADS_TIME_ZONE)
+  }
+
+  private toPercentage(numerator: number, denominator: number): number {
+    if (!denominator) return 0
+    return Math.round((numerator / denominator) * 10000) / 100
+  }
+
+  private async getIncomeSnapshotByDateAndChannel(
+    date: Date,
+    channelId: string
+  ): Promise<{ beforeDiscount: number; afterDiscount: number }> {
+    const target = this.normalizeDateToBusinessDay(date)
+    const next = new Date(target)
+    next.setDate(next.getDate() + 1)
+
+    const incomes = await this.incomeModel
+      .find({
+        channel: new Types.ObjectId(channelId),
+        date: {
+          $gte: target,
+          $lt: next
+        }
+      })
+      .lean()
+
+    let beforeDiscount = 0
+    let afterDiscount = 0
+
+    for (const income of incomes) {
+      for (const product of income.products || []) {
+        const price = Number(product.price || 0)
+        const sellerDiscount = Number(product.sellerDiscount || 0)
+        beforeDiscount += price
+        afterDiscount += price - sellerDiscount
+      }
+    }
+
+    return {
+      beforeDiscount,
+      afterDiscount
+    }
+  }
+
+  async upsertDailyAdsMetrics(payload: {
+    date: Date
+    channelId: string
+    roiProtect?: number
+    fullRefundGmv?: number
+    tinRefundAmount?: number
+    adsTax?: number
+    gmvAds?: number
+    affiliateCost?: number
+    affiliateRefundAmount?: number
+  }): Promise<DailyAdsMetrics> {
+    try {
+      const target = this.normalizeDateToBusinessDay(payload.date)
+      const snapshot = await this.getIncomeSnapshotByDateAndChannel(
+        target,
+        payload.channelId
+      )
+
+      const roiProtect = Number(payload.roiProtect || 0)
+      const fullRefundGmv = Number(payload.fullRefundGmv || 0)
+      const tinRefundAmount = Number(payload.tinRefundAmount || 0)
+      const adsTax = Number(payload.adsTax || 0)
+      const gmvAds = Number(payload.gmvAds || 0)
+      const affiliateCost = Number(payload.affiliateCost || 0)
+      const affiliateRefundAmount = Number(payload.affiliateRefundAmount || 0)
+
+      const actualAdsCost = Math.max(
+        0,
+        gmvAds - roiProtect - fullRefundGmv - tinRefundAmount - adsTax
+      )
+      const totalCost = Math.max(0, actualAdsCost + affiliateCost)
+      const costAfterRefund = Math.max(0, totalCost - affiliateRefundAmount)
+
+      const update = {
+        channel: new Types.ObjectId(payload.channelId),
+        date: target,
+        roiProtect,
+        fullRefundGmv,
+        tinRefundAmount,
+        adsTax,
+        gmvAds,
+        affiliateCost,
+        affiliateRefundAmount,
+        incomeBeforeDiscount: snapshot.beforeDiscount,
+        incomeAfterDiscount: snapshot.afterDiscount,
+        actualAdsCost,
+        totalCost,
+        costAfterRefund,
+        adsRatioOnBeforeDiscountRevenue: this.toPercentage(
+          actualAdsCost,
+          snapshot.beforeDiscount
+        ),
+        totalCostRatioOnBeforeDiscountRevenue: this.toPercentage(
+          totalCost,
+          snapshot.beforeDiscount
+        ),
+        costAfterRefundRatioOnBeforeDiscountRevenue: this.toPercentage(
+          costAfterRefund,
+          snapshot.beforeDiscount
+        ),
+        affiliateRatioOnBeforeDiscountRevenue: this.toPercentage(
+          affiliateCost,
+          snapshot.beforeDiscount
+        ),
+        updatedAt: new Date()
+      }
+
+      const result = await this.dailyAdsMetricsModel.findOneAndUpdate(
+        {
+          channel: new Types.ObjectId(payload.channelId),
+          date: target
+        },
+        { $set: update },
+        { upsert: true, new: true }
+      )
+
+      return result
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi tạo/cập nhật chỉ số ads",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async getDailyAdsMetrics(date: Date, channelId: string) {
+    try {
+      const target = this.normalizeDateToBusinessDay(date)
+      return await this.dailyAdsMetricsModel
+        .findOne({
+          date: target,
+          channel: new Types.ObjectId(channelId)
+        })
+        .lean()
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi lấy chỉ số ads",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
   }
 
   async createOrUpdateDailyAds(
