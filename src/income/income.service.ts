@@ -14,6 +14,7 @@ import { PackingRulesService } from "../packingrules/packingrules.service"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 import { Response } from "express"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
+import { DailyAdsMetrics } from "../database/mongoose/schemas/DailyAdsMetrics"
 import { format as formatDateFns } from "date-fns"
 import { OWN_USERS } from "../constants/own-users"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
@@ -29,6 +30,8 @@ export class IncomeService {
     private readonly packingRulesService: PackingRulesService,
     @InjectModel("dailyads")
     private readonly dailyAdsModel: Model<DailyAds>,
+    @InjectModel("dailyadsmetrics")
+    private readonly dailyAdsMetricsModel: Model<DailyAdsMetrics>,
     @InjectModel("livestreamchannels")
     private readonly livestreamChannelModel: Model<LivestreamChannel>
   ) {}
@@ -77,6 +80,116 @@ export class IncomeService {
     }
 
     return { start, end }
+  }
+
+  private buildIncomeStatusPayload(line?: Partial<XlsxIncomeData>) {
+    return {
+      orderStatus: String(line?.["Order Status"] || "").trim() || undefined,
+      orderSubstatus:
+        String(line?.["Order Substatus"] || "").trim() || undefined,
+      cancelationOrReturnType:
+        String(line?.["Cancelation/Return Type"] || "").trim() || undefined,
+      orderRefundAmount: Number(line?.["Order Refund Amount"] || 0) || 0
+    }
+  }
+
+  private async aggregateDailyAdsMetrics(
+    start: Date,
+    end: Date,
+    channelId?: string
+  ): Promise<{
+    roiProtect: number
+    fullRefundGmv: number
+    tinRefundAmount: number
+    adsTax: number
+    gmvAds: number
+    affiliateCost: number
+    affiliateRefundAmount: number
+    incomeBeforeDiscount: number
+    incomeAfterDiscount: number
+    actualAdsCost: number
+    totalCost: number
+    costAfterRefund: number
+    adsRatioOnBeforeDiscountRevenue: number
+    totalCostRatioOnBeforeDiscountRevenue: number
+    costAfterRefundRatioOnBeforeDiscountRevenue: number
+    affiliateRatioOnBeforeDiscountRevenue: number
+    recordsCount: number
+  }> {
+    const filter: any = { date: { $gte: start, $lte: end } }
+    if (channelId) {
+      filter.channel = new Types.ObjectId(channelId)
+    }
+
+    const rows = await this.dailyAdsMetricsModel
+      .aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            roiProtect: { $sum: { $ifNull: ["$roiProtect", 0] } },
+            fullRefundGmv: { $sum: { $ifNull: ["$fullRefundGmv", 0] } },
+            tinRefundAmount: { $sum: { $ifNull: ["$tinRefundAmount", 0] } },
+            adsTax: { $sum: { $ifNull: ["$adsTax", 0] } },
+            gmvAds: { $sum: { $ifNull: ["$gmvAds", 0] } },
+            affiliateCost: { $sum: { $ifNull: ["$affiliateCost", 0] } },
+            affiliateRefundAmount: {
+              $sum: { $ifNull: ["$affiliateRefundAmount", 0] }
+            },
+            incomeBeforeDiscount: {
+              $sum: { $ifNull: ["$incomeBeforeDiscount", 0] }
+            },
+            incomeAfterDiscount: {
+              $sum: { $ifNull: ["$incomeAfterDiscount", 0] }
+            },
+            actualAdsCost: { $sum: { $ifNull: ["$actualAdsCost", 0] } },
+            totalCost: { $sum: { $ifNull: ["$totalCost", 0] } },
+            costAfterRefund: { $sum: { $ifNull: ["$costAfterRefund", 0] } },
+            recordsCount: { $sum: 1 }
+          }
+        }
+      ])
+      .exec()
+
+    const data = rows?.[0] || {}
+    const incomeBeforeDiscount = Number(data.incomeBeforeDiscount || 0)
+
+    return {
+      roiProtect: Number(data.roiProtect || 0),
+      fullRefundGmv: Number(data.fullRefundGmv || 0),
+      tinRefundAmount: Number(data.tinRefundAmount || 0),
+      adsTax: Number(data.adsTax || 0),
+      gmvAds: Number(data.gmvAds || 0),
+      affiliateCost: Number(data.affiliateCost || 0),
+      affiliateRefundAmount: Number(data.affiliateRefundAmount || 0),
+      incomeBeforeDiscount,
+      incomeAfterDiscount: Number(data.incomeAfterDiscount || 0),
+      actualAdsCost: Number(data.actualAdsCost || 0),
+      totalCost: Number(data.totalCost || 0),
+      costAfterRefund: Number(data.costAfterRefund || 0),
+      adsRatioOnBeforeDiscountRevenue:
+        incomeBeforeDiscount > 0
+          ? Math.round((Number(data.actualAdsCost || 0) / incomeBeforeDiscount) * 10000) /
+            100
+          : 0,
+      totalCostRatioOnBeforeDiscountRevenue:
+        incomeBeforeDiscount > 0
+          ? Math.round((Number(data.totalCost || 0) / incomeBeforeDiscount) * 10000) /
+            100
+          : 0,
+      costAfterRefundRatioOnBeforeDiscountRevenue:
+        incomeBeforeDiscount > 0
+          ? Math.round(
+              (Number(data.costAfterRefund || 0) / incomeBeforeDiscount) * 10000
+            ) / 100
+          : 0,
+      affiliateRatioOnBeforeDiscountRevenue:
+        incomeBeforeDiscount > 0
+          ? Math.round((Number(data.affiliateCost || 0) / incomeBeforeDiscount) * 10000) /
+            100
+          : 0,
+      recordsCount: Number(data.recordsCount || 0)
+    }
   }
 
   /** @deprecated */
@@ -1054,9 +1167,30 @@ export class IncomeService {
   ): Promise<{
     liveAdsCost: number
     shopAdsCost: number
+    actualAdsCost: number
+    totalCost: number
+    costAfterRefund: number
     percentages: {
       liveAdsToLiveIncome: number
       shopAdsToShopIncome: number
+    }
+    ratios: {
+      adsRatioOnBeforeDiscountRevenue: number
+      totalCostRatioOnBeforeDiscountRevenue: number
+      costAfterRefundRatioOnBeforeDiscountRevenue: number
+      affiliateRatioOnBeforeDiscountRevenue: number
+    }
+    rawMetrics: {
+      roiProtect: number
+      fullRefundGmv: number
+      tinRefundAmount: number
+      adsTax: number
+      gmvAds: number
+      affiliateCost: number
+      affiliateRefundAmount: number
+      incomeBeforeDiscount: number
+      incomeAfterDiscount: number
+      recordsCount: number
     }
     totalIncome: { live: number; shop: number }
     kpi: {
@@ -1095,6 +1229,11 @@ export class IncomeService {
 
       const liveAdsCost = rows?.[0]?.liveAdsCost || 0
       const shopAdsCost = rows?.[0]?.shopAdsCost || 0
+      const metricsAgg = await this.aggregateDailyAdsMetrics(
+        start,
+        end,
+        channelId
+      )
 
       // Get total live/shop incomes in month
       const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
@@ -1132,7 +1271,32 @@ export class IncomeService {
       return {
         liveAdsCost,
         shopAdsCost,
+        actualAdsCost: metricsAgg.actualAdsCost,
+        totalCost: metricsAgg.totalCost,
+        costAfterRefund: metricsAgg.costAfterRefund,
         percentages,
+        ratios: {
+          adsRatioOnBeforeDiscountRevenue:
+            metricsAgg.adsRatioOnBeforeDiscountRevenue,
+          totalCostRatioOnBeforeDiscountRevenue:
+            metricsAgg.totalCostRatioOnBeforeDiscountRevenue,
+          costAfterRefundRatioOnBeforeDiscountRevenue:
+            metricsAgg.costAfterRefundRatioOnBeforeDiscountRevenue,
+          affiliateRatioOnBeforeDiscountRevenue:
+            metricsAgg.affiliateRatioOnBeforeDiscountRevenue
+        },
+        rawMetrics: {
+          roiProtect: metricsAgg.roiProtect,
+          fullRefundGmv: metricsAgg.fullRefundGmv,
+          tinRefundAmount: metricsAgg.tinRefundAmount,
+          adsTax: metricsAgg.adsTax,
+          gmvAds: metricsAgg.gmvAds,
+          affiliateCost: metricsAgg.affiliateCost,
+          affiliateRefundAmount: metricsAgg.affiliateRefundAmount,
+          incomeBeforeDiscount: metricsAgg.incomeBeforeDiscount,
+          incomeAfterDiscount: metricsAgg.incomeAfterDiscount,
+          recordsCount: metricsAgg.recordsCount
+        },
         totalIncome: { live, shop },
         kpi: {
           liveKpi,
@@ -1195,6 +1359,27 @@ export class IncomeService {
         percentages: {
           liveAdsToLiveIncome: number
           shopAdsToShopIncome: number
+        }
+        metrics: {
+          roiProtect: number
+          fullRefundGmv: number
+          tinRefundAmount: number
+          adsTax: number
+          gmvAds: number
+          affiliateCost: number
+          affiliateRefundAmount: number
+          incomeBeforeDiscount: number
+          incomeAfterDiscount: number
+          actualAdsCost: number
+          totalCost: number
+          costAfterRefund: number
+          ratios: {
+            adsRatioOnBeforeDiscountRevenue: number
+            totalCostRatioOnBeforeDiscountRevenue: number
+            costAfterRefundRatioOnBeforeDiscountRevenue: number
+            affiliateRatioOnBeforeDiscountRevenue: number
+          }
+          recordsCount: number
         }
       }
       discounts: {
@@ -1263,6 +1448,12 @@ export class IncomeService {
         shopAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
         shopAdsToShopIncomePctDiff: number
+        actualAdsCostPct: number
+        totalCostPct: number
+        costAfterRefundPct: number
+        adsRatioOnBeforeDiscountRevenueDiff: number
+        totalCostRatioOnBeforeDiscountRevenueDiff: number
+        costAfterRefundRatioOnBeforeDiscountRevenueDiff: number
       }
       discounts: {
         totalPlatformDiscountPct: number
@@ -1440,7 +1631,11 @@ export class IncomeService {
           .exec()
         const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
         const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
-        const totalAdsCost = liveAdsCost + shopAdsCost
+        const metricsAgg = await this.aggregateDailyAdsMetrics(s, e, channelId)
+        const totalAdsCost =
+          metricsAgg.recordsCount > 0
+            ? metricsAgg.actualAdsCost
+            : liveAdsCost + shopAdsCost
         const percentages = {
           liveAdsToLiveIncome:
             liveIncomeAfterDiscount === 0
@@ -1489,7 +1684,37 @@ export class IncomeService {
           },
           boxes,
           shippingProviders,
-          ads: { totalAdsCost, liveAdsCost, shopAdsCost, percentages },
+          ads: {
+            totalAdsCost,
+            liveAdsCost,
+            shopAdsCost,
+            percentages,
+            metrics: {
+              roiProtect: metricsAgg.roiProtect,
+              fullRefundGmv: metricsAgg.fullRefundGmv,
+              tinRefundAmount: metricsAgg.tinRefundAmount,
+              adsTax: metricsAgg.adsTax,
+              gmvAds: metricsAgg.gmvAds,
+              affiliateCost: metricsAgg.affiliateCost,
+              affiliateRefundAmount: metricsAgg.affiliateRefundAmount,
+              incomeBeforeDiscount: metricsAgg.incomeBeforeDiscount,
+              incomeAfterDiscount: metricsAgg.incomeAfterDiscount,
+              actualAdsCost: metricsAgg.actualAdsCost,
+              totalCost: metricsAgg.totalCost,
+              costAfterRefund: metricsAgg.costAfterRefund,
+              ratios: {
+                adsRatioOnBeforeDiscountRevenue:
+                  metricsAgg.adsRatioOnBeforeDiscountRevenue,
+                totalCostRatioOnBeforeDiscountRevenue:
+                  metricsAgg.totalCostRatioOnBeforeDiscountRevenue,
+                costAfterRefundRatioOnBeforeDiscountRevenue:
+                  metricsAgg.costAfterRefundRatioOnBeforeDiscountRevenue,
+                affiliateRatioOnBeforeDiscountRevenue:
+                  metricsAgg.affiliateRatioOnBeforeDiscountRevenue
+              },
+              recordsCount: metricsAgg.recordsCount
+            }
+          },
           discounts: {
             totalPlatformDiscount,
             totalSellerDiscount,
@@ -1724,6 +1949,38 @@ export class IncomeService {
               (current.ads.percentages.shopAdsToShopIncome -
                 previous.ads.percentages.shopAdsToShopIncome) *
                 100
+            ) / 100,
+          actualAdsCostPct: pct(
+            current.ads.metrics.actualAdsCost,
+            previous.ads.metrics.actualAdsCost
+          ),
+          totalCostPct: pct(
+            current.ads.metrics.totalCost,
+            previous.ads.metrics.totalCost
+          ),
+          costAfterRefundPct: pct(
+            current.ads.metrics.costAfterRefund,
+            previous.ads.metrics.costAfterRefund
+          ),
+          adsRatioOnBeforeDiscountRevenueDiff:
+            Math.round(
+              (current.ads.metrics.ratios.adsRatioOnBeforeDiscountRevenue -
+                previous.ads.metrics.ratios.adsRatioOnBeforeDiscountRevenue) *
+                100
+            ) / 100,
+          totalCostRatioOnBeforeDiscountRevenueDiff:
+            Math.round(
+              (current.ads.metrics.ratios.totalCostRatioOnBeforeDiscountRevenue -
+                previous.ads.metrics.ratios
+                  .totalCostRatioOnBeforeDiscountRevenue) *
+                100
+            ) / 100,
+          costAfterRefundRatioOnBeforeDiscountRevenueDiff:
+            Math.round(
+              (current.ads.metrics.ratios.costAfterRefundRatioOnBeforeDiscountRevenue -
+                previous.ads.metrics.ratios
+                  .costAfterRefundRatioOnBeforeDiscountRevenue) *
+                100
             ) / 100
         },
         discounts: {
@@ -1773,9 +2030,10 @@ export class IncomeService {
 
   async insertAndUpdateAffiliateType(dto: {
     totalIncomeFile: Express.Multer.File
-    affiliateFile: Express.Multer.File
+    affiliateFile?: Express.Multer.File
     date: Date
     channel: string
+    updateMode?: "full" | "status-only"
   }): Promise<void> {
     try {
       // ====== 0) Date range ======
@@ -1783,6 +2041,15 @@ export class IncomeService {
       start.setHours(0, 0, 0, 0)
       const end = new Date(dto.date)
       end.setHours(23, 59, 59, 999)
+
+      if (dto.updateMode === "status-only") {
+        await this.updateIncomeStatusesFromFile({
+          totalIncomeFile: dto.totalIncomeFile,
+          date: dto.date,
+          channel: dto.channel
+        })
+        return
+      }
 
       // ====== 1) Xử lý file tổng doanh thu: insert với source mặc định "other" + sourceChecked=false ======
       const totalWorkbook = XLSX.read(dto.totalIncomeFile.buffer, {
@@ -1838,6 +2105,7 @@ export class IncomeService {
           customer: lines[0]["Buyer Username"] || "user",
           province: lines[0]["Province"] || "",
           shippingProvider,
+          ...this.buildIncomeStatusPayload(lines[0]),
           channel: dto.channel,
           date: dto.date,
           products
@@ -1866,6 +2134,13 @@ export class IncomeService {
 
       const normalizeCreator = (value: unknown) =>
         String(value || "").trim().toLowerCase()
+
+      if (!dto.affiliateFile) {
+        throw new HttpException(
+          "Thiếu file affiliate cho chế độ full",
+          HttpStatus.BAD_REQUEST
+        )
+      }
 
       const affiliateWorkbook = XLSX.read(dto.affiliateFile.buffer, {
         type: "buffer"
@@ -1969,6 +2244,69 @@ export class IncomeService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi xử lý file tổng doanh thu và affiliate",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async updateIncomeStatusesFromFile(dto: {
+    totalIncomeFile: Express.Multer.File
+    date: Date
+    channel: string
+  }): Promise<{ matched: number; modified: number; missing: number }> {
+    try {
+      const start = new Date(dto.date)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(dto.date)
+      end.setHours(23, 59, 59, 999)
+
+      const workbook = XLSX.read(dto.totalIncomeFile.buffer, { type: "buffer" })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const readData = XLSX.utils.sheet_to_json(sheet) as XlsxIncomeData[]
+      const totalData = readData.slice(1)
+
+      const statusesByOrderId = totalData.reduce(
+        (acc, line) => {
+          const orderId = String(line["Order ID"] || "").trim()
+          if (!orderId) return acc
+          acc[orderId] = this.buildIncomeStatusPayload(line)
+          return acc
+        },
+        {} as Record<
+          string,
+          ReturnType<IncomeService["buildIncomeStatusPayload"]>
+        >
+      )
+
+      let matched = 0
+      let modified = 0
+
+      for (const [orderId, statusPayload] of Object.entries(statusesByOrderId)) {
+        const res = await this.incomeModel.updateMany(
+          {
+            orderId,
+            channel: dto.channel,
+            date: { $gte: start, $lte: end }
+          },
+          {
+            $set: statusPayload
+          }
+        )
+
+        matched += Number((res as any).matchedCount || 0)
+        modified += Number((res as any).modifiedCount || 0)
+      }
+
+      return {
+        matched,
+        modified,
+        missing: Math.max(0, Object.keys(statusesByOrderId).length - matched)
+      }
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi cập nhật trạng thái đơn hàng",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

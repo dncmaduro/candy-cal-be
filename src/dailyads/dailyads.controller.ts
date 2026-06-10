@@ -19,6 +19,7 @@ import { RolesGuard } from "../roles/roles.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { FilesInterceptor } from "@nestjs/platform-express"
 import { SimpleDailyAdsDto } from "./dto/dailyads.dto"
+import { UpsertDailyAdsMetricsDto } from "./dto/dailyads-metrics.dto"
 
 @Controller("dailyads")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -255,5 +256,95 @@ export class DailyAdsController {
     )
 
     return { success: true, data: result }
+  }
+
+  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Post("/metrics")
+  @HttpCode(HttpStatus.OK)
+  async upsertDailyAdsMetrics(
+    @Body() dto: UpsertDailyAdsMetricsDto,
+    @Req() req
+  ): Promise<{ success: boolean; data: any }> {
+    if (!dto.date) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    if (!dto.channelId) {
+      throw new HttpException(
+        "Cần cung cấp channelId",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const date = new Date(dto.date)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const result = await this.dailyAdsService.upsertDailyAdsMetrics({
+      date,
+      channelId: dto.channelId,
+      roiProtect: Number(dto.roiProtect || 0),
+      fullRefundGmv: Number(dto.fullRefundGmv || 0),
+      tinRefundAmount: Number(dto.tinRefundAmount || 0),
+      adsTax: Number(dto.adsTax || 0),
+      gmvAds: Number(dto.gmvAds || 0),
+      affiliateCost: Number(dto.affiliateCost || 0),
+      affiliateRefundAmount: Number(dto.affiliateRefundAmount || 0)
+    })
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "upsert_metrics",
+        entity: "daily_ads_metrics",
+        result: "success",
+        meta: {
+          date: dto.date,
+          channelId: dto.channelId
+        }
+      },
+      req.user.userId
+    )
+
+    return { success: true, data: result }
+  }
+
+  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Get("/metrics")
+  @HttpCode(HttpStatus.OK)
+  async getDailyAdsMetrics(
+    @Query("date") dateStr: string,
+    @Query("channelId") channelId: string
+  ) {
+    if (!dateStr) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    if (!channelId) {
+      throw new HttpException(
+        "Cần cung cấp channelId",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const result = await this.dailyAdsService.getDailyAdsMetrics(date, channelId)
+    if (!result) {
+      throw new HttpException(
+        "Không tìm thấy dữ liệu ads",
+        HttpStatus.NOT_FOUND
+      )
+    }
+
+    return result
   }
 }

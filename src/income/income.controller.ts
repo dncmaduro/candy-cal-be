@@ -357,7 +357,28 @@ export class IncomeController {
   ): Promise<{
     liveAdsCost: number
     shopAdsCost: number
+    actualAdsCost: number
+    totalCost: number
+    costAfterRefund: number
     percentages: { liveAdsToLiveIncome: number; shopAdsToShopIncome: number }
+    ratios: {
+      adsRatioOnBeforeDiscountRevenue: number
+      totalCostRatioOnBeforeDiscountRevenue: number
+      costAfterRefundRatioOnBeforeDiscountRevenue: number
+      affiliateRatioOnBeforeDiscountRevenue: number
+    }
+    rawMetrics: {
+      roiProtect: number
+      fullRefundGmv: number
+      tinRefundAmount: number
+      adsTax: number
+      gmvAds: number
+      affiliateCost: number
+      affiliateRefundAmount: number
+      incomeBeforeDiscount: number
+      incomeAfterDiscount: number
+      recordsCount: number
+    }
     totalIncome: { live: number; shop: number }
   }> {
     return this.incomeService.adsCostSplitByMonth(
@@ -416,6 +437,27 @@ export class IncomeController {
           liveAdsToLiveIncome: number
           shopAdsToShopIncome: number
         }
+        metrics: {
+          roiProtect: number
+          fullRefundGmv: number
+          tinRefundAmount: number
+          adsTax: number
+          gmvAds: number
+          affiliateCost: number
+          affiliateRefundAmount: number
+          incomeBeforeDiscount: number
+          incomeAfterDiscount: number
+          actualAdsCost: number
+          totalCost: number
+          costAfterRefund: number
+          ratios: {
+            adsRatioOnBeforeDiscountRevenue: number
+            totalCostRatioOnBeforeDiscountRevenue: number
+            costAfterRefundRatioOnBeforeDiscountRevenue: number
+            affiliateRatioOnBeforeDiscountRevenue: number
+          }
+          recordsCount: number
+        }
       }
       discounts: {
         totalPlatformDiscount: number
@@ -458,6 +500,12 @@ export class IncomeController {
         shopAdsCostPct: number
         liveAdsToLiveIncomePctDiff: number
         shopAdsToShopIncomePctDiff: number
+        actualAdsCostPct: number
+        totalCostPct: number
+        costAfterRefundPct: number
+        adsRatioOnBeforeDiscountRevenueDiff: number
+        totalCostRatioOnBeforeDiscountRevenueDiff: number
+        costAfterRefundRatioOnBeforeDiscountRevenueDiff: number
       }
       discounts: {
         totalPlatformDiscountPct: number
@@ -482,12 +530,21 @@ export class IncomeController {
   @HttpCode(HttpStatus.ACCEPTED) // Đổi thành 202 ACCEPTED
   async insertAndUpdateAffiliateType(
     @UploadedFiles() files: Express.Multer.File[],
-    @Body() body: { date: string; channel: string },
+    @Body()
+    body: {
+      date: string
+      channel: string
+      updateMode?: "full" | "status-only"
+    },
     @Req() req
   ): Promise<{ success: true; message: string }> {
-    if (!files || files.length !== 2) {
+    const updateMode = body.updateMode || "full"
+    const expectedFiles = updateMode === "status-only" ? 1 : 2
+    if (!files || files.length !== expectedFiles) {
       throw new HttpException(
-        "Cần upload 2 file: file tổng doanh thu và file affiliate",
+        updateMode === "status-only"
+          ? "Cần upload 1 file tổng đơn để cập nhật trạng thái"
+          : "Cần upload 2 file: file tổng doanh thu và file affiliate",
         HttpStatus.BAD_REQUEST
       )
     }
@@ -500,7 +557,8 @@ export class IncomeController {
           totalIncomeFile,
           affiliateFile,
           date: new Date(body.date),
-          channel: body.channel
+          channel: body.channel,
+          updateMode
         })
 
         void this.systemLogsService.createSystemLog(
@@ -541,7 +599,8 @@ export class IncomeController {
             meta: {
               error: error.message,
               totalIncomeFileSize: totalIncomeFile?.size,
-              affiliateFileSize: affiliateFile?.size
+              affiliateFileSize: affiliateFile?.size,
+              updateMode
             }
           },
           req.user.userId
