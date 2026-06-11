@@ -100,7 +100,7 @@ export class SalesFunnelController {
     return result
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-emp", "facebook-ads-emp")
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   async downloadUploadTemplate(@Res() res: Response): Promise<void> {
@@ -211,14 +211,14 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getFunnelById(@Param("id") id: string): Promise<any> {
     return this.salesFunnelService.getFunnelById(id)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchFunnels(
@@ -260,7 +260,7 @@ export class SalesFunnelController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("/psid/:psid")
   @HttpCode(HttpStatus.OK)
   async getFunnelByPsid(
@@ -320,7 +320,7 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get(":id/check-permission")
   @HttpCode(HttpStatus.OK)
   async checkFunnelPermission(
@@ -339,7 +339,7 @@ export class SalesFunnelController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("user/:userId")
   @HttpCode(HttpStatus.OK)
   async getFunnelsByUser(

@@ -118,7 +118,7 @@ export class SalesOrdersController {
     return result
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-emp", "facebook-ads-emp")
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   async downloadUploadTemplate(@Res() res: Response): Promise<void> {
@@ -249,14 +249,20 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getOrderById(@Param("id") id: string): Promise<SalesOrder | null> {
     return this.salesOrdersService.getOrderById(id)
   }
 
-  @Roles("admin", "sales-emp", "sales-accounting")
+  @Roles("admin", "sales-emp", "sales-accounting", "facebook-ads-emp")
   @Get("funnel/:funnelId")
   @HttpCode(HttpStatus.OK)
   async getOrdersByFunnel(
@@ -279,7 +285,13 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchOrders(
@@ -346,7 +358,13 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get("options/storages")
   @HttpCode(HttpStatus.OK)
   async getAllStorages(): Promise<{
@@ -355,7 +373,13 @@ export class SalesOrdersController {
     return this.salesOrdersService.getAllStorages()
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get("options/shipping-types")
   @HttpCode(HttpStatus.OK)
   async getAllShippingTypes(): Promise<{
@@ -364,7 +388,13 @@ export class SalesOrdersController {
     return this.salesOrdersService.getAllShippingTypes()
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get("export/xlsx")
   @HttpCode(HttpStatus.OK)
   async exportOrdersToExcel(
@@ -401,7 +431,13 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get("export/xlsx/accounting")
   @HttpCode(HttpStatus.OK)
   async exportOrdersToExcelForAccounting(

@@ -101,14 +101,26 @@ export class SalesChannelsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getChannelById(@Param("id") id: string): Promise<SalesChannel | null> {
     return this.salesChannelsService.getChannelById(id)
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-accounting")
+  @Roles(
+    "admin",
+    "sales-emp",
+    "system-emp",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchChannels(
@@ -145,7 +157,7 @@ export class SalesChannelsController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("my/channel")
   @HttpCode(HttpStatus.OK)
   async getMyChannel(@Req() req): Promise<{ channel: SalesChannel | null }> {
