@@ -75,7 +75,7 @@ export class SalesPriceItemsController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getSalesPriceItems(
@@ -87,7 +87,7 @@ export class SalesPriceItemsController {
     return this.salesPriceItemsService.getSalesPriceItems(p, l)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getSalesPriceItemByItemId(

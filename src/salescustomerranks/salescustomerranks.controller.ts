@@ -54,14 +54,14 @@ export class SalesCustomerRanksController {
     return created
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllRanks(): Promise<SalesCustomerRank[]> {
     return this.salesCustomerRanksService.getAllRanks()
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getRankById(
