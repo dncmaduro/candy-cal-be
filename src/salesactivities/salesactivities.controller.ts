@@ -64,7 +64,7 @@ export class SalesActivitiesController {
     return created
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllActivities(
@@ -81,7 +81,7 @@ export class SalesActivitiesController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("funnel/:salesFunnelId/latest")
   @HttpCode(HttpStatus.OK)
   async getLatestActivitiesByFunnel(
@@ -94,7 +94,7 @@ export class SalesActivitiesController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getActivityById(@Param("id") id: string): Promise<SalesActivity> {

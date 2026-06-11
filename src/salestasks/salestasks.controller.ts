@@ -57,7 +57,13 @@ export class SalesTasksController {
     return created
   }
 
-  @Roles("admin", "sales-leader", "sales-emp", "system-emp")
+  @Roles(
+    "admin",
+    "sales-leader",
+    "sales-emp",
+    "system-emp",
+    "facebook-ads-emp"
+  )
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllTasks(
@@ -76,7 +82,13 @@ export class SalesTasksController {
     )
   }
 
-  @Roles("admin", "sales-leader", "sales-emp", "system-emp")
+  @Roles(
+    "admin",
+    "sales-leader",
+    "sales-emp",
+    "system-emp",
+    "facebook-ads-emp"
+  )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getTaskById(@Param("id") id: string): Promise<SalesTask> {

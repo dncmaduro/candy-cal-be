@@ -24,7 +24,7 @@ export class SalesDailyReportsController {
     private readonly salesDailyReportsService: SalesDailyReportsService
   ) {}
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("revenue-for-date")
   @HttpCode(HttpStatus.OK)
   async getRevenueForDate(
@@ -60,25 +60,27 @@ export class SalesDailyReportsController {
     body: {
       date: string
       channel: string
-      adsCost: number
       dateKpi: number
-      revenue: number
-      newFunnelRevenue: {
-        ads: number
-        other: number
-      }
-      returningFunnelRevenue: number
-      newOrder: number
-      returningOrder: number
-      accumulatedRevenue: number
-      accumulatedAdsCost: number
-      accumulatedNewFunnelRevenue: {
-        ads: number
-        other: number
-      }
     }
   ): Promise<SalesDailyReport> {
     return this.salesDailyReportsService.createReport({
+      ...body,
+      date: new Date(body.date)
+    })
+  }
+
+  @Roles("admin", "facebook-ads-emp")
+  @Post("ads-cost")
+  @HttpCode(HttpStatus.OK)
+  async updateAdsCost(
+    @Body()
+    body: {
+      date: string
+      channel: string
+      adsCost: number
+    }
+  ): Promise<SalesDailyReport> {
+    return this.salesDailyReportsService.updateAdsCost({
       ...body,
       date: new Date(body.date)
     })
@@ -91,7 +93,7 @@ export class SalesDailyReportsController {
     await this.salesDailyReportsService.deleteReport(id)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("by-month")
   @HttpCode(HttpStatus.OK)
   async getReportsByMonth(
@@ -108,7 +110,7 @@ export class SalesDailyReportsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("month-kpi/by-date")
   @HttpCode(HttpStatus.OK)
   async getMonthKpi(
@@ -118,7 +120,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.getMonthKpi(new Date(date), channelId)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("accumulated-revenue/by-month")
   @HttpCode(HttpStatus.OK)
   async getAccumulatedRevenueForMonth(
@@ -150,7 +152,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.createOrUpdateMonthKpi(body)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("month-kpi")
   @HttpCode(HttpStatus.OK)
   async getMonthKpis(
@@ -172,7 +174,7 @@ export class SalesDailyReportsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get("month-kpi/:id")
   @HttpCode(HttpStatus.OK)
   async getMonthKpiDetail(
@@ -181,7 +183,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.getMonthKpiDetail(id)
   }
 
-  @Roles("admin", "sales-emp", "system-emp")
+  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getReportDetail(

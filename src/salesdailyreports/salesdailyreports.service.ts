@@ -239,38 +239,51 @@ export class SalesDailyReportsService {
   async createReport(payload: {
     date: Date
     channel: string
-    adsCost: number
     dateKpi: number
-    revenue: number
-    newFunnelRevenue: {
-      ads: number
-      other: number
-    }
-    returningFunnelRevenue: number
-    newOrder: number
-    returningOrder: number
-    accumulatedRevenue: number
-    accumulatedAdsCost: number
-    accumulatedNewFunnelRevenue: {
-      ads: number
-      other: number
-    }
   }): Promise<SalesDailyReport> {
     try {
       const normalizedDate = this.getUtcDayRange(payload.date).start
+      const channel = new Types.ObjectId(payload.channel)
+      const revenueData = await this.getRevenueForDate(
+        normalizedDate,
+        payload.channel
+      )
+
+      const existing = await this.salesDailyReportModel.findOne({
+        date: normalizedDate,
+        channel,
+        deletedAt: null
+      })
+
+      if (existing) {
+        existing.dateKpi = Number(payload.dateKpi || 0)
+        existing.revenue = revenueData.revenue
+        existing.newFunnelRevenue = revenueData.newFunnelRevenue
+        existing.returningFunnelRevenue = revenueData.returningFunnelRevenue
+        existing.newOrder = revenueData.newOrder
+        existing.returningOrder = revenueData.returningOrder
+        existing.accumulatedRevenue = revenueData.accumulatedRevenue
+        existing.accumulatedAdsCost = revenueData.accumulatedAdsCost
+        existing.accumulatedNewFunnelRevenue =
+          revenueData.accumulatedNewFunnelRevenue
+        existing.updatedAt = new Date()
+        return await existing.save()
+      }
+
       const report = new this.salesDailyReportModel({
         date: normalizedDate,
-        channel: new Types.ObjectId(payload.channel),
-        adsCost: payload.adsCost,
-        dateKpi: payload.dateKpi,
-        revenue: payload.revenue,
-        newFunnelRevenue: payload.newFunnelRevenue,
-        returningFunnelRevenue: payload.returningFunnelRevenue,
-        newOrder: payload.newOrder,
-        returningOrder: payload.returningOrder,
-        accumulatedRevenue: payload.accumulatedRevenue,
-        accumulatedAdsCost: payload.accumulatedAdsCost,
-        accumulatedNewFunnelRevenue: payload.accumulatedNewFunnelRevenue,
+        channel,
+        adsCost: 0,
+        dateKpi: Number(payload.dateKpi || 0),
+        revenue: revenueData.revenue,
+        newFunnelRevenue: revenueData.newFunnelRevenue,
+        returningFunnelRevenue: revenueData.returningFunnelRevenue,
+        newOrder: revenueData.newOrder,
+        returningOrder: revenueData.returningOrder,
+        accumulatedRevenue: revenueData.accumulatedRevenue,
+        accumulatedAdsCost: revenueData.accumulatedAdsCost,
+        accumulatedNewFunnelRevenue:
+          revenueData.accumulatedNewFunnelRevenue,
         createdAt: new Date(),
         updatedAt: new Date()
       })
@@ -282,6 +295,65 @@ export class SalesDailyReportsService {
         "Lỗi khi tạo báo cáo",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
+    }
+  }
+
+  async updateAdsCost(payload: {
+    date: Date
+    channel: string
+    adsCost: number
+  }): Promise<SalesDailyReport> {
+    try {
+      const normalizedDate = this.getUtcDayRange(payload.date).start
+      const channel = new Types.ObjectId(payload.channel)
+      const report = await this.salesDailyReportModel.findOne({
+        date: normalizedDate,
+        channel,
+        deletedAt: null
+      })
+
+      if (!report) {
+        throw new HttpException("Báo cáo không tồn tại", HttpStatus.NOT_FOUND)
+      }
+
+      report.adsCost = Number(payload.adsCost || 0)
+      report.updatedAt = new Date()
+      const saved = await report.save()
+
+      await this.refreshAccumulatedAdsCostForMonth(normalizedDate, channel)
+
+      return saved
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in updateAdsCost:", error)
+      throw new HttpException(
+        "Lỗi khi cập nhật chi phí quảng cáo",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  private async refreshAccumulatedAdsCostForMonth(
+    date: Date,
+    channel: Types.ObjectId
+  ): Promise<void> {
+    const { start: startOfMonth, end: endOfMonth } =
+      this.getUtcMonthRangeForDate(date)
+
+    const reports = await this.salesDailyReportModel
+      .find({
+        channel,
+        date: { $gte: startOfMonth, $lte: endOfMonth },
+        deletedAt: null
+      })
+      .sort({ date: 1 })
+
+    let accumulatedAdsCost = 0
+    for (const report of reports) {
+      report.accumulatedAdsCost = accumulatedAdsCost
+      report.updatedAt = new Date()
+      await report.save()
+      accumulatedAdsCost += Number(report.adsCost || 0)
     }
   }
 
