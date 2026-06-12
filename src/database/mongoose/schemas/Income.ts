@@ -70,4 +70,6 @@ export const IncomeSchema = new Schema<Income>({
   ]
 })
 
+IncomeSchema.index({ channel: 1, date: 1 })
+
 export const IncomeModel = model<Income>("Income", IncomeSchema)
