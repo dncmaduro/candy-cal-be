@@ -154,6 +154,22 @@ export class IncomeService {
     const data = rows?.[0] || {}
     const incomeBeforeDiscount = Number(data.incomeBeforeDiscount || 0)
 
+    const rows = await this.dailyAdsModel
+      .aggregate([
+        { $match: adsFilter },
+        {
+          $group: {
+            _id: null,
+            liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
+            shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
+          }
+        }
+      ])
+      .exec()
+
+    const liveAdsCost = rows?.[0]?.liveAdsCost || 0
+    const shopAdsCost = rows?.[0]?.shopAdsCost || 0
+
     return {
       roiProtect: Number(data.roiProtect || 0),
       fullRefundGmv: Number(data.fullRefundGmv || 0),
@@ -169,7 +185,7 @@ export class IncomeService {
       costAfterRefund: Number(data.costAfterRefund || 0),
       adsRatioOnBeforeDiscountRevenue:
         incomeBeforeDiscount > 0
-          ? Math.round((Number(data.actualAdsCost || 0) / incomeBeforeDiscount) * 10000) /
+          ? Math.round((Number((liveAdsCost + shopAdsCost) || 0) / incomeBeforeDiscount) * 10000) /
             100
           : 0,
       totalCostRatioOnBeforeDiscountRevenue:
