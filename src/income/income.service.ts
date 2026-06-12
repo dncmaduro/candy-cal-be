@@ -18,7 +18,6 @@ import { DailyAdsMetrics } from "../database/mongoose/schemas/DailyAdsMetrics"
 import { format as formatDateFns } from "date-fns"
 import { OWN_USERS } from "../constants/own-users"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
-import { countOrdersByChannel } from "./utils/order-channel.util"
 
 @Injectable()
 export class IncomeService {
@@ -93,10 +92,38 @@ export class IncomeService {
     }
   }
 
-  private async aggregateDailyAdsMetrics(
+  private async aggregateIncomeAmounts(
     start: Date,
     end: Date,
     channelId?: string
+  ): Promise<{ incomeBeforeDiscount: number; incomeAfterDiscount: number }> {
+    const filter: any = { date: { $gte: start, $lte: end } }
+    if (channelId) {
+      filter.channel = new Types.ObjectId(channelId)
+    }
+
+    const incomes = await this.incomeModel.find(filter).lean()
+
+    let incomeBeforeDiscount = 0
+    let incomeAfterDiscount = 0
+
+    for (const income of incomes) {
+      for (const product of income.products || []) {
+        const priceBeforeDiscount = Number(product.price || 0)
+        const sellerDiscount = Number(product.sellerDiscount || 0)
+        incomeBeforeDiscount += priceBeforeDiscount
+        incomeAfterDiscount += priceBeforeDiscount - sellerDiscount
+      }
+    }
+
+    return { incomeBeforeDiscount, incomeAfterDiscount }
+  }
+
+  private async aggregateDailyAdsMetrics(
+    start: Date,
+    end: Date,
+    channelId?: string,
+    incomeAmounts?: { incomeBeforeDiscount: number; incomeAfterDiscount: number }
   ): Promise<{
     roiProtect: number
     fullRefundGmv: number
@@ -136,12 +163,6 @@ export class IncomeService {
             affiliateRefundAmount: {
               $sum: { $ifNull: ["$affiliateRefundAmount", 0] }
             },
-            incomeBeforeDiscount: {
-              $sum: { $ifNull: ["$incomeBeforeDiscount", 0] }
-            },
-            incomeAfterDiscount: {
-              $sum: { $ifNull: ["$incomeAfterDiscount", 0] }
-            },
             actualAdsCost: { $sum: { $ifNull: ["$actualAdsCost", 0] } },
             totalCost: { $sum: { $ifNull: ["$totalCost", 0] } },
             costAfterRefund: { $sum: { $ifNull: ["$costAfterRefund", 0] } },
@@ -152,8 +173,9 @@ export class IncomeService {
       .exec()
 
     const data = rows?.[0] || {}
-    const incomeBeforeDiscount = Number(data.incomeBeforeDiscount || 0)
-
+    const incomeAgg =
+      incomeAmounts || (await this.aggregateIncomeAmounts(start, end, channelId))
+    const incomeBeforeDiscount = Number(incomeAgg.incomeBeforeDiscount || 0)
     return {
       roiProtect: Number(data.roiProtect || 0),
       fullRefundGmv: Number(data.fullRefundGmv || 0),
@@ -163,19 +185,21 @@ export class IncomeService {
       affiliateCost: Number(data.affiliateCost || 0),
       affiliateRefundAmount: Number(data.affiliateRefundAmount || 0),
       incomeBeforeDiscount,
-      incomeAfterDiscount: Number(data.incomeAfterDiscount || 0),
+      incomeAfterDiscount: Number(incomeAgg.incomeAfterDiscount || 0),
       actualAdsCost: Number(data.actualAdsCost || 0),
       totalCost: Number(data.totalCost || 0),
       costAfterRefund: Number(data.costAfterRefund || 0),
       adsRatioOnBeforeDiscountRevenue:
         incomeBeforeDiscount > 0
-          ? Math.round((Number(data.actualAdsCost || 0) / incomeBeforeDiscount) * 10000) /
-            100
+          ? Math.round(
+              (Number(data.actualAdsCost || 0) / incomeBeforeDiscount) * 10000
+            ) / 100
           : 0,
       totalCostRatioOnBeforeDiscountRevenue:
         incomeBeforeDiscount > 0
-          ? Math.round((Number(data.totalCost || 0) / incomeBeforeDiscount) * 10000) /
-            100
+          ? Math.round(
+              (Number(data.totalCost || 0) / incomeBeforeDiscount) * 10000
+            ) / 100
           : 0,
       costAfterRefundRatioOnBeforeDiscountRevenue:
         incomeBeforeDiscount > 0
@@ -185,10 +209,562 @@ export class IncomeService {
           : 0,
       affiliateRatioOnBeforeDiscountRevenue:
         incomeBeforeDiscount > 0
-          ? Math.round((Number(data.affiliateCost || 0) / incomeBeforeDiscount) * 10000) /
-            100
+          ? Math.round(
+              (Number(data.affiliateCost || 0) / incomeBeforeDiscount) * 10000
+            ) / 100
           : 0,
       recordsCount: Number(data.recordsCount || 0)
+    }
+  }
+
+  private async aggregateRangeIncomeStats(
+    start: Date,
+    end: Date,
+    channelId: string
+  ) {
+    const rows = await this.incomeModel
+      .aggregate([
+        {
+          $match: {
+            date: { $gte: start, $lte: end },
+            channel: new Types.ObjectId(channelId)
+          }
+        },
+        {
+          $facet: {
+            productStats: [
+              { $unwind: "$products" },
+              {
+                $project: {
+                  price: { $ifNull: ["$products.price", 0] },
+                  platformDiscount: {
+                    $ifNull: ["$products.platformDiscount", 0]
+                  },
+                  sellerDiscount: {
+                    $ifNull: ["$products.sellerDiscount", 0]
+                  },
+                  source: { $ifNull: ["$products.source", "other"] },
+                  content: { $ifNull: ["$products.content", ""] },
+                  creator: { $ifNull: ["$products.creator", ""] },
+                  quantity: { $ifNull: ["$products.quantity", 0] },
+                  box: "$products.box",
+                  code: { $ifNull: ["$products.code", "(unknown)"] }
+                }
+              },
+              {
+                $project: {
+                  price: 1,
+                  platformDiscount: 1,
+                  sellerDiscount: 1,
+                  source: 1,
+                  quantity: 1,
+                  box: 1,
+                  code: 1,
+                  afterSellerDiscount: { $subtract: ["$price", "$sellerDiscount"] },
+                  isLive: {
+                    $regexMatch: {
+                      input: "$content",
+                      regex: "Phát trực tiếp|livestream",
+                      options: "i"
+                    }
+                  },
+                  isVideo: {
+                    $regexMatch: {
+                      input: "$content",
+                      regex: "video",
+                      options: "i"
+                    }
+                  },
+                  isOwnCreator: { $in: ["$creator", OWN_USERS] }
+                }
+              },
+              {
+                $group: {
+                  _id: null,
+                  totalIncomeBeforeDiscount: { $sum: "$price" },
+                  totalIncomeAfterDiscount: { $sum: "$afterSellerDiscount" },
+                  totalPlatformDiscount: { $sum: "$platformDiscount" },
+                  totalSellerDiscount: { $sum: "$sellerDiscount" },
+                  totalOriginalPrice: { $sum: "$price" },
+                  orderCount: { $sum: 1 },
+                  liveIncomeBeforeDiscount: {
+                    $sum: { $cond: ["$isLive", "$price", 0] }
+                  },
+                  liveIncomeAfterDiscount: {
+                    $sum: { $cond: ["$isLive", "$afterSellerDiscount", 0] }
+                  },
+                  ownVideoIncomeBeforeDiscount: {
+                    $sum: {
+                      $cond: [
+                        { $and: ["$isVideo", "$isOwnCreator"] },
+                        "$price",
+                        0
+                      ]
+                    }
+                  },
+                  ownVideoIncomeAfterDiscount: {
+                    $sum: {
+                      $cond: [
+                        { $and: ["$isVideo", "$isOwnCreator"] },
+                        "$afterSellerDiscount",
+                        0
+                      ]
+                    }
+                  },
+                  otherVideoIncomeBeforeDiscount: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            "$isVideo",
+                            { $not: ["$isOwnCreator"] }
+                          ]
+                        },
+                        "$price",
+                        0
+                      ]
+                    }
+                  },
+                  otherVideoIncomeAfterDiscount: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            "$isVideo",
+                            { $not: ["$isOwnCreator"] }
+                          ]
+                        },
+                        "$afterSellerDiscount",
+                        0
+                      ]
+                    }
+                  },
+                  sourcesBeforeDiscountAds: {
+                    $sum: { $cond: [{ $eq: ["$source", "ads"] }, "$price", 0] }
+                  },
+                  sourcesBeforeDiscountAffiliate: {
+                    $sum: {
+                      $cond: [{ $eq: ["$source", "affiliate"] }, "$price", 0]
+                    }
+                  },
+                  sourcesBeforeDiscountAffiliateAds: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ["$source", "affiliate-ads"] },
+                        "$price",
+                        0
+                      ]
+                    }
+                  },
+                  sourcesBeforeDiscountOther: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $not: [
+                            {
+                              $in: [
+                                "$source",
+                                ["ads", "affiliate", "affiliate-ads"]
+                              ]
+                            }
+                          ]
+                        },
+                        "$price",
+                        0
+                      ]
+                    }
+                  },
+                  sourcesAfterDiscountAds: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ["$source", "ads"] },
+                        "$afterSellerDiscount",
+                        0
+                      ]
+                    }
+                  },
+                  sourcesAfterDiscountAffiliate: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ["$source", "affiliate"] },
+                        "$afterSellerDiscount",
+                        0
+                      ]
+                    }
+                  },
+                  sourcesAfterDiscountAffiliateAds: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ["$source", "affiliate-ads"] },
+                        "$afterSellerDiscount",
+                        0
+                      ]
+                    }
+                  },
+                  sourcesAfterDiscountOther: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $not: [
+                            {
+                              $in: [
+                                "$source",
+                                ["ads", "affiliate", "affiliate-ads"]
+                              ]
+                            }
+                          ]
+                        },
+                        "$afterSellerDiscount",
+                        0
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            boxes: [
+              { $unwind: "$products" },
+              {
+                $match: {
+                  "products.box": { $exists: true, $nin: [null, ""] }
+                }
+              },
+              {
+                $group: {
+                  _id: "$products.box",
+                  quantity: { $sum: { $ifNull: ["$products.quantity", 0] } }
+                }
+              },
+              { $sort: { _id: 1 } }
+            ],
+            productsQuantity: [
+              { $unwind: "$products" },
+              {
+                $group: {
+                  _id: {
+                    $cond: [
+                      { $in: ["$products.code", [null, ""]] },
+                      "(unknown)",
+                      "$products.code"
+                    ]
+                  },
+                  quantity: { $sum: { $ifNull: ["$products.quantity", 0] } }
+                }
+              },
+              { $sort: { quantity: -1 } }
+            ],
+            shippingProviders: [
+              {
+                $group: {
+                  _id: {
+                    $cond: [
+                      { $in: ["$shippingProvider", [null, ""]] },
+                      "(unknown)",
+                      "$shippingProvider"
+                    ]
+                  },
+                  orders: { $sum: 1 }
+                }
+              },
+              { $sort: { orders: -1 } }
+            ],
+            orders: [
+              {
+                $project: {
+                  products: { $ifNull: ["$products", []] }
+                }
+              },
+              {
+                $project: {
+                  isLive: {
+                    $anyElementTrue: {
+                      $map: {
+                        input: "$products",
+                        as: "product",
+                        in: {
+                          $regexMatch: {
+                            input: { $ifNull: ["$$product.content", ""] },
+                            regex: "Phát trực tiếp|livestream",
+                            options: "i"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                $group: {
+                  _id: null,
+                  total: { $sum: 1 },
+                  live: { $sum: { $cond: ["$isLive", 1, 0] } },
+                  shop: { $sum: { $cond: ["$isLive", 0, 1] } }
+                }
+              }
+            ]
+          }
+        }
+      ])
+      .exec()
+
+    const row = rows?.[0] || {}
+    const stats = row.productStats?.[0] || {}
+    const orderStats = row.orders?.[0] || {}
+    const videoIncomeBeforeDiscount =
+      Number(stats.ownVideoIncomeBeforeDiscount || 0) +
+      Number(stats.otherVideoIncomeBeforeDiscount || 0)
+    const videoIncomeAfterDiscount =
+      Number(stats.ownVideoIncomeAfterDiscount || 0) +
+      Number(stats.otherVideoIncomeAfterDiscount || 0)
+    const totalIncomeBeforeDiscount = Number(
+      stats.totalIncomeBeforeDiscount || 0
+    )
+    const totalIncomeAfterDiscount = Number(stats.totalIncomeAfterDiscount || 0)
+    const liveIncomeBeforeDiscount = Number(
+      stats.liveIncomeBeforeDiscount || 0
+    )
+    const liveIncomeAfterDiscount = Number(stats.liveIncomeAfterDiscount || 0)
+    const totalOriginalPrice = Number(stats.totalOriginalPrice || 0)
+    const totalSellerDiscount = Number(stats.totalSellerDiscount || 0)
+
+    return {
+      beforeDiscount: {
+        totalIncome: totalIncomeBeforeDiscount,
+        liveIncome: liveIncomeBeforeDiscount,
+        videoIncome: videoIncomeBeforeDiscount,
+        ownVideoIncome: Number(stats.ownVideoIncomeBeforeDiscount || 0),
+        otherVideoIncome: Number(stats.otherVideoIncomeBeforeDiscount || 0),
+        otherIncome:
+          totalIncomeBeforeDiscount -
+          videoIncomeBeforeDiscount -
+          liveIncomeBeforeDiscount,
+        sources: {
+          ads: Number(stats.sourcesBeforeDiscountAds || 0),
+          affiliate: Number(stats.sourcesBeforeDiscountAffiliate || 0),
+          affiliateAds: Number(stats.sourcesBeforeDiscountAffiliateAds || 0),
+          other: Number(stats.sourcesBeforeDiscountOther || 0)
+        }
+      },
+      afterDiscount: {
+        totalIncome: totalIncomeAfterDiscount,
+        liveIncome: liveIncomeAfterDiscount,
+        videoIncome: videoIncomeAfterDiscount,
+        ownVideoIncome: Number(stats.ownVideoIncomeAfterDiscount || 0),
+        otherVideoIncome: Number(stats.otherVideoIncomeAfterDiscount || 0),
+        otherIncome:
+          totalIncomeAfterDiscount -
+          videoIncomeAfterDiscount -
+          liveIncomeAfterDiscount,
+        sources: {
+          ads: Number(stats.sourcesAfterDiscountAds || 0),
+          affiliate: Number(stats.sourcesAfterDiscountAffiliate || 0),
+          affiliateAds: Number(stats.sourcesAfterDiscountAffiliateAds || 0),
+          other: Number(stats.sourcesAfterDiscountOther || 0)
+        }
+      },
+      boxes: (row.boxes || []).map((item) => ({
+        box: item._id,
+        quantity: Number(item.quantity || 0)
+      })),
+      shippingProviders: (row.shippingProviders || []).map((item) => ({
+        provider: item._id || "(unknown)",
+        orders: Number(item.orders || 0)
+      })),
+      discounts: {
+        totalPlatformDiscount: Number(stats.totalPlatformDiscount || 0),
+        totalSellerDiscount,
+        totalDiscount:
+          Number(stats.totalPlatformDiscount || 0) + totalSellerDiscount,
+        avgDiscountPerOrder:
+          Number(stats.orderCount || 0) > 0
+            ? totalSellerDiscount / Number(stats.orderCount || 0)
+            : 0,
+        discountPercentage:
+          totalOriginalPrice > 0
+            ? Math.round((totalSellerDiscount / totalOriginalPrice) * 10000) /
+              100
+            : 0
+      },
+      orders: {
+        total: Number(orderStats.total || 0),
+        live: Number(orderStats.live || 0),
+        shop: Number(orderStats.shop || 0)
+      },
+      productsQuantity: Object.fromEntries(
+        (row.productsQuantity || []).map((item) => [
+          item._id || "(unknown)",
+          Number(item.quantity || 0)
+        ])
+      )
+    }
+  }
+
+  private getMonthlySplitRange(month: number, year: number): {
+    start: Date
+    end: Date
+  } {
+    const start = new Date(Date.UTC(year, month, 1))
+    start.setUTCHours(start.getUTCHours() - 7)
+
+    const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
+    end.setUTCHours(end.getUTCHours() - 7)
+
+    return { start, end }
+  }
+
+  private async aggregateMonthSplitStats(
+    month: number,
+    year: number,
+    channelId?: string
+  ): Promise<{
+    income: {
+      beforeDiscount: { live: number; shop: number }
+      afterDiscount: { live: number; shop: number }
+    }
+    quantity: { live: number; shop: number }
+    orders: { live: number; shop: number }
+  }> {
+    const { start, end } = this.getMonthlySplitRange(month, year)
+    const match: any = { date: { $gte: start, $lte: end } }
+    if (channelId) match.channel = new Types.ObjectId(channelId)
+
+    const rows = await this.incomeModel
+      .aggregate([
+        { $match: match },
+        {
+          $facet: {
+            products: [
+              { $unwind: "$products" },
+              {
+                $project: {
+                  price: { $ifNull: ["$products.price", 0] },
+                  sellerDiscount: {
+                    $ifNull: ["$products.sellerDiscount", 0]
+                  },
+                  quantity: { $ifNull: ["$products.quantity", 0] },
+                  isLive: {
+                    $regexMatch: {
+                      input: { $ifNull: ["$products.content", ""] },
+                      regex: "Phát trực tiếp|livestream",
+                      options: "i"
+                    }
+                  }
+                }
+              },
+              {
+                $project: {
+                  price: 1,
+                  quantity: 1,
+                  isLive: 1,
+                  afterSellerDiscount: {
+                    $subtract: ["$price", "$sellerDiscount"]
+                  }
+                }
+              },
+              {
+                $group: {
+                  _id: null,
+                  liveBeforeDiscount: {
+                    $sum: { $cond: ["$isLive", "$price", 0] }
+                  },
+                  shopBeforeDiscount: {
+                    $sum: { $cond: ["$isLive", 0, "$price"] }
+                  },
+                  liveAfterDiscount: {
+                    $sum: { $cond: ["$isLive", "$afterSellerDiscount", 0] }
+                  },
+                  shopAfterDiscount: {
+                    $sum: { $cond: ["$isLive", 0, "$afterSellerDiscount"] }
+                  },
+                  liveQuantity: {
+                    $sum: { $cond: ["$isLive", "$quantity", 0] }
+                  },
+                  shopQuantity: {
+                    $sum: { $cond: ["$isLive", 0, "$quantity"] }
+                  }
+                }
+              }
+            ],
+            orders: [
+              {
+                $project: {
+                  products: { $ifNull: ["$products", []] }
+                }
+              },
+              {
+                $project: {
+                  hasLive: {
+                    $anyElementTrue: {
+                      $map: {
+                        input: "$products",
+                        as: "product",
+                        in: {
+                          $regexMatch: {
+                            input: { $ifNull: ["$$product.content", ""] },
+                            regex: "Phát trực tiếp|livestream",
+                            options: "i"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  hasShop: {
+                    $anyElementTrue: {
+                      $map: {
+                        input: "$products",
+                        as: "product",
+                        in: {
+                          $not: [
+                            {
+                              $regexMatch: {
+                                input: { $ifNull: ["$$product.content", ""] },
+                                regex: "Phát trực tiếp|livestream",
+                                options: "i"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                $group: {
+                  _id: null,
+                  live: { $sum: { $cond: ["$hasLive", 1, 0] } },
+                  shop: { $sum: { $cond: ["$hasShop", 1, 0] } }
+                }
+              }
+            ]
+          }
+        }
+      ])
+      .exec()
+
+    const row = rows?.[0] || {}
+    const productStats = row.products?.[0] || {}
+    const orderStats = row.orders?.[0] || {}
+
+    return {
+      income: {
+        beforeDiscount: {
+          live: Number(productStats.liveBeforeDiscount || 0),
+          shop: Number(productStats.shopBeforeDiscount || 0)
+        },
+        afterDiscount: {
+          live: Number(productStats.liveAfterDiscount || 0),
+          shop: Number(productStats.shopAfterDiscount || 0)
+        }
+      },
+      quantity: {
+        live: Number(productStats.liveQuantity || 0),
+        shop: Number(productStats.shopQuantity || 0)
+      },
+      orders: {
+        live: Number(orderStats.live || 0),
+        shop: Number(orderStats.shop || 0)
+      }
     }
   }
 
@@ -561,42 +1137,12 @@ export class IncomeService {
     afterDiscount: { live: number; shop: number }
   }> {
     try {
-      // Adjust for GMT+7 timezone (Vietnam time)
-      // Create dates in UTC then adjust to match Vietnam timezone
-      const start = new Date(Date.UTC(year, month, 1))
-      start.setUTCHours(start.getUTCHours() - 7) // Subtract 7 hours to get GMT+7 start in UTC
-
-      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
-      end.setUTCHours(end.getUTCHours() - 7) // Subtract 7 hours to get GMT+7 end in UTC
-
-      const filter: any = { date: { $gte: start, $lte: end } }
-      if (channelId) filter.channel = channelId
-
-      const incomes = await this.incomeModel.find(filter).lean()
-
-      let liveBeforeDiscount = 0
-      let shopBeforeDiscount = 0
-      let liveAfterDiscount = 0
-      let shopAfterDiscount = 0
-
-      for (const income of incomes) {
-        const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
-          income.products || []
-        )
-        liveBeforeDiscount += this.sumProductsAmountBeforeDiscount(liveProducts)
-        shopBeforeDiscount += this.sumProductsAmountBeforeDiscount(shopProducts)
-
-        // CHỈ TRỪ SELLER DISCOUNT, KHÔNG TRỪ PLATFORM DISCOUNT
-        liveAfterDiscount +=
-          this.sumProductsAmountAfterSellerDiscount(liveProducts)
-        shopAfterDiscount +=
-          this.sumProductsAmountAfterSellerDiscount(shopProducts)
-      }
-
-      return {
-        beforeDiscount: { live: liveBeforeDiscount, shop: shopBeforeDiscount },
-        afterDiscount: { live: liveAfterDiscount, shop: shopAfterDiscount }
-      }
+      const splitStats = await this.aggregateMonthSplitStats(
+        month,
+        year,
+        channelId
+      )
+      return splitStats.income
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -612,28 +1158,12 @@ export class IncomeService {
     channelId?: string
   ): Promise<{ live: number; shop: number }> {
     try {
-      // Adjust for GMT+7 timezone (Vietnam time)
-      const start = new Date(Date.UTC(year, month, 1))
-      start.setUTCHours(start.getUTCHours() - 7)
-
-      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
-      end.setUTCHours(end.getUTCHours() - 7)
-
-      const filter: any = { date: { $gte: start, $lte: end } }
-      if (channelId) filter.channel = channelId
-
-      const incomes = await this.incomeModel.find(filter).lean()
-
-      let live = 0
-      let shop = 0
-      for (const income of incomes) {
-        const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
-          income.products || []
-        )
-        live += this.sumProductsQuantity(liveProducts)
-        shop += this.sumProductsQuantity(shopProducts)
-      }
-      return { live, shop }
+      const splitStats = await this.aggregateMonthSplitStats(
+        month,
+        year,
+        channelId
+      )
+      return splitStats.quantity
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -649,32 +1179,12 @@ export class IncomeService {
     channelId?: string
   ): Promise<{ live: number; shop: number }> {
     try {
-      // Adjust for GMT+7 timezone (Vietnam time)
-      const start = new Date(Date.UTC(year, month, 1))
-      start.setUTCHours(start.getUTCHours() - 7)
-
-      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
-      end.setUTCHours(end.getUTCHours() - 7)
-
-      const filter: any = { date: { $gte: start, $lte: end } }
-      if (channelId) filter.channel = channelId
-
-      const incomes = await this.incomeModel.find(filter).lean()
-
-      let live = 0
-      let shop = 0
-      for (const income of incomes) {
-        const { live: liveProducts, shop: shopProducts } = this.splitByChannel(
-          income.products || []
-        )
-
-        // Count an order in each bucket where it contains at least one
-        // matching product. Current prod data is mutually exclusive.
-        if (liveProducts.length > 0) live += 1
-        if (shopProducts.length > 0) shop += 1
-      }
-
-      return { live, shop }
+      const splitStats = await this.aggregateMonthSplitStats(
+        month,
+        year,
+        channelId
+      )
+      return splitStats.orders
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -701,13 +1211,13 @@ export class IncomeService {
         )
       }
 
-      const totalIncome = await this.totalIncomeByMonthSplit(
+      const splitStats = await this.aggregateMonthSplitStats(
         month,
         year,
         channelId
       )
-      const live = totalIncome.afterDiscount.live
-      const shop = totalIncome.afterDiscount.shop
+      const live = splitStats.income.afterDiscount.live
+      const shop = splitStats.income.afterDiscount.shop
       const livePct =
         goal.liveStreamGoal === 0
           ? 0
@@ -1105,52 +1615,12 @@ export class IncomeService {
     afterDiscount: { live: number; shop: number }
   }> {
     try {
-      // Adjust for GMT+7 timezone (Vietnam time)
-      const start = new Date(Date.UTC(year, month, 1))
-      start.setUTCHours(start.getUTCHours() - 7)
-
-      const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
-      end.setUTCHours(end.getUTCHours() - 7)
-
-      const filter: any = { date: { $gte: start, $lte: end } }
-      if (channelId) filter.channel = channelId
-
-      const incomes = await this.incomeModel.find(filter).lean()
-
-      let liveBeforeDiscount = 0
-      let shopBeforeDiscount = 0
-      let liveAfterDiscount = 0
-      let shopAfterDiscount = 0
-
-      for (const income of incomes) {
-        for (const p of income.products || []) {
-          const priceBeforeDiscount = p.price || 0
-          const sellerDiscount = p.sellerDiscount || 0
-          // CHỈ TRỪ SELLER DISCOUNT, KHÔNG TRỪ PLATFORM DISCOUNT
-          const priceAfterSellerDiscount = priceBeforeDiscount - sellerDiscount
-
-          // Split by channel: live vs shop (non-livestream)
-          if (
-            typeof p.content === "string" &&
-            /Phát trực tiếp|livestream/i.test(p.content)
-          ) {
-            liveBeforeDiscount += priceBeforeDiscount
-            liveAfterDiscount += priceAfterSellerDiscount
-          } else {
-            // Everything else is considered "shop"
-            shopBeforeDiscount += priceBeforeDiscount
-            shopAfterDiscount += priceAfterSellerDiscount
-          }
-        }
-      }
-
-      return {
-        beforeDiscount: {
-          live: liveBeforeDiscount,
-          shop: shopBeforeDiscount
-        },
-        afterDiscount: { live: liveAfterDiscount, shop: shopAfterDiscount }
-      }
+      const splitStats = await this.aggregateMonthSplitStats(
+        month,
+        year,
+        channelId
+      )
+      return splitStats.income
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -1214,7 +1684,7 @@ export class IncomeService {
         adsFilter.channel = new Types.ObjectId(channelId)
       }
 
-      const rows = await this.dailyAdsModel
+      const adsAggPromise = this.dailyAdsModel
         .aggregate([
           { $match: adsFilter },
           {
@@ -1226,23 +1696,39 @@ export class IncomeService {
           }
         ])
         .exec()
-
-      const liveAdsCost = rows?.[0]?.liveAdsCost || 0
-      const shopAdsCost = rows?.[0]?.shopAdsCost || 0
-      const metricsAgg = await this.aggregateDailyAdsMetrics(
-        start,
-        end,
-        channelId
-      )
-
-      // Get total live/shop incomes in month
-      const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
+      const splitStatsPromise = this.aggregateMonthSplitStats(
         month,
         year,
         channelId
       )
-      const live = totalLiveShop.afterDiscount.live
-      const shop = totalLiveShop.afterDiscount.shop
+      const goalFilter: any = { month, year }
+      if (channelId) goalFilter.channel = channelId
+
+      const monthGoalPromise = this.monthGoalModel.findOne(goalFilter).lean()
+      const [rows, splitStats, monthGoal] = await Promise.all([
+        adsAggPromise,
+        splitStatsPromise,
+        monthGoalPromise
+      ])
+      const liveAdsCost = rows?.[0]?.liveAdsCost || 0
+      const shopAdsCost = rows?.[0]?.shopAdsCost || 0
+      const totalAdsCost = Number(liveAdsCost || 0) + Number(shopAdsCost || 0)
+      const metricsAgg = await this.aggregateDailyAdsMetrics(
+        start,
+        end,
+        channelId,
+        {
+          incomeBeforeDiscount:
+            splitStats.income.beforeDiscount.live +
+            splitStats.income.beforeDiscount.shop,
+          incomeAfterDiscount:
+            splitStats.income.afterDiscount.live +
+            splitStats.income.afterDiscount.shop
+        }
+      )
+
+      const live = splitStats.income.afterDiscount.live
+      const shop = splitStats.income.afterDiscount.shop
 
       const percentages = {
         liveAdsToLiveIncome:
@@ -1250,12 +1736,6 @@ export class IncomeService {
         shopAdsToShopIncome:
           shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100
       }
-
-      // Get month goals for KPI calculation
-      const goalFilter: any = { month, year }
-      if (channelId) goalFilter.channel = channelId
-
-      const monthGoal = await this.monthGoalModel.findOne(goalFilter).lean()
 
       const liveKpi = monthGoal?.liveStreamGoal || 0
       const shopKpi = monthGoal?.shopGoal || 0
@@ -1277,7 +1757,11 @@ export class IncomeService {
         percentages,
         ratios: {
           adsRatioOnBeforeDiscountRevenue:
-            metricsAgg.adsRatioOnBeforeDiscountRevenue,
+            metricsAgg.incomeBeforeDiscount > 0
+              ? Math.round(
+                  (totalAdsCost / metricsAgg.incomeBeforeDiscount) * 10000
+                ) / 100
+              : 0,
           totalCostRatioOnBeforeDiscountRevenue:
             metricsAgg.totalCostRatioOnBeforeDiscountRevenue,
           costAfterRefundRatioOnBeforeDiscountRevenue:
@@ -1484,140 +1968,17 @@ export class IncomeService {
       const days = Math.max(1, Math.ceil(rangeDurationMs / 86400000))
 
       const buildStats = async (s: Date, e: Date) => {
-        const filter: any = { date: { $gte: s, $lte: e } }
-        if (channelId) filter.channel = channelId
-
-        const incomes = await this.incomeModel.find(filter).lean()
-        const boxMap: Record<string, number> = {}
-        const shipMap: Record<string, number> = {}
-
-        // Before discount stats
-        let totalIncomeBeforeDiscount = 0
-        let liveIncomeBeforeDiscount = 0
-        let ownVideoIncomeBeforeDiscount = 0
-        let otherVideoIncomeBeforeDiscount = 0
-        const sourcesBeforeDiscount = {
-          ads: 0,
-          affiliate: 0,
-          affiliateAds: 0,
-          other: 0
-        }
-
-        // After discount stats
-        let totalIncomeAfterDiscount = 0
-        let liveIncomeAfterDiscount = 0
-        let ownVideoIncomeAfterDiscount = 0
-        let otherVideoIncomeAfterDiscount = 0
-        const sourcesAfterDiscount = {
-          ads: 0,
-          affiliate: 0,
-          affiliateAds: 0,
-          other: 0
-        }
-
-        // Discount stats
-        let totalPlatformDiscount = 0
-        let totalSellerDiscount = 0
-        let totalOriginalPrice = 0
-        let orderCount = incomes.reduce(
-          (sum, income) => sum + (income.products ? income.products.length : 0),
-          0
+        const incomeStatsPromise = this.aggregateRangeIncomeStats(
+          s,
+          e,
+          channelId
         )
-
-        // Products quantity tracking
-        const productsQuantityMap: Record<string, number> = {}
-
-        for (const income of incomes) {
-          const provider = income.shippingProvider || "(unknown)"
-          shipMap[provider] = (shipMap[provider] || 0) + 1
-
-          for (const p of income.products || []) {
-            const priceBeforeDiscount = p.price || 0
-            const platformDiscount = p.platformDiscount || 0
-            const sellerDiscount = p.sellerDiscount || 0
-            // CHỈ TRỪ DISCOUNT CỦA SELLER, KHÔNG TRỪ DISCOUNT CỦA PLATFORM
-            const priceAfterSellerDiscount =
-              priceBeforeDiscount - sellerDiscount
-
-            // Calculate before discount
-            totalIncomeBeforeDiscount += priceBeforeDiscount
-            totalPlatformDiscount += platformDiscount
-            totalSellerDiscount += sellerDiscount
-            totalOriginalPrice += priceBeforeDiscount
-
-            if (p.source === "ads")
-              sourcesBeforeDiscount.ads += priceBeforeDiscount
-            else if (p.source === "affiliate")
-              sourcesBeforeDiscount.affiliate += priceBeforeDiscount
-            else if (p.source === "affiliate-ads")
-              sourcesBeforeDiscount.affiliateAds += priceBeforeDiscount
-            else sourcesBeforeDiscount.other += priceBeforeDiscount
-
-            // Calculate after discount (CHỈ TRỪ SELLER DISCOUNT)
-            totalIncomeAfterDiscount += priceAfterSellerDiscount
-
-            if (p.source === "ads")
-              sourcesAfterDiscount.ads += priceAfterSellerDiscount
-            else if (p.source === "affiliate")
-              sourcesAfterDiscount.affiliate += priceAfterSellerDiscount
-            else if (p.source === "affiliate-ads")
-              sourcesAfterDiscount.affiliateAds += priceAfterSellerDiscount
-            else sourcesAfterDiscount.other += priceAfterSellerDiscount
-
-            // Calculate live/video by content (both before and after discount)
-            if (typeof p.content === "string") {
-              if (/Phát trực tiếp|livestream/i.test(p.content)) {
-                liveIncomeBeforeDiscount += priceBeforeDiscount
-                liveIncomeAfterDiscount += priceAfterSellerDiscount
-              } else if (/video/i.test(p.content)) {
-                const creator = p.creator
-                if (creator && OWN_USERS.includes(String(creator))) {
-                  ownVideoIncomeBeforeDiscount += priceBeforeDiscount
-                  ownVideoIncomeAfterDiscount += priceAfterSellerDiscount
-                } else {
-                  otherVideoIncomeBeforeDiscount += priceBeforeDiscount
-                  otherVideoIncomeAfterDiscount += priceAfterSellerDiscount
-                }
-              }
-            }
-
-            if (p.box) boxMap[p.box] = (boxMap[p.box] || 0) + (p.quantity || 0)
-
-            // Track products quantity
-            const productCode = p.code || "(unknown)"
-            productsQuantityMap[productCode] =
-              (productsQuantityMap[productCode] || 0) + (p.quantity || 0)
-          }
-        }
-
-        const videoIncomeBeforeDiscount =
-          ownVideoIncomeBeforeDiscount + otherVideoIncomeBeforeDiscount
-        const otherIncomeBeforeDiscount =
-          totalIncomeBeforeDiscount -
-          videoIncomeBeforeDiscount -
-          liveIncomeBeforeDiscount
-
-        const videoIncomeAfterDiscount =
-          ownVideoIncomeAfterDiscount + otherVideoIncomeAfterDiscount
-        const otherIncomeAfterDiscount =
-          totalIncomeAfterDiscount -
-          videoIncomeAfterDiscount -
-          liveIncomeAfterDiscount
-
-        const boxes = Object.entries(boxMap)
-          .map(([box, quantity]) => ({ box, quantity }))
-          .sort((a, b) => a.box.localeCompare(b.box))
-        const shippingProviders = Object.entries(shipMap)
-          .map(([provider, orders]) => ({ provider, orders }))
-          .sort((a, b) => b.orders - a.orders)
-
-        // Build ads filter with channel if provided
         const adsFilter: any = { date: { $gte: s, $lte: e } }
         if (channelId) {
           adsFilter.channel = new Types.ObjectId(channelId)
         }
 
-        const adsAgg = await this.dailyAdsModel
+        const adsAggPromise = this.dailyAdsModel
           .aggregate([
             { $match: adsFilter },
             {
@@ -1629,61 +1990,52 @@ export class IncomeService {
             }
           ])
           .exec()
+        const [incomeStats, adsAgg] = await Promise.all([
+          incomeStatsPromise,
+          adsAggPromise
+        ])
         const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
         const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
-        const metricsAgg = await this.aggregateDailyAdsMetrics(s, e, channelId)
-        const totalAdsCost =
-          metricsAgg.recordsCount > 0
-            ? metricsAgg.actualAdsCost
-            : liveAdsCost + shopAdsCost
+        const totalAdsCost = Number(liveAdsCost || 0) + Number(shopAdsCost || 0)
+        const metricsAgg = await this.aggregateDailyAdsMetrics(
+          s,
+          e,
+          channelId,
+          {
+            incomeBeforeDiscount:
+              incomeStats.beforeDiscount.totalIncome,
+            incomeAfterDiscount: incomeStats.afterDiscount.totalIncome
+          }
+        )
+        const shopIncomeAfterDiscount =
+          incomeStats.afterDiscount.videoIncome +
+          incomeStats.afterDiscount.otherIncome
+        const adsRatioOnBeforeDiscountRevenue =
+          incomeStats.beforeDiscount.totalIncome > 0
+            ? Math.round(
+                (totalAdsCost / incomeStats.beforeDiscount.totalIncome) * 10000
+              ) / 100
+            : 0
         const percentages = {
           liveAdsToLiveIncome:
-            liveIncomeAfterDiscount === 0
+            incomeStats.afterDiscount.liveIncome === 0
               ? 0
-              : Math.round((liveAdsCost / liveIncomeAfterDiscount) * 10000) /
-                100,
+              : Math.round(
+                  (liveAdsCost / incomeStats.afterDiscount.liveIncome) * 10000
+                ) / 100,
           shopAdsToShopIncome:
-            videoIncomeAfterDiscount === 0
+            shopIncomeAfterDiscount === 0
               ? 0
-              : Math.round((shopAdsCost / videoIncomeAfterDiscount) * 10000) /
-                100
+              : Math.round(
+                  (shopAdsCost / shopIncomeAfterDiscount) * 10000
+                ) / 100
         }
 
-        const totalDiscount = totalPlatformDiscount + totalSellerDiscount
-        const avgDiscountPerOrder =
-          orderCount > 0 ? totalSellerDiscount / orderCount : 0
-        const discountPercentage =
-          totalOriginalPrice > 0
-            ? (totalSellerDiscount / totalOriginalPrice) * 100
-            : 0
-
-        // Sort products by quantity descending
-        const productsQuantity = Object.fromEntries(
-          Object.entries(productsQuantityMap).sort(([, a], [, b]) => b - a)
-        )
-        const orders = countOrdersByChannel(incomes)
-
         return {
-          beforeDiscount: {
-            totalIncome: totalIncomeBeforeDiscount,
-            liveIncome: liveIncomeBeforeDiscount,
-            videoIncome: videoIncomeBeforeDiscount,
-            ownVideoIncome: ownVideoIncomeBeforeDiscount,
-            otherVideoIncome: otherVideoIncomeBeforeDiscount,
-            otherIncome: otherIncomeBeforeDiscount,
-            sources: sourcesBeforeDiscount
-          },
-          afterDiscount: {
-            totalIncome: totalIncomeAfterDiscount,
-            liveIncome: liveIncomeAfterDiscount,
-            videoIncome: videoIncomeAfterDiscount,
-            ownVideoIncome: ownVideoIncomeAfterDiscount,
-            otherVideoIncome: otherVideoIncomeAfterDiscount,
-            otherIncome: otherIncomeAfterDiscount,
-            sources: sourcesAfterDiscount
-          },
-          boxes,
-          shippingProviders,
+          beforeDiscount: incomeStats.beforeDiscount,
+          afterDiscount: incomeStats.afterDiscount,
+          boxes: incomeStats.boxes,
+          shippingProviders: incomeStats.shippingProviders,
           ads: {
             totalAdsCost,
             liveAdsCost,
@@ -1704,7 +2056,7 @@ export class IncomeService {
               costAfterRefund: metricsAgg.costAfterRefund,
               ratios: {
                 adsRatioOnBeforeDiscountRevenue:
-                  metricsAgg.adsRatioOnBeforeDiscountRevenue,
+                  adsRatioOnBeforeDiscountRevenue,
                 totalCostRatioOnBeforeDiscountRevenue:
                   metricsAgg.totalCostRatioOnBeforeDiscountRevenue,
                 costAfterRefundRatioOnBeforeDiscountRevenue:
@@ -1715,19 +2067,22 @@ export class IncomeService {
               recordsCount: metricsAgg.recordsCount
             }
           },
-          discounts: {
-            totalPlatformDiscount,
-            totalSellerDiscount,
-            totalDiscount,
-            avgDiscountPerOrder,
-            discountPercentage: Math.round(discountPercentage * 100) / 100
-          },
-          orders,
-          productsQuantity
+          discounts: incomeStats.discounts,
+          orders: incomeStats.orders,
+          productsQuantity: incomeStats.productsQuantity
         }
       }
 
-      const current = await buildStats(start, end)
+      const prevStart = new Date(start.getTime() - rangeDurationMs)
+      const prevEnd = new Date(end.getTime() - rangeDurationMs)
+      const currentPromise = buildStats(start, end)
+      const previousPromise = comparePrevious
+        ? buildStats(prevStart, prevEnd)
+        : Promise.resolve(null)
+      const [current, previous] = await Promise.all([
+        currentPromise,
+        previousPromise
+      ])
 
       // Add daily goal calculation if start and end are on the same day
       if (
@@ -1834,9 +2189,6 @@ export class IncomeService {
       if (!comparePrevious)
         return { period: { startDate: start, endDate: end, days }, current }
 
-      const prevStart = new Date(start.getTime() - rangeDurationMs)
-      const prevEnd = new Date(end.getTime() - rangeDurationMs)
-      const previous = await buildStats(prevStart, prevEnd)
       const pct = (cur: number, prev: number) =>
         prev === 0
           ? cur === 0
@@ -1970,14 +2322,16 @@ export class IncomeService {
             ) / 100,
           totalCostRatioOnBeforeDiscountRevenueDiff:
             Math.round(
-              (current.ads.metrics.ratios.totalCostRatioOnBeforeDiscountRevenue -
+              (current.ads.metrics.ratios
+                .totalCostRatioOnBeforeDiscountRevenue -
                 previous.ads.metrics.ratios
                   .totalCostRatioOnBeforeDiscountRevenue) *
                 100
             ) / 100,
           costAfterRefundRatioOnBeforeDiscountRevenueDiff:
             Math.round(
-              (current.ads.metrics.ratios.costAfterRefundRatioOnBeforeDiscountRevenue -
+              (current.ads.metrics.ratios
+                .costAfterRefundRatioOnBeforeDiscountRevenue -
                 previous.ads.metrics.ratios
                   .costAfterRefundRatioOnBeforeDiscountRevenue) *
                 100
@@ -2128,12 +2482,18 @@ export class IncomeService {
           ...(channelDoc?.usernames || []),
           ...(channelDoc?.username ? [channelDoc.username] : [])
         ]
-          .map((name) => String(name || "").trim().toLowerCase())
+          .map((name) =>
+            String(name || "")
+              .trim()
+              .toLowerCase()
+          )
           .filter(Boolean)
       )
 
       const normalizeCreator = (value: unknown) =>
-        String(value || "").trim().toLowerCase()
+        String(value || "")
+          .trim()
+          .toLowerCase()
 
       if (!dto.affiliateFile) {
         throw new HttpException(
@@ -2282,7 +2642,9 @@ export class IncomeService {
       let matched = 0
       let modified = 0
 
-      for (const [orderId, statusPayload] of Object.entries(statusesByOrderId)) {
+      for (const [orderId, statusPayload] of Object.entries(
+        statusesByOrderId
+      )) {
         const res = await this.incomeModel.updateMany(
           {
             orderId,
