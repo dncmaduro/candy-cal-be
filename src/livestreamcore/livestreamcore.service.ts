@@ -52,6 +52,91 @@ export class LivestreamcoreService {
     return snapshots.reduce((sum, s) => sum + (s.income ?? 0), 0)
   }
 
+  private toSafeNumber(value?: number | null): number {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0
+  }
+
+  private computeLivestreamPoint(
+    snapshots?: LivestreamSnapshotEmbedded[],
+    ads?: number
+  ): number {
+    const safeSnapshots = Array.isArray(snapshots) ? snapshots : []
+    const snapshotCount = safeSnapshots.length
+    const totalIncome = this.computeTotalIncome(safeSnapshots)
+    const totalOrders = safeSnapshots.reduce(
+      (sum, snapshot) => sum + this.toSafeNumber(snapshot.orders),
+      0
+    )
+    const totalComments = safeSnapshots.reduce(
+      (sum, snapshot) => sum + this.toSafeNumber(snapshot.comments),
+      0
+    )
+    const avgCtr =
+      snapshotCount > 0
+        ? safeSnapshots.reduce(
+            (sum, snapshot) => sum + this.toSafeNumber(snapshot.clickRate),
+            0
+          ) / snapshotCount
+        : 0
+    const avgViewingDuration =
+      snapshotCount > 0
+        ? safeSnapshots.reduce(
+            (sum, snapshot) =>
+              sum + this.toSafeNumber(snapshot.avgViewingDuration),
+            0
+          ) / snapshotCount
+        : 0
+    const aov = totalOrders > 0 ? totalIncome / totalOrders : 0
+    const cpo =
+      totalOrders > 0
+        ? this.toSafeNumber(ads) / totalOrders
+        : Number.POSITIVE_INFINITY
+
+    let point = 0
+
+    if (avgCtr > 25) point += 25
+    else if (avgCtr >= 20) point += 20
+    else if (avgCtr >= 15) point += 15
+    else if (avgCtr >= 10) point += 10
+    else point += 5
+
+    if (avgViewingDuration > 70) point += 25
+    else if (avgViewingDuration >= 50) point += 20
+    else if (avgViewingDuration >= 35) point += 15
+    else if (avgViewingDuration >= 20) point += 10
+    else point += 5
+
+    if (totalOrders > 15) point += 25
+    else if (totalOrders >= 10) point += 20
+    else if (totalOrders >= 6) point += 15
+    else if (totalOrders >= 3) point += 10
+    else point += 5
+
+    if (cpo < 15000) point += 25
+    else if (cpo < 20000) point += 20
+    else if (cpo < 30000) point += 15
+    else if (cpo < 40000) point += 10
+    else point += 5
+
+    if (aov > 120000) point += 5
+    else if (aov >= 100000) point += 3
+
+    if (totalComments > 50) point += 5
+    else if (totalComments >= 30) point += 3
+
+    return point
+  }
+
+  private recalculateLivestreamDerivedFields(
+    livestream: Livestream | LivestreamDoc
+  ): void {
+    const snapshots = Array.isArray(livestream.snapshots)
+      ? (livestream.snapshots as LivestreamSnapshotEmbedded[])
+      : []
+    livestream.totalIncome = this.computeTotalIncome(snapshots)
+    livestream.point = this.computeLivestreamPoint(snapshots, livestream.ads)
+  }
+
   // helper: check if time range A contains time range B
   private timeRangeContains(
     aStart: { hour: number; minute: number },
@@ -166,6 +251,7 @@ export class LivestreamcoreService {
         totalOrders: payload.totalOrders ?? 0,
         totalIncome: 0,
         ads: payload.ads ?? 0,
+        point: 20,
         dateKpi: 0
       }
 
@@ -259,6 +345,10 @@ export class LivestreamcoreService {
 
       // 9) Recompute totalIncome
       createdObj.totalIncome = this.computeTotalIncome(createdObj.snapshots)
+      createdObj.point = this.computeLivestreamPoint(
+        createdObj.snapshots,
+        createdObj.ads
+      )
 
       // 10) Save
       const created = new this.livestreamModel(createdObj)
@@ -453,9 +543,7 @@ export class LivestreamcoreService {
 
       livestreamDoc.totalOrders = livestreamDoc.totalOrders ?? 0
       livestreamDoc.ads = livestreamDoc.ads ?? 0
-      livestreamDoc.totalIncome = this.computeTotalIncome(
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      )
+      this.recalculateLivestreamDerivedFields(livestreamDoc)
 
       await livestreamDoc.save()
       await livestreamDoc.populate(
@@ -523,9 +611,7 @@ export class LivestreamcoreService {
       if (isOnlyAssigningEmployee) {
         snapshot.assignee = new Types.ObjectId(payload.assignee)
 
-        livestreamDoc.totalIncome = this.computeTotalIncome(
-          livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-        )
+        this.recalculateLivestreamDerivedFields(livestreamDoc)
 
         await livestreamDoc.save()
         await livestreamDoc.populate(
@@ -700,9 +786,7 @@ export class LivestreamcoreService {
         }
       }
 
-      livestreamDoc.totalIncome = this.computeTotalIncome(
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      )
+      this.recalculateLivestreamDerivedFields(livestreamDoc)
 
       await livestreamDoc.save()
       await livestreamDoc.populate(
@@ -813,9 +897,7 @@ export class LivestreamcoreService {
         }
       }
 
-      livestreamDoc.totalIncome = this.computeTotalIncome(
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      )
+      this.recalculateLivestreamDerivedFields(livestreamDoc)
 
       await livestreamDoc.save()
       await livestreamDoc.populate(
@@ -857,9 +939,7 @@ export class LivestreamcoreService {
         (s) => s._id?.toString() !== snapshotId
       )
 
-      livestreamDoc.totalIncome = this.computeTotalIncome(
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      )
+      this.recalculateLivestreamDerivedFields(livestreamDoc)
 
       await livestreamDoc.save()
       return
@@ -957,20 +1037,23 @@ export class LivestreamcoreService {
     payload: { totalOrders?: number; totalIncome?: number; ads?: number }
   ): Promise<Livestream> {
     try {
-      const update: {
-        totalOrders?: number
-        ads?: number
-      } = {}
-      if (typeof payload.totalOrders !== "undefined")
-        update.totalOrders = payload.totalOrders
-      if (typeof payload.ads !== "undefined") update.ads = payload.ads
-
-      const updated = await this.livestreamModel
-        .findByIdAndUpdate(livestreamId, { $set: update }, { new: true })
-        .exec()
-      if (!updated)
+      const livestreamDoc = (await this.livestreamModel
+        .findById(livestreamId)
+        .exec()) as LivestreamDoc
+      if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
-      return updated
+
+      if (typeof payload.totalOrders !== "undefined") {
+        livestreamDoc.totalOrders = payload.totalOrders
+      }
+      if (typeof payload.ads !== "undefined") {
+        livestreamDoc.ads = payload.ads
+      }
+
+      this.recalculateLivestreamDerivedFields(livestreamDoc)
+
+      await livestreamDoc.save()
+      return livestreamDoc
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -1077,7 +1160,27 @@ export class LivestreamcoreService {
               },
               assignee: existingSnapshot.assignee,
               income: existingSnapshot.income ?? 0,
-              snapshotKpi: snapshotKpi
+              realIncome: existingSnapshot.realIncome,
+              adsCost: existingSnapshot.adsCost,
+              clickRate: existingSnapshot.clickRate,
+              avgViewingDuration: existingSnapshot.avgViewingDuration,
+              comments: existingSnapshot.comments,
+              ordersNote: existingSnapshot.ordersNote,
+              rating: existingSnapshot.rating,
+              altAssignee: existingSnapshot.altAssignee,
+              altOtherAssignee: existingSnapshot.altOtherAssignee,
+              altNote: existingSnapshot.altNote,
+              altRequest: existingSnapshot.altRequest,
+              snapshotKpi: snapshotKpi,
+              updatedByFileAt: existingSnapshot.updatedByFileAt,
+              salary: existingSnapshot.salary
+                ? {
+                    salaryPerHour: existingSnapshot.salary.salaryPerHour,
+                    bonusPercentage: existingSnapshot.salary.bonusPercentage,
+                    total: existingSnapshot.salary.total
+                  }
+                : undefined,
+              orders: existingSnapshot.orders
             })
           } else {
             newSnapshots.push({
@@ -1122,7 +1225,7 @@ export class LivestreamcoreService {
 
         if (snapshotsChanged) {
           livestreamDoc.snapshots = newSnapshots
-          livestreamDoc.totalIncome = this.computeTotalIncome(newSnapshots)
+          this.recalculateLivestreamDerivedFields(livestreamDoc)
           await livestreamDoc.save()
           updatedCount++
         }
@@ -1406,9 +1509,7 @@ export class LivestreamcoreService {
 
       livestreamDoc.snapshots.push(newSnapshot as LivestreamSnapshotEmbedded)
 
-      livestreamDoc.totalIncome = this.computeTotalIncome(
-        livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
-      )
+      this.recalculateLivestreamDerivedFields(livestreamDoc)
 
       await livestreamDoc.save()
       await livestreamDoc.populate(
