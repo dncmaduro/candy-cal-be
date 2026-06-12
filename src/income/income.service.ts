@@ -1227,22 +1227,13 @@ export class IncomeService {
         ])
         .exec()
 
-      const liveAdsCost = Number(rows?.[0]?.liveAdsCost || 0)
-      const shopAdsCost = Number(rows?.[0]?.shopAdsCost || 0)
-      const monthlyAdsCost = liveAdsCost + shopAdsCost
-      
+      const liveAdsCost = rows?.[0]?.liveAdsCost || 0
+      const shopAdsCost = rows?.[0]?.shopAdsCost || 0
       const metricsAgg = await this.aggregateDailyAdsMetrics(
         start,
         end,
         channelId
       )
-      
-      const adsRatioOnBeforeDiscountRevenue =
-        metricsAgg.incomeBeforeDiscount > 0
-          ? Math.round(
-              (monthlyAdsCost / metricsAgg.incomeBeforeDiscount) * 10000
-            ) / 100
-          : 0
 
       // Get total live/shop incomes in month
       const totalLiveShop = await this.totalLiveAndShopIncomeByMonth(
@@ -1285,9 +1276,8 @@ export class IncomeService {
         costAfterRefund: metricsAgg.costAfterRefund,
         percentages,
         ratios: {
-          // adsRatioOnBeforeDiscountRevenue:
-          //   metricsAgg.adsRatioOnBeforeDiscountRevenue,
-          adsRatioOnBeforeDiscountRevenue,
+          adsRatioOnBeforeDiscountRevenue:
+            metricsAgg.adsRatioOnBeforeDiscountRevenue,
           totalCostRatioOnBeforeDiscountRevenue:
             metricsAgg.totalCostRatioOnBeforeDiscountRevenue,
           costAfterRefundRatioOnBeforeDiscountRevenue:
