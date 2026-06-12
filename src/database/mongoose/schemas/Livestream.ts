@@ -39,6 +39,7 @@ export interface Livestream extends Document {
   totalOrders: number
   totalIncome: number
   ads: number
+  point: number
   fixed: boolean
   dateKpi: number
 }
@@ -106,6 +107,7 @@ export const LivestreamSchema = new Schema<Livestream>({
   totalOrders: { type: Number, required: true, default: 0 },
   totalIncome: { type: Number, required: true, default: 0 },
   ads: { type: Number, required: true, default: 0 },
+  point: { type: Number, required: true, default: 20 },
   fixed: { type: Boolean, required: true, default: false },
   dateKpi: { type: Number, required: true, default: 0 }
 })

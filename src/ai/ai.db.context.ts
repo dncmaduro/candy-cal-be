@@ -426,13 +426,14 @@ export const AI_DB_TABLES: DbTableContext[] = [
       "orders",
       "ordersNote",
       "period",
+      "point",
       "rating",
       "realIncome",
       "salary",
       "snapshotKpi"
     ],
     description:
-      "Schema Livestream. Cac truong chinh: adsCost, altAssignee, altNote, altOtherAssignee, assignee, avgViewingDuration, clickRate, comments, income, orders, ordersNote, period, rating, realIncome, salary, snapshotKpi. Day la bang quan ly lich livestream cua Tiktok Shop. Moi document tuong ung voi 1 buoi livestream trong 1 ngay cua 1 kenh, trong do co cac ca livestream cua cac nhan vien. Trong moi ca se co cac thong tin ket qua cua livestream va thong tin ve luong, hieu suat lam viec cua nhan vien.",
+      "Schema Livestream. Cac truong chinh: adsCost, altAssignee, altNote, altOtherAssignee, assignee, avgViewingDuration, clickRate, comments, income, orders, ordersNote, period, point, rating, realIncome, salary, snapshotKpi. Day la bang quan ly lich livestream cua Tiktok Shop. Moi document tuong ung voi 1 buoi livestream trong 1 ngay cua 1 kenh, trong do co cac ca livestream cua cac nhan vien. Trong moi ca se co cac thong tin ket qua cua livestream va thong tin ve luong, hieu suat lam viec cua nhan vien.",
     primaryKeys: [],
     searchableFields: [],
     dateFields: [],
