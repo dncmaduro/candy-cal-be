@@ -207,6 +207,24 @@ export class LivestreamcoreService {
     }
   }
 
+  private isLivestreamFromPreviousMonth(date: Date): boolean {
+    const livestreamDate = new Date(date)
+    const now = new Date()
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    return livestreamDate.getTime() < startOfCurrentMonth.getTime()
+  }
+
+  private ensureSnapshotMutationAllowed(
+    livestream: Livestream | LivestreamDoc
+  ): void {
+    if (this.isLivestreamFromPreviousMonth(livestream.date)) {
+      throw new HttpException(
+        "Cannot modify snapshot data for livestreams from previous months",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+  }
+
   // Get all period IDs for a specific channel
   async getPeriodIdsByChannel(channelId: string): Promise<string[]> {
     try {
@@ -582,6 +600,7 @@ export class LivestreamcoreService {
         .exec()) as LivestreamDoc
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      this.ensureSnapshotMutationAllowed(livestreamDoc)
 
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -825,6 +844,7 @@ export class LivestreamcoreService {
         .exec()) as LivestreamDoc
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      this.ensureSnapshotMutationAllowed(livestreamDoc)
 
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -926,6 +946,7 @@ export class LivestreamcoreService {
         .exec()) as LivestreamDoc
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      this.ensureSnapshotMutationAllowed(livestreamDoc)
 
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -967,6 +988,7 @@ export class LivestreamcoreService {
         .exec()) as LivestreamDoc
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      this.ensureSnapshotMutationAllowed(livestreamDoc)
 
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -1307,6 +1329,7 @@ export class LivestreamcoreService {
         .exec()) as LivestreamDoc
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      this.ensureSnapshotMutationAllowed(livestreamDoc)
 
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
@@ -1390,6 +1413,7 @@ export class LivestreamcoreService {
         .exec()) as LivestreamDoc
       if (!livestreamDoc)
         throw new HttpException("Livestream not found", HttpStatus.NOT_FOUND)
+      this.ensureSnapshotMutationAllowed(livestreamDoc)
 
       const snapshotsArray =
         livestreamDoc.snapshots as LivestreamSnapshotEmbedded[]
