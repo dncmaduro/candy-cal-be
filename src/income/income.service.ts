@@ -123,7 +123,10 @@ export class IncomeService {
     start: Date,
     end: Date,
     channelId?: string,
-    incomeAmounts?: { incomeBeforeDiscount: number; incomeAfterDiscount: number }
+    incomeAmounts?: {
+      incomeBeforeDiscount: number
+      incomeAfterDiscount: number
+    }
   ): Promise<{
     roiProtect: number
     fullRefundGmv: number
@@ -174,7 +177,8 @@ export class IncomeService {
 
     const data = rows?.[0] || {}
     const incomeAgg =
-      incomeAmounts || (await this.aggregateIncomeAmounts(start, end, channelId))
+      incomeAmounts ||
+      (await this.aggregateIncomeAmounts(start, end, channelId))
     const incomeBeforeDiscount = Number(incomeAgg.incomeBeforeDiscount || 0)
     return {
       roiProtect: Number(data.roiProtect || 0),
@@ -260,7 +264,9 @@ export class IncomeService {
                   quantity: 1,
                   box: 1,
                   code: 1,
-                  afterSellerDiscount: { $subtract: ["$price", "$sellerDiscount"] },
+                  afterSellerDiscount: {
+                    $subtract: ["$price", "$sellerDiscount"]
+                  },
                   isLive: {
                     $regexMatch: {
                       input: "$content",
@@ -315,10 +321,7 @@ export class IncomeService {
                     $sum: {
                       $cond: [
                         {
-                          $and: [
-                            "$isVideo",
-                            { $not: ["$isOwnCreator"] }
-                          ]
+                          $and: ["$isVideo", { $not: ["$isOwnCreator"] }]
                         },
                         "$price",
                         0
@@ -329,10 +332,7 @@ export class IncomeService {
                     $sum: {
                       $cond: [
                         {
-                          $and: [
-                            "$isVideo",
-                            { $not: ["$isOwnCreator"] }
-                          ]
+                          $and: ["$isVideo", { $not: ["$isOwnCreator"] }]
                         },
                         "$afterSellerDiscount",
                         0
@@ -520,9 +520,7 @@ export class IncomeService {
       stats.totalIncomeBeforeDiscount || 0
     )
     const totalIncomeAfterDiscount = Number(stats.totalIncomeAfterDiscount || 0)
-    const liveIncomeBeforeDiscount = Number(
-      stats.liveIncomeBeforeDiscount || 0
-    )
+    const liveIncomeBeforeDiscount = Number(stats.liveIncomeBeforeDiscount || 0)
     const liveIncomeAfterDiscount = Number(stats.liveIncomeAfterDiscount || 0)
     const totalOriginalPrice = Number(stats.totalOriginalPrice || 0)
     const totalSellerDiscount = Number(stats.totalSellerDiscount || 0)
@@ -599,7 +597,10 @@ export class IncomeService {
     }
   }
 
-  private getMonthlySplitRange(month: number, year: number): {
+  private getMonthlySplitRange(
+    month: number,
+    year: number
+  ): {
     start: Date
     end: Date
   } {
@@ -2002,8 +2003,7 @@ export class IncomeService {
           e,
           channelId,
           {
-            incomeBeforeDiscount:
-              incomeStats.beforeDiscount.totalIncome,
+            incomeBeforeDiscount: incomeStats.beforeDiscount.totalIncome,
             incomeAfterDiscount: incomeStats.afterDiscount.totalIncome
           }
         )
@@ -2026,9 +2026,8 @@ export class IncomeService {
           shopAdsToShopIncome:
             shopIncomeAfterDiscount === 0
               ? 0
-              : Math.round(
-                  (shopAdsCost / shopIncomeAfterDiscount) * 10000
-                ) / 100
+              : Math.round((shopAdsCost / shopIncomeAfterDiscount) * 10000) /
+                100
         }
 
         return {
@@ -2387,7 +2386,7 @@ export class IncomeService {
     affiliateFile?: Express.Multer.File
     date: Date
     channel: string
-    updateMode?: "full" | "status-only" | "affiliate-only"
+    updateMode?: "full" | "status-only" | "base-only" | "affiliate-only"
   }): Promise<void> {
     try {
       // ====== 0) Date range ======
@@ -2486,7 +2485,11 @@ export class IncomeService {
           await this.incomeModel.insertMany(inserts, { ordered: false })
         }
 
-        // Cập nhật quy cách đóng hộp
+        if (dto.updateMode === "base-only") {
+          await this.updateImportedIncomesBox(new Date(dto.date), dto.channel)
+          return
+        }
+
         await this.updateIncomesBox(new Date(dto.date))
       }
 
@@ -2637,6 +2640,50 @@ export class IncomeService {
       throw new HttpException(
         "Lỗi khi xử lý file tổng doanh thu và affiliate",
         HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  private async updateImportedIncomesBox(
+    date: Date,
+    channel: string
+  ): Promise<void> {
+    const start = new Date(date)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(date)
+    end.setHours(23, 59, 59, 999)
+
+    const incomes = await this.incomeModel
+      .find({
+        date: { $gte: start, $lte: end },
+        channel
+      })
+      .exec()
+
+    const batchSize = 20
+    for (let offset = 0; offset < incomes.length; offset += batchSize) {
+      await Promise.all(
+        incomes.slice(offset, offset + batchSize).map(async (income) => {
+          const products = income.products || []
+          const boxType = await this.packingRulesService.getPackingType(
+            products.map((product) => ({
+              productCode: product.code,
+              quantity: product.quantity
+            }))
+          )
+
+          if (!boxType) return
+
+          let changed = false
+          for (const product of products) {
+            if (product.box !== boxType) {
+              product.box = boxType
+              changed = true
+            }
+          }
+
+          if (changed) await income.save()
+        })
       )
     }
   }
