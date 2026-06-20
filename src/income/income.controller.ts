@@ -534,95 +534,158 @@ export class IncomeController {
     body: {
       date: string
       channel: string
-      updateMode?: "full" | "status-only"
+      updateMode?: "full" | "status-only" | "affiliate-only"
+      chunkIndex?: string
+      chunkCount?: string
     },
     @Req() req
   ): Promise<{ success: true; message: string }> {
     const updateMode = body.updateMode || "full"
-    const expectedFiles = updateMode === "status-only" ? 1 : 2
+    const expectedFiles = updateMode === "full" ? 2 : 1
     if (!files || files.length !== expectedFiles) {
       throw new HttpException(
         updateMode === "status-only"
           ? "Cần upload 1 file tổng đơn để cập nhật trạng thái"
-          : "Cần upload 2 file: file tổng doanh thu và file affiliate",
+          : updateMode === "affiliate-only"
+            ? "Cần upload 1 file affiliate"
+            : "Cần upload 2 file: file tổng doanh thu và file affiliate",
         HttpStatus.BAD_REQUEST
       )
     }
-    const [totalIncomeFile, affiliateFile] = files
 
-    // Chạy async trong background để tránh timeout
+    const hasChunkMetadata =
+      body.chunkIndex !== undefined || body.chunkCount !== undefined
+    const chunkIndex = Number(body.chunkIndex)
+    const chunkCount = Number(body.chunkCount)
+
+    if (
+      hasChunkMetadata &&
+      (!Number.isInteger(chunkIndex) ||
+        !Number.isInteger(chunkCount) ||
+        chunkIndex < 0 ||
+        chunkCount < 1 ||
+        chunkIndex >= chunkCount)
+    ) {
+      throw new HttpException(
+        "Thông tin thứ tự chunk không hợp lệ",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const totalIncomeFile =
+      updateMode === "affiliate-only" ? undefined : files[0]
+    const affiliateFile =
+      updateMode === "full"
+        ? files[1]
+        : updateMode === "affiliate-only"
+          ? files[0]
+          : undefined
+    const isFinalChunk = hasChunkMetadata && chunkIndex === chunkCount - 1
+
+    const processImport = () =>
+      this.incomeService.insertAndUpdateAffiliateType({
+        totalIncomeFile,
+        affiliateFile,
+        date: new Date(body.date),
+        channel: body.channel,
+        updateMode
+      })
+
+    const recordSuccess = async () => {
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "income",
+          action: "insert_and_update_affiliate_combined",
+          entity: "income",
+          result: "success",
+          meta: {
+            totalIncomeFileSize: totalIncomeFile?.size,
+            affiliateFileSize: affiliateFile?.size,
+            updateMode,
+            chunkIndex: hasChunkMetadata ? chunkIndex : undefined,
+            chunkCount: hasChunkMetadata ? chunkCount : undefined
+          }
+        },
+        req.user.userId
+      )
+
+      if (hasChunkMetadata && !isFinalChunk) return
+
+      try {
+        await this.notificationsService.createNotificationForSingleUser(
+          {
+            title: "Xử lý file doanh thu hoàn thành",
+            content: `File đang xử lý cho ngày ${new Date(body.date).toLocaleDateString()} đã hoàn thành.`,
+            createdAt: new Date(),
+            type: "income_import"
+          },
+          req.user.userId
+        )
+      } catch (notifErr) {
+        console.error("Failed to send notification:", notifErr)
+      }
+    }
+
+    const recordFailure = async (error: Error) => {
+      console.error("Income import processing error:", error)
+      void this.systemLogsService.createSystemLog(
+        {
+          type: "income",
+          action: "insert_and_update_affiliate_combined",
+          entity: "income",
+          result: "failed",
+          meta: {
+            error: error.message,
+            totalIncomeFileSize: totalIncomeFile?.size,
+            affiliateFileSize: affiliateFile?.size,
+            updateMode,
+            chunkIndex: hasChunkMetadata ? chunkIndex : undefined,
+            chunkCount: hasChunkMetadata ? chunkCount : undefined
+          }
+        },
+        req.user.userId
+      )
+
+      try {
+        await this.notificationsService.createNotificationForSingleUser(
+          {
+            title: "Xử lý file doanh thu thất bại",
+            content: `Quá trình xử lý file cho ngày ${new Date(body.date).toLocaleDateString()} đã thất bại. Vui lòng liên hệ admin.`,
+            createdAt: new Date(),
+            type: "income_import"
+          },
+          req.user.userId
+        )
+      } catch (notifErr) {
+        console.error("Failed to send failure notification:", notifErr)
+      }
+    }
+
+    if (hasChunkMetadata) {
+      try {
+        await processImport()
+        await recordSuccess()
+      } catch (error) {
+        await recordFailure(error as Error)
+        throw error
+      }
+
+      return {
+        success: true,
+        message: `Đã xử lý phần ${chunkIndex + 1}/${chunkCount}.`
+      }
+    }
+
+    // Giữ tương thích với client cũ: xử lý nền và trả response ngay.
     setImmediate(async () => {
       try {
-        await this.incomeService.insertAndUpdateAffiliateType({
-          totalIncomeFile,
-          affiliateFile,
-          date: new Date(body.date),
-          channel: body.channel,
-          updateMode
-        })
-
-        void this.systemLogsService.createSystemLog(
-          {
-            type: "income",
-            action: "insert_and_update_affiliate_combined",
-            entity: "income",
-            result: "success",
-            meta: {
-              totalIncomeFileSize: totalIncomeFile?.size,
-              affiliateFileSize: affiliateFile?.size
-            }
-          },
-          req.user.userId
-        )
-        // Send notification to requester
-        try {
-          await this.notificationsService.createNotificationForSingleUser(
-            {
-              title: "Xử lý file doanh thu hoàn thành",
-              content: `File đang xử lý cho ngày ${new Date(body.date).toLocaleDateString()} đã hoàn thành.`,
-              createdAt: new Date(),
-              type: "income_import"
-            },
-            req.user.userId
-          )
-        } catch (notifErr) {
-          console.error("Failed to send notification:", notifErr)
-        }
+        await processImport()
+        await recordSuccess()
       } catch (error) {
-        console.error("Background processing error:", error)
-        void this.systemLogsService.createSystemLog(
-          {
-            type: "income",
-            action: "insert_and_update_affiliate_combined",
-            entity: "income",
-            result: "failed",
-            meta: {
-              error: error.message,
-              totalIncomeFileSize: totalIncomeFile?.size,
-              affiliateFileSize: affiliateFile?.size,
-              updateMode
-            }
-          },
-          req.user.userId
-        )
-        // Notify requester about failure
-        try {
-          await this.notificationsService.createNotificationForSingleUser(
-            {
-              title: "Xử lý file doanh thu thất bại",
-              content: `Quá trình xử lý file cho ngày ${new Date(body.date).toLocaleDateString()} đã thất bại. Vui lòng liên hệ admin.`,
-              createdAt: new Date(),
-              type: "income_import"
-            },
-            req.user.userId
-          )
-        } catch (notifErr) {
-          console.error("Failed to send failure notification:", notifErr)
-        }
+        await recordFailure(error as Error)
       }
     })
 
-    // Trả response ngay lập tức
     return {
       success: true,
       message:

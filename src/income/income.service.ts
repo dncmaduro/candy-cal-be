@@ -2383,11 +2383,11 @@ export class IncomeService {
   }
 
   async insertAndUpdateAffiliateType(dto: {
-    totalIncomeFile: Express.Multer.File
+    totalIncomeFile?: Express.Multer.File
     affiliateFile?: Express.Multer.File
     date: Date
     channel: string
-    updateMode?: "full" | "status-only"
+    updateMode?: "full" | "status-only" | "affiliate-only"
   }): Promise<void> {
     try {
       // ====== 0) Date range ======
@@ -2397,6 +2397,13 @@ export class IncomeService {
       end.setHours(23, 59, 59, 999)
 
       if (dto.updateMode === "status-only") {
+        if (!dto.totalIncomeFile) {
+          throw new HttpException(
+            "Thiếu file tổng đơn để cập nhật trạng thái",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
         await this.updateIncomeStatusesFromFile({
           totalIncomeFile: dto.totalIncomeFile,
           date: dto.date,
@@ -2405,73 +2412,83 @@ export class IncomeService {
         return
       }
 
-      // ====== 1) Xử lý file tổng doanh thu: insert với source mặc định "other" + sourceChecked=false ======
-      const totalWorkbook = XLSX.read(dto.totalIncomeFile.buffer, {
-        type: "buffer"
-      })
-      const totalSheetName = totalWorkbook.SheetNames[0]
-      const totalSheet = totalWorkbook.Sheets[totalSheetName]
-      const totalReadData = XLSX.utils.sheet_to_json(
-        totalSheet
-      ) as XlsxIncomeData[]
-      const totalData = totalReadData
-        .slice(1)
-        .filter((line) => line["Cancelation/Return Type"] !== "Cancel")
+      if (dto.updateMode !== "affiliate-only") {
+        if (!dto.totalIncomeFile) {
+          throw new HttpException(
+            "Thiếu file tổng doanh thu cho chế độ full",
+            HttpStatus.BAD_REQUEST
+          )
+        }
 
-      // Xóa incomes trong ngày nhưng chỉ cho channel này
-      await this.incomeModel.deleteMany({
-        date: { $gte: start, $lte: end },
-        channel: dto.channel
-      })
-
-      // Group theo orderId
-      const newIncomesMap = totalData.reduce(
-        (acc, line) => {
-          const orderId = String(line["Order ID"] || "").trim()
-          if (!orderId) return acc
-          if (!acc[orderId]) acc[orderId] = []
-          acc[orderId].push(line)
-          return acc
-        },
-        {} as Record<string, XlsxIncomeData[]>
-      )
-
-      const inserts: any[] = []
-      for (const orderId of Object.keys(newIncomesMap)) {
-        const lines = newIncomesMap[orderId]
-        const shippingProvider = this.getShippingProviderName(lines[0] as any)
-
-        const products = lines.map((line) => ({
-          code: String(line["Seller SKU"] || "").trim(),
-          name: String(line["Product Name"] || "").trim(),
-          source: "other",
-          quantity: Number(line["Quantity"]) || 0,
-          quotation: Number(line["SKU Unit Original Price"]) || 0,
-          price: Number(line["SKU Subtotal Before Discount"]) || 0,
-          platformDiscount: Number(line["SKU Platform Discount"]) || 0,
-          sellerDiscount: Number(line["SKU Seller Discount"]) || 0,
-          priceAfterDiscount: Number(line["SKU Subtotal After Discount"]) || 0,
-          sourceChecked: false
-        }))
-
-        inserts.push({
-          orderId,
-          customer: lines[0]["Buyer Username"] || "user",
-          province: lines[0]["Province"] || "",
-          shippingProvider,
-          ...this.buildIncomeStatusPayload(lines[0]),
-          channel: dto.channel,
-          date: dto.date,
-          products
+        // ====== 1) Xử lý file tổng doanh thu: insert với source mặc định "other" + sourceChecked=false ======
+        const totalWorkbook = XLSX.read(dto.totalIncomeFile.buffer, {
+          type: "buffer"
         })
-      }
+        const totalSheetName = totalWorkbook.SheetNames[0]
+        const totalSheet = totalWorkbook.Sheets[totalSheetName]
+        const totalReadData = XLSX.utils.sheet_to_json(
+          totalSheet
+        ) as XlsxIncomeData[]
+        const totalData = totalReadData
+          .slice(1)
+          .filter((line) => line["Cancelation/Return Type"] !== "Cancel")
 
-      if (inserts.length) {
-        await this.incomeModel.insertMany(inserts, { ordered: false })
-      }
+        // Xóa incomes trong ngày nhưng chỉ cho channel này
+        await this.incomeModel.deleteMany({
+          date: { $gte: start, $lte: end },
+          channel: dto.channel
+        })
 
-      // Cập nhật quy cách đóng hộp
-      await this.updateIncomesBox(new Date(dto.date))
+        // Group theo orderId
+        const newIncomesMap = totalData.reduce(
+          (acc, line) => {
+            const orderId = String(line["Order ID"] || "").trim()
+            if (!orderId) return acc
+            if (!acc[orderId]) acc[orderId] = []
+            acc[orderId].push(line)
+            return acc
+          },
+          {} as Record<string, XlsxIncomeData[]>
+        )
+
+        const inserts: any[] = []
+        for (const orderId of Object.keys(newIncomesMap)) {
+          const lines = newIncomesMap[orderId]
+          const shippingProvider = this.getShippingProviderName(lines[0] as any)
+
+          const products = lines.map((line) => ({
+            code: String(line["Seller SKU"] || "").trim(),
+            name: String(line["Product Name"] || "").trim(),
+            source: "other",
+            quantity: Number(line["Quantity"]) || 0,
+            quotation: Number(line["SKU Unit Original Price"]) || 0,
+            price: Number(line["SKU Subtotal Before Discount"]) || 0,
+            platformDiscount: Number(line["SKU Platform Discount"]) || 0,
+            sellerDiscount: Number(line["SKU Seller Discount"]) || 0,
+            priceAfterDiscount:
+              Number(line["SKU Subtotal After Discount"]) || 0,
+            sourceChecked: false
+          }))
+
+          inserts.push({
+            orderId,
+            customer: lines[0]["Buyer Username"] || "user",
+            province: lines[0]["Province"] || "",
+            shippingProvider,
+            ...this.buildIncomeStatusPayload(lines[0]),
+            channel: dto.channel,
+            date: dto.date,
+            products
+          })
+        }
+
+        if (inserts.length) {
+          await this.incomeModel.insertMany(inserts, { ordered: false })
+        }
+
+        // Cập nhật quy cách đóng hộp
+        await this.updateIncomesBox(new Date(dto.date))
+      }
 
       // ====== 2) Xử lý file affiliate: update source (FIX RACE + IDEMPOTENT) ======
       const channelDoc = await this.livestreamChannelModel
@@ -2511,9 +2528,25 @@ export class IncomeService {
         affiliateSheet
       ) as XlsxAffiliateData[]
 
-      // Optional: thống kê để debug
       let updatedCount = 0
       let noopCount = 0
+      const affiliateUpdateOps: any[] = []
+
+      const flushAffiliateUpdates = async () => {
+        if (!affiliateUpdateOps.length) return
+
+        const operationCount = affiliateUpdateOps.length
+        const result = await this.incomeModel.bulkWrite(affiliateUpdateOps, {
+          ordered: true
+        })
+
+        updatedCount += Number(result.modifiedCount || 0)
+        noopCount += Math.max(
+          0,
+          operationCount - Number(result.modifiedCount || 0)
+        )
+        affiliateUpdateOps.length = 0
+      }
 
       for (const line of affiliateData) {
         const orderId = String(line["ID đơn hàng"] || "").trim()
@@ -2545,39 +2578,38 @@ export class IncomeService {
         )
         const content = line["Loại nội dung"]
 
-        // Atomic update: chỉ update nếu có phần tử products match + sourceChecked=false
-        const res = await this.incomeModel.updateOne(
-          {
-            orderId,
-            channel: dto.channel,
-            date: { $gte: start, $lte: end },
-            products: { $elemMatch: { code, quantity, sourceChecked: false } }
-          },
-          {
-            $set: {
-              "products.$[p].sourceChecked": true,
-              "products.$[p].creator": creator,
-              "products.$[p].source": nextSource,
-              "products.$[p].content": content,
-              "products.$[p].affiliateAdsPercentage": isNaN(
-                affiliateAdsPercentage
-              )
-                ? 0
-                : affiliateAdsPercentage,
-              "products.$[p].affiliateAdsAmount": isNaN(affiliateAdsAmount)
-                ? 0
-                : affiliateAdsAmount,
-              "products.$[p].standardAffPercentage": isNaN(
-                standardAffPercentage
-              )
-                ? 0
-                : standardAffPercentage,
-              "products.$[p].standardAffAmount": isNaN(standardAffAmount)
-                ? 0
-                : standardAffAmount
-            }
-          },
-          {
+        affiliateUpdateOps.push({
+          updateOne: {
+            filter: {
+              orderId,
+              channel: dto.channel,
+              date: { $gte: start, $lte: end },
+              products: { $elemMatch: { code, quantity, sourceChecked: false } }
+            },
+            update: {
+              $set: {
+                "products.$[p].sourceChecked": true,
+                "products.$[p].creator": creator,
+                "products.$[p].source": nextSource,
+                "products.$[p].content": content,
+                "products.$[p].affiliateAdsPercentage": isNaN(
+                  affiliateAdsPercentage
+                )
+                  ? 0
+                  : affiliateAdsPercentage,
+                "products.$[p].affiliateAdsAmount": isNaN(affiliateAdsAmount)
+                  ? 0
+                  : affiliateAdsAmount,
+                "products.$[p].standardAffPercentage": isNaN(
+                  standardAffPercentage
+                )
+                  ? 0
+                  : standardAffPercentage,
+                "products.$[p].standardAffAmount": isNaN(standardAffAmount)
+                  ? 0
+                  : standardAffAmount
+              }
+            },
             arrayFilters: [
               {
                 "p.code": code,
@@ -2586,20 +2618,20 @@ export class IncomeService {
               }
             ]
           }
-        )
+        })
 
-        // res.matchedCount == 0: hoặc order không tồn tại, hoặc product đã được check (trùng dòng), hoặc code/qty không match
-        if ((res as any).modifiedCount > 0) updatedCount++
-        else noopCount++
-
-        // Nếu bạn vẫn muốn debug riêng 1 orderId:
-        // if (orderId === "581632382653597228") {
-        //   console.log("affiliate update result:", res)
-        // }
+        if (affiliateUpdateOps.length >= 250) {
+          await flushAffiliateUpdates()
+        }
       }
 
-      // Optional log tổng (tuỳ bạn giữ hay bỏ)
-      // console.log(`[AffiliateUpdate] updated=${updatedCount}, noop=${noopCount}`)
+      await flushAffiliateUpdates()
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log(
+          `[AffiliateUpdate] updated=${updatedCount}, noop=${noopCount}`
+        )
+      }
     } catch (error) {
       console.error(error)
       throw new HttpException(
