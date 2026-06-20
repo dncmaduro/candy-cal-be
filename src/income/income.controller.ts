@@ -534,7 +534,7 @@ export class IncomeController {
     body: {
       date: string
       channel: string
-      updateMode?: "full" | "status-only" | "affiliate-only"
+      updateMode?: "full" | "status-only" | "base-only" | "affiliate-only"
       chunkIndex?: string
       chunkCount?: string
     },
@@ -546,9 +546,11 @@ export class IncomeController {
       throw new HttpException(
         updateMode === "status-only"
           ? "Cần upload 1 file tổng đơn để cập nhật trạng thái"
-          : updateMode === "affiliate-only"
-            ? "Cần upload 1 file affiliate"
-            : "Cần upload 2 file: file tổng doanh thu và file affiliate",
+          : updateMode === "base-only"
+            ? "Cần upload 1 file tổng doanh thu"
+            : updateMode === "affiliate-only"
+              ? "Cần upload 1 file affiliate"
+              : "Cần upload 2 file: file tổng doanh thu và file affiliate",
         HttpStatus.BAD_REQUEST
       )
     }
