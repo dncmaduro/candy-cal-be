@@ -6,6 +6,7 @@ import { Model, Types } from "mongoose"
 import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
+import { SalesDailyReport } from "../database/mongoose/schemas/SalesDailyReport"
 
 const SALES_DASHBOARD_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
@@ -53,6 +54,7 @@ export interface ProvinceSalesStatsResponse {
 export interface RevenueStatsResponse {
   totalRevenue: number
   totalRevenueBeforeDiscount: number
+  totalAdsCost: number
   totalOrders: number
   totalQuantity: number
   totalTax: number
@@ -99,7 +101,9 @@ export class SalesDashboardService {
     @InjectModel("salesfunnel")
     private readonly salesFunnelModel: Model<SalesFunnel>,
     @InjectModel("salesmonthkpi")
-    private readonly salesMonthKpiModel: Model<SalesMonthKpi>
+    private readonly salesMonthKpiModel: Model<SalesMonthKpi>,
+    @InjectModel("salesdailyreports")
+    private readonly salesDailyReportModel: Model<SalesDailyReport>
   ) {}
 
   private getZonedDate(date: Date): Date {
@@ -354,6 +358,31 @@ export class SalesDashboardService {
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
         return sum + order.total - totalDiscount
       }, 0)
+      const adsCostFilter: {
+        date: { $gte: Date; $lte: Date }
+        deletedAt: null
+        channel?: Types.ObjectId
+      } = {
+        date: { $gte: start, $lte: end },
+        deletedAt: null
+      }
+
+      if (channel) {
+        adsCostFilter.channel = new Types.ObjectId(channel)
+      }
+
+      const adsCostResult = await this.salesDailyReportModel.aggregate<{
+        totalAdsCost: number
+      }>([
+        { $match: adsCostFilter },
+        {
+          $group: {
+            _id: null,
+            totalAdsCost: { $sum: "$adsCost" }
+          }
+        }
+      ])
+      const totalAdsCost = Number(adsCostResult[0]?.totalAdsCost || 0)
       const totalOrders = orders.length
 
       // Calculate total quantity of all items across all orders
@@ -512,6 +541,7 @@ export class SalesDashboardService {
       return {
         totalRevenue,
         totalRevenueBeforeDiscount,
+        totalAdsCost,
         totalOrders,
         totalQuantity,
         totalTax,
