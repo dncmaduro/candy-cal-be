@@ -71,67 +71,71 @@ export class DailyAdsService {
   async upsertDailyAdsMetrics(payload: {
     date: Date
     channelId: string
-    roiProtect?: number
-    fullRefundGmv?: number
-    tinRefundAmount?: number
-    adsTax?: number
-    gmvAds?: number
-    affiliateCost?: number
-    affiliateRefundAmount?: number
+    roiProtect: number
+    tinRefundAmount: number
+    gmvAds: number
+    affiliateCost: number
+    totalRevenue: number
+    refundCancelRate: number
   }): Promise<DailyAdsMetrics> {
     try {
       const target = this.normalizeDateToBusinessDay(payload.date)
-      const snapshot = await this.getIncomeSnapshotByDateAndChannel(
-        target,
-        payload.channelId
-      )
-
       const roiProtect = Number(payload.roiProtect || 0)
-      const fullRefundGmv = Number(payload.fullRefundGmv || 0)
       const tinRefundAmount = Number(payload.tinRefundAmount || 0)
-      const adsTax = Number(payload.adsTax || 0)
       const gmvAds = Number(payload.gmvAds || 0)
       const affiliateCost = Number(payload.affiliateCost || 0)
-      const affiliateRefundAmount = Number(payload.affiliateRefundAmount || 0)
+      const totalRevenue = Number(payload.totalRevenue || 0)
+      const rawRefundCancelRate = Number(payload.refundCancelRate || 0)
+      const refundCancelRate = Math.min(
+        Math.max(
+          rawRefundCancelRate >= 1
+            ? rawRefundCancelRate / 100
+            : rawRefundCancelRate,
+          0
+        ),
+        1
+      )
 
-      const actualAdsCost = Math.max(
+      const actualAdsCost = Math.max(0, gmvAds - tinRefundAmount - roiProtect)
+      const affiliateRefundAmount = Math.max(
         0,
-        gmvAds - roiProtect - fullRefundGmv - tinRefundAmount - adsTax
+        actualAdsCost * refundCancelRate
       )
       const totalCost = Math.max(0, actualAdsCost + affiliateCost)
+      const adjustedRevenue = Math.max(0, totalRevenue * (1 - refundCancelRate))
       const costAfterRefund = Math.max(0, totalCost - affiliateRefundAmount)
 
       const update = {
         channel: new Types.ObjectId(payload.channelId),
         date: target,
         roiProtect,
-        fullRefundGmv,
+        refundCancelRate: Math.round(refundCancelRate * 10000) / 100,
+        fullRefundGmv: 0,
         tinRefundAmount,
-        adsTax,
+        adsTax: 0,
         gmvAds,
         affiliateCost,
         affiliateRefundAmount,
-        incomeBeforeDiscount: snapshot.beforeDiscount,
-        incomeAfterDiscount: snapshot.afterDiscount,
+        totalRevenue,
+        adjustedRevenue,
+        incomeBeforeDiscount: totalRevenue,
+        incomeAfterDiscount: totalRevenue,
         actualAdsCost,
         totalCost,
         costAfterRefund,
         adsRatioOnBeforeDiscountRevenue: this.toPercentage(
           actualAdsCost,
-          snapshot.beforeDiscount
+          totalRevenue
         ),
         totalCostRatioOnBeforeDiscountRevenue: this.toPercentage(
           totalCost,
-          snapshot.beforeDiscount
+          totalRevenue
         ),
         costAfterRefundRatioOnBeforeDiscountRevenue: this.toPercentage(
-          costAfterRefund,
-          snapshot.beforeDiscount
+          totalCost,
+          adjustedRevenue
         ),
-        affiliateRatioOnBeforeDiscountRevenue: this.toPercentage(
-          affiliateCost,
-          snapshot.beforeDiscount
-        ),
+        affiliateRatioOnBeforeDiscountRevenue: 0,
         updatedAt: new Date()
       }
 
@@ -167,6 +171,22 @@ export class DailyAdsService {
       console.error(error)
       throw new HttpException(
         "Lỗi khi lấy chỉ số ads",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
+  async deleteDailyAdsMetrics(date: Date, channelId: string) {
+    try {
+      const target = this.normalizeDateToBusinessDay(date)
+      await this.dailyAdsMetricsModel.deleteOne({
+        date: target,
+        channel: new Types.ObjectId(channelId)
+      })
+    } catch (error) {
+      console.error(error)
+      throw new HttpException(
+        "Lỗi khi xóa chỉ số ads",
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }

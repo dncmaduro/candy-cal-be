@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpException,
@@ -272,10 +273,7 @@ export class DailyAdsController {
       )
     }
     if (!dto.channelId) {
-      throw new HttpException(
-        "Cần cung cấp channelId",
-        HttpStatus.BAD_REQUEST
-      )
+      throw new HttpException("Cần cung cấp channelId", HttpStatus.BAD_REQUEST)
     }
 
     const date = new Date(dto.date)
@@ -283,16 +281,42 @@ export class DailyAdsController {
       throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
     }
 
+    const requiredNumericFields = [
+      { key: "roiProtect", label: "roiProtect" },
+      { key: "tinRefundAmount", label: "tinRefundAmount" },
+      { key: "gmvAds", label: "gmvAds" },
+      { key: "affiliateCost", label: "affiliateCost" },
+      { key: "totalRevenue", label: "totalRevenue" },
+      { key: "refundCancelRate", label: "refundCancelRate" }
+    ] as const
+
+    for (const field of requiredNumericFields) {
+      const rawValue = dto[field.key]
+      if (typeof rawValue === "undefined" || rawValue === null) {
+        throw new HttpException(
+          `Cần cung cấp ${field.label}`,
+          HttpStatus.BAD_REQUEST
+        )
+      }
+
+      const numericValue = Number(rawValue)
+      if (!Number.isFinite(numericValue) || numericValue < 0) {
+        throw new HttpException(
+          `${field.label} không hợp lệ`,
+          HttpStatus.BAD_REQUEST
+        )
+      }
+    }
+
     const result = await this.dailyAdsService.upsertDailyAdsMetrics({
       date,
       channelId: dto.channelId,
-      roiProtect: Number(dto.roiProtect || 0),
-      fullRefundGmv: Number(dto.fullRefundGmv || 0),
-      tinRefundAmount: Number(dto.tinRefundAmount || 0),
-      adsTax: Number(dto.adsTax || 0),
-      gmvAds: Number(dto.gmvAds || 0),
-      affiliateCost: Number(dto.affiliateCost || 0),
-      affiliateRefundAmount: Number(dto.affiliateRefundAmount || 0)
+      roiProtect: Number(dto.roiProtect),
+      tinRefundAmount: Number(dto.tinRefundAmount),
+      gmvAds: Number(dto.gmvAds),
+      affiliateCost: Number(dto.affiliateCost),
+      totalRevenue: Number(dto.totalRevenue),
+      refundCancelRate: Number(dto.refundCancelRate)
     })
 
     void this.systemLogsService.createSystemLog(
@@ -312,6 +336,47 @@ export class DailyAdsController {
     return { success: true, data: result }
   }
 
+  @Roles("admin", "tiktokshop-emp")
+  @Delete("/metrics/delete")
+  @HttpCode(HttpStatus.OK)
+  async deleteDailyAdsMetrics(
+    @Body() dto: { date: string; channelId: string },
+    @Req() req
+  ): Promise<{ success: boolean }> {
+    if (!dto.date) {
+      throw new HttpException(
+        "Cần cung cấp ngày (date)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    if (!dto.channelId) {
+      throw new HttpException("Cần cung cấp channelId", HttpStatus.BAD_REQUEST)
+    }
+
+    const date = new Date(dto.date)
+    if (isNaN(date.getTime())) {
+      throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    await this.dailyAdsService.deleteDailyAdsMetrics(date, dto.channelId)
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "dailyads",
+        action: "delete_metrics",
+        entity: "daily_ads_metrics",
+        result: "success",
+        meta: {
+          date: dto.date,
+          channelId: dto.channelId
+        }
+      },
+      req.user.userId
+    )
+
+    return { success: true }
+  }
+
   @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
   @Get("/metrics")
   @HttpCode(HttpStatus.OK)
@@ -326,10 +391,7 @@ export class DailyAdsController {
       )
     }
     if (!channelId) {
-      throw new HttpException(
-        "Cần cung cấp channelId",
-        HttpStatus.BAD_REQUEST
-      )
+      throw new HttpException("Cần cung cấp channelId", HttpStatus.BAD_REQUEST)
     }
 
     const date = new Date(dateStr)
@@ -337,7 +399,10 @@ export class DailyAdsController {
       throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
     }
 
-    const result = await this.dailyAdsService.getDailyAdsMetrics(date, channelId)
+    const result = await this.dailyAdsService.getDailyAdsMetrics(
+      date,
+      channelId
+    )
     if (!result) {
       throw new HttpException(
         "Không tìm thấy dữ liệu ads",

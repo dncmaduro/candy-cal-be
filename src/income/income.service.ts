@@ -16,8 +16,11 @@ import { Response } from "express"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { DailyAdsMetrics } from "../database/mongoose/schemas/DailyAdsMetrics"
 import { format as formatDateFns } from "date-fns"
+import { formatInTimeZone } from "date-fns-tz"
 import { OWN_USERS } from "../constants/own-users"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
+
+const INCOME_STATS_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
 @Injectable()
 export class IncomeService {
@@ -47,6 +50,85 @@ export class IncomeService {
     return new Date(
       endOfDay ? startOfDayUtcMs + 24 * 60 * 60 * 1000 - 1 : startOfDayUtcMs
     )
+  }
+
+  private toPercentage(numerator: number, denominator: number): number {
+    if (!denominator) return 0
+    return Math.round((numerator / denominator) * 10000) / 100
+  }
+
+  private getBusinessDayKey(date: Date): string {
+    return formatInTimeZone(date, INCOME_STATS_TIME_ZONE, "yyyy-MM-dd")
+  }
+
+  private buildAdsFilter(start: Date, end: Date, channelId?: string) {
+    const filter: any = { date: { $gte: start, $lte: end } }
+    if (channelId) {
+      filter.channel = new Types.ObjectId(channelId)
+    }
+    return filter
+  }
+
+  private async aggregateHybridAdsCosts(
+    start: Date,
+    end: Date,
+    channelId?: string
+  ): Promise<{
+    totalAdsCost: number
+    liveAdsCost: number
+    shopAdsCost: number
+    hasDailyAdsMetrics: boolean
+    adsSourceMode: "legacy" | "metrics" | "mixed"
+    metricsDaysCount: number
+  }> {
+    const filter = this.buildAdsFilter(start, end, channelId)
+    const [metricsRows, legacyRows] = await Promise.all([
+      this.dailyAdsMetricsModel
+        .find(filter)
+        .select({ date: 1, actualAdsCost: 1 })
+        .lean(),
+      this.dailyAdsModel
+        .find(filter)
+        .select({ date: 1, liveAdsCost: 1, shopAdsCost: 1 })
+        .lean()
+    ])
+
+    const metricsDayKeys = new Set(
+      metricsRows.map((row) => this.getBusinessDayKey(new Date(row.date)))
+    )
+
+    const metricsTotalAdsCost = metricsRows.reduce(
+      (sum, row) => sum + Number(row.actualAdsCost || 0),
+      0
+    )
+
+    let fallbackLiveAdsCost = 0
+    let fallbackShopAdsCost = 0
+    let hasLegacyFallback = false
+
+    for (const row of legacyRows) {
+      const dayKey = this.getBusinessDayKey(new Date(row.date))
+      if (metricsDayKeys.has(dayKey)) continue
+      hasLegacyFallback = true
+      fallbackLiveAdsCost += Number(row.liveAdsCost || 0)
+      fallbackShopAdsCost += Number(row.shopAdsCost || 0)
+    }
+
+    const hasDailyAdsMetrics = metricsDayKeys.size > 0
+    const adsSourceMode = hasDailyAdsMetrics
+      ? hasLegacyFallback
+        ? "mixed"
+        : "metrics"
+      : "legacy"
+
+    return {
+      totalAdsCost: metricsTotalAdsCost + fallbackLiveAdsCost + fallbackShopAdsCost,
+      liveAdsCost: hasDailyAdsMetrics ? 0 : fallbackLiveAdsCost,
+      shopAdsCost: hasDailyAdsMetrics ? 0 : fallbackShopAdsCost,
+      hasDailyAdsMetrics,
+      adsSourceMode,
+      metricsDaysCount: metricsDayKeys.size
+    }
   }
 
   private resolveRangeStatsDates(
@@ -129,12 +211,15 @@ export class IncomeService {
     }
   ): Promise<{
     roiProtect: number
+    refundCancelRate: number
     fullRefundGmv: number
     tinRefundAmount: number
     adsTax: number
     gmvAds: number
     affiliateCost: number
     affiliateRefundAmount: number
+    totalRevenue: number
+    adjustedRevenue: number
     incomeBeforeDiscount: number
     incomeAfterDiscount: number
     actualAdsCost: number
@@ -146,10 +231,7 @@ export class IncomeService {
     affiliateRatioOnBeforeDiscountRevenue: number
     recordsCount: number
   }> {
-    const filter: any = { date: { $gte: start, $lte: end } }
-    if (channelId) {
-      filter.channel = new Types.ObjectId(channelId)
-    }
+    const filter = this.buildAdsFilter(start, end, channelId)
 
     const rows = await this.dailyAdsMetricsModel
       .aggregate([
@@ -158,6 +240,7 @@ export class IncomeService {
           $group: {
             _id: null,
             roiProtect: { $sum: { $ifNull: ["$roiProtect", 0] } },
+            refundCancelRate: { $avg: { $ifNull: ["$refundCancelRate", 0] } },
             fullRefundGmv: { $sum: { $ifNull: ["$fullRefundGmv", 0] } },
             tinRefundAmount: { $sum: { $ifNull: ["$tinRefundAmount", 0] } },
             adsTax: { $sum: { $ifNull: ["$adsTax", 0] } },
@@ -166,6 +249,8 @@ export class IncomeService {
             affiliateRefundAmount: {
               $sum: { $ifNull: ["$affiliateRefundAmount", 0] }
             },
+            totalRevenue: { $sum: { $ifNull: ["$totalRevenue", 0] } },
+            adjustedRevenue: { $sum: { $ifNull: ["$adjustedRevenue", 0] } },
             actualAdsCost: { $sum: { $ifNull: ["$actualAdsCost", 0] } },
             totalCost: { $sum: { $ifNull: ["$totalCost", 0] } },
             costAfterRefund: { $sum: { $ifNull: ["$costAfterRefund", 0] } },
@@ -179,44 +264,43 @@ export class IncomeService {
     const incomeAgg =
       incomeAmounts ||
       (await this.aggregateIncomeAmounts(start, end, channelId))
-    const incomeBeforeDiscount = Number(incomeAgg.incomeBeforeDiscount || 0)
+    const totalRevenue = Number(
+      data.totalRevenue || incomeAgg.incomeBeforeDiscount || 0
+    )
+    const adjustedRevenue = Number(data.adjustedRevenue || 0)
+    const incomeBeforeDiscount = totalRevenue
     return {
       roiProtect: Number(data.roiProtect || 0),
+      refundCancelRate:
+        totalRevenue > 0
+          ? this.toPercentage(totalRevenue - adjustedRevenue, totalRevenue)
+          : Number(data.refundCancelRate || 0),
       fullRefundGmv: Number(data.fullRefundGmv || 0),
       tinRefundAmount: Number(data.tinRefundAmount || 0),
       adsTax: Number(data.adsTax || 0),
       gmvAds: Number(data.gmvAds || 0),
       affiliateCost: Number(data.affiliateCost || 0),
       affiliateRefundAmount: Number(data.affiliateRefundAmount || 0),
+      totalRevenue,
+      adjustedRevenue,
       incomeBeforeDiscount,
-      incomeAfterDiscount: Number(incomeAgg.incomeAfterDiscount || 0),
+      incomeAfterDiscount: totalRevenue || Number(incomeAgg.incomeAfterDiscount || 0),
       actualAdsCost: Number(data.actualAdsCost || 0),
       totalCost: Number(data.totalCost || 0),
       costAfterRefund: Number(data.costAfterRefund || 0),
-      adsRatioOnBeforeDiscountRevenue:
-        incomeBeforeDiscount > 0
-          ? Math.round(
-              (Number(data.actualAdsCost || 0) / incomeBeforeDiscount) * 10000
-            ) / 100
-          : 0,
-      totalCostRatioOnBeforeDiscountRevenue:
-        incomeBeforeDiscount > 0
-          ? Math.round(
-              (Number(data.totalCost || 0) / incomeBeforeDiscount) * 10000
-            ) / 100
-          : 0,
-      costAfterRefundRatioOnBeforeDiscountRevenue:
-        incomeBeforeDiscount > 0
-          ? Math.round(
-              (Number(data.costAfterRefund || 0) / incomeBeforeDiscount) * 10000
-            ) / 100
-          : 0,
-      affiliateRatioOnBeforeDiscountRevenue:
-        incomeBeforeDiscount > 0
-          ? Math.round(
-              (Number(data.affiliateCost || 0) / incomeBeforeDiscount) * 10000
-            ) / 100
-          : 0,
+      adsRatioOnBeforeDiscountRevenue: this.toPercentage(
+        Number(data.actualAdsCost || 0),
+        totalRevenue
+      ),
+      totalCostRatioOnBeforeDiscountRevenue: this.toPercentage(
+        Number(data.totalCost || 0),
+        totalRevenue
+      ),
+      costAfterRefundRatioOnBeforeDiscountRevenue: this.toPercentage(
+        Number(data.totalCost || 0),
+        adjustedRevenue
+      ),
+      affiliateRatioOnBeforeDiscountRevenue: 0,
       recordsCount: Number(data.recordsCount || 0)
     }
   }
@@ -1636,8 +1720,12 @@ export class IncomeService {
     year: number,
     channelId?: string
   ): Promise<{
+    totalAdsCost: number
     liveAdsCost: number
     shopAdsCost: number
+    hasDailyAdsMetrics: boolean
+    adsSourceMode: "legacy" | "metrics" | "mixed"
+    metricsDaysCount: number
     actualAdsCost: number
     totalCost: number
     costAfterRefund: number
@@ -1653,15 +1741,21 @@ export class IncomeService {
     }
     rawMetrics: {
       roiProtect: number
+      refundCancelRate: number
       fullRefundGmv: number
       tinRefundAmount: number
       adsTax: number
       gmvAds: number
       affiliateCost: number
       affiliateRefundAmount: number
+      totalRevenue: number
+      adjustedRevenue: number
       incomeBeforeDiscount: number
       incomeAfterDiscount: number
       recordsCount: number
+      hasDailyAdsMetrics: boolean
+      adsSourceMode: "legacy" | "metrics" | "mixed"
+      metricsDaysCount: number
     }
     totalIncome: { live: number; shop: number }
     kpi: {
@@ -1679,24 +1773,7 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setDate(end.getDate() - 1)
 
-      // Sum daily ads cost in month
-      const adsFilter: any = { date: { $gte: start, $lte: end } }
-      if (channelId) {
-        adsFilter.channel = new Types.ObjectId(channelId)
-      }
-
-      const adsAggPromise = this.dailyAdsModel
-        .aggregate([
-          { $match: adsFilter },
-          {
-            $group: {
-              _id: null,
-              liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
-              shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
-            }
-          }
-        ])
-        .exec()
+      const hybridAdsPromise = this.aggregateHybridAdsCosts(start, end, channelId)
       const splitStatsPromise = this.aggregateMonthSplitStats(
         month,
         year,
@@ -1706,14 +1783,14 @@ export class IncomeService {
       if (channelId) goalFilter.channel = channelId
 
       const monthGoalPromise = this.monthGoalModel.findOne(goalFilter).lean()
-      const [rows, splitStats, monthGoal] = await Promise.all([
-        adsAggPromise,
+      const [hybridAds, splitStats, monthGoal] = await Promise.all([
+        hybridAdsPromise,
         splitStatsPromise,
         monthGoalPromise
       ])
-      const liveAdsCost = rows?.[0]?.liveAdsCost || 0
-      const shopAdsCost = rows?.[0]?.shopAdsCost || 0
-      const totalAdsCost = Number(liveAdsCost || 0) + Number(shopAdsCost || 0)
+      const liveAdsCost = hybridAds.liveAdsCost
+      const shopAdsCost = hybridAds.shopAdsCost
+      const totalAdsCost = hybridAds.totalAdsCost
       const metricsAgg = await this.aggregateDailyAdsMetrics(
         start,
         end,
@@ -1733,9 +1810,13 @@ export class IncomeService {
 
       const percentages = {
         liveAdsToLiveIncome:
-          live === 0 ? 0 : Math.round((liveAdsCost / live) * 10000) / 100,
+          hybridAds.hasDailyAdsMetrics || live === 0
+            ? 0
+            : Math.round((liveAdsCost / live) * 10000) / 100,
         shopAdsToShopIncome:
-          shop === 0 ? 0 : Math.round((shopAdsCost / shop) * 10000) / 100
+          hybridAds.hasDailyAdsMetrics || shop === 0
+            ? 0
+            : Math.round((shopAdsCost / shop) * 10000) / 100
       }
 
       const liveKpi = monthGoal?.liveStreamGoal || 0
@@ -1750,8 +1831,12 @@ export class IncomeService {
           : Math.min(Math.round((shop / shopKpi) * 10000) / 100, 999)
 
       return {
+        totalAdsCost,
         liveAdsCost,
         shopAdsCost,
+        hasDailyAdsMetrics: hybridAds.hasDailyAdsMetrics,
+        adsSourceMode: hybridAds.adsSourceMode,
+        metricsDaysCount: hybridAds.metricsDaysCount,
         actualAdsCost: metricsAgg.actualAdsCost,
         totalCost: metricsAgg.totalCost,
         costAfterRefund: metricsAgg.costAfterRefund,
@@ -1772,15 +1857,21 @@ export class IncomeService {
         },
         rawMetrics: {
           roiProtect: metricsAgg.roiProtect,
+          refundCancelRate: metricsAgg.refundCancelRate,
           fullRefundGmv: metricsAgg.fullRefundGmv,
           tinRefundAmount: metricsAgg.tinRefundAmount,
           adsTax: metricsAgg.adsTax,
           gmvAds: metricsAgg.gmvAds,
           affiliateCost: metricsAgg.affiliateCost,
           affiliateRefundAmount: metricsAgg.affiliateRefundAmount,
+          totalRevenue: metricsAgg.totalRevenue,
+          adjustedRevenue: metricsAgg.adjustedRevenue,
           incomeBeforeDiscount: metricsAgg.incomeBeforeDiscount,
           incomeAfterDiscount: metricsAgg.incomeAfterDiscount,
-          recordsCount: metricsAgg.recordsCount
+          recordsCount: metricsAgg.recordsCount,
+          hasDailyAdsMetrics: hybridAds.hasDailyAdsMetrics,
+          adsSourceMode: hybridAds.adsSourceMode,
+          metricsDaysCount: hybridAds.metricsDaysCount
         },
         totalIncome: { live, shop },
         kpi: {
@@ -1841,18 +1932,24 @@ export class IncomeService {
         totalAdsCost: number
         liveAdsCost: number
         shopAdsCost: number
+        hasDailyAdsMetrics: boolean
+        adsSourceMode: "legacy" | "metrics" | "mixed"
+        metricsDaysCount: number
         percentages: {
           liveAdsToLiveIncome: number
           shopAdsToShopIncome: number
         }
         metrics: {
           roiProtect: number
+          refundCancelRate: number
           fullRefundGmv: number
           tinRefundAmount: number
           adsTax: number
           gmvAds: number
           affiliateCost: number
           affiliateRefundAmount: number
+          totalRevenue: number
+          adjustedRevenue: number
           incomeBeforeDiscount: number
           incomeAfterDiscount: number
           actualAdsCost: number
@@ -1974,30 +2071,14 @@ export class IncomeService {
           e,
           channelId
         )
-        const adsFilter: any = { date: { $gte: s, $lte: e } }
-        if (channelId) {
-          adsFilter.channel = new Types.ObjectId(channelId)
-        }
-
-        const adsAggPromise = this.dailyAdsModel
-          .aggregate([
-            { $match: adsFilter },
-            {
-              $group: {
-                _id: null,
-                liveAdsCost: { $sum: { $ifNull: ["$liveAdsCost", 0] } },
-                shopAdsCost: { $sum: { $ifNull: ["$shopAdsCost", 0] } }
-              }
-            }
-          ])
-          .exec()
-        const [incomeStats, adsAgg] = await Promise.all([
+        const hybridAdsPromise = this.aggregateHybridAdsCosts(s, e, channelId)
+        const [incomeStats, hybridAds] = await Promise.all([
           incomeStatsPromise,
-          adsAggPromise
+          hybridAdsPromise
         ])
-        const liveAdsCost = adsAgg?.[0]?.liveAdsCost || 0
-        const shopAdsCost = adsAgg?.[0]?.shopAdsCost || 0
-        const totalAdsCost = Number(liveAdsCost || 0) + Number(shopAdsCost || 0)
+        const liveAdsCost = hybridAds.liveAdsCost
+        const shopAdsCost = hybridAds.shopAdsCost
+        const totalAdsCost = hybridAds.totalAdsCost
         const metricsAgg = await this.aggregateDailyAdsMetrics(
           s,
           e,
@@ -2018,13 +2099,14 @@ export class IncomeService {
             : 0
         const percentages = {
           liveAdsToLiveIncome:
+            hybridAds.hasDailyAdsMetrics ||
             incomeStats.afterDiscount.liveIncome === 0
               ? 0
               : Math.round(
                   (liveAdsCost / incomeStats.afterDiscount.liveIncome) * 10000
                 ) / 100,
           shopAdsToShopIncome:
-            shopIncomeAfterDiscount === 0
+            hybridAds.hasDailyAdsMetrics || shopIncomeAfterDiscount === 0
               ? 0
               : Math.round((shopAdsCost / shopIncomeAfterDiscount) * 10000) /
                 100
@@ -2039,15 +2121,21 @@ export class IncomeService {
             totalAdsCost,
             liveAdsCost,
             shopAdsCost,
+            hasDailyAdsMetrics: hybridAds.hasDailyAdsMetrics,
+            adsSourceMode: hybridAds.adsSourceMode,
+            metricsDaysCount: hybridAds.metricsDaysCount,
             percentages,
             metrics: {
               roiProtect: metricsAgg.roiProtect,
+              refundCancelRate: metricsAgg.refundCancelRate,
               fullRefundGmv: metricsAgg.fullRefundGmv,
               tinRefundAmount: metricsAgg.tinRefundAmount,
               adsTax: metricsAgg.adsTax,
               gmvAds: metricsAgg.gmvAds,
               affiliateCost: metricsAgg.affiliateCost,
               affiliateRefundAmount: metricsAgg.affiliateRefundAmount,
+              totalRevenue: metricsAgg.totalRevenue,
+              adjustedRevenue: metricsAgg.adjustedRevenue,
               incomeBeforeDiscount: metricsAgg.incomeBeforeDiscount,
               incomeAfterDiscount: metricsAgg.incomeAfterDiscount,
               actualAdsCost: metricsAgg.actualAdsCost,
