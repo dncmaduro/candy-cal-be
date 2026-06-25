@@ -4,12 +4,15 @@ export interface DailyAdsMetrics extends Document {
   date: Date
   channel: Types.ObjectId
   roiProtect: number
+  refundCancelRate: number
   fullRefundGmv: number
   tinRefundAmount: number
   adsTax: number
   gmvAds: number
   affiliateCost: number
   affiliateRefundAmount: number
+  totalRevenue: number
+  adjustedRevenue: number
   incomeBeforeDiscount: number
   incomeAfterDiscount: number
   actualAdsCost: number
@@ -30,12 +33,15 @@ export const DailyAdsMetricsSchema = new Schema<DailyAdsMetrics>({
     required: true
   },
   roiProtect: { type: Number, required: true, default: 0 },
+  refundCancelRate: { type: Number, required: true, default: 0 },
   fullRefundGmv: { type: Number, required: true, default: 0 },
   tinRefundAmount: { type: Number, required: true, default: 0 },
   adsTax: { type: Number, required: true, default: 0 },
   gmvAds: { type: Number, required: true, default: 0 },
   affiliateCost: { type: Number, required: true, default: 0 },
   affiliateRefundAmount: { type: Number, required: true, default: 0 },
+  totalRevenue: { type: Number, required: true, default: 0 },
+  adjustedRevenue: { type: Number, required: true, default: 0 },
   incomeBeforeDiscount: { type: Number, required: true, default: 0 },
   incomeAfterDiscount: { type: Number, required: true, default: 0 },
   actualAdsCost: { type: Number, required: true, default: 0 },

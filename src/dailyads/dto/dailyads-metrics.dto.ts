@@ -1,11 +1,10 @@
 export class UpsertDailyAdsMetricsDto {
   date: string
   channelId: string
-  roiProtect?: number
-  fullRefundGmv?: number
-  tinRefundAmount?: number
-  adsTax?: number
-  gmvAds?: number
-  affiliateCost?: number
-  affiliateRefundAmount?: number
+  roiProtect: number
+  tinRefundAmount: number
+  gmvAds: number
+  affiliateCost: number
+  totalRevenue: number
+  refundCancelRate: number
 }
