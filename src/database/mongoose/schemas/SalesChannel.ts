@@ -3,6 +3,7 @@ import { Schema, Document, model, Types } from "mongoose"
 export interface SalesChannel extends Document {
   channelName: string
   assignedTo?: Types.ObjectId
+  assignedTos?: Types.ObjectId[]
   phoneNumber: string
   address: string
   avatarUrl: string
@@ -18,6 +19,13 @@ export const SalesChannelSchema = new Schema<SalesChannel>({
     ref: "users",
     required: false
   },
+  assignedTos: [
+    {
+      type: Schema.Types.ObjectId,
+      ref: "users",
+      required: false
+    }
+  ],
   phoneNumber: { type: String, required: true },
   address: { type: String, required: false },
   avatarUrl: { type: String, required: false },

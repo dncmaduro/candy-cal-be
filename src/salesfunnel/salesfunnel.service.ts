@@ -46,6 +46,111 @@ export class SalesFunnelService {
     private readonly salesActivityModel: Model<SalesActivity>
   ) {}
 
+  private getChannelAssignedUserIds(
+    channel:
+      | Pick<SalesChannel, "assignedTo" | "assignedTos">
+      | null
+      | undefined
+  ): string[] {
+    if (!channel) {
+      return []
+    }
+
+    return Array.from(
+      new Set(
+        [channel.assignedTo, ...(channel.assignedTos || [])]
+          .filter(Boolean)
+          .map((userId) => userId.toString())
+      )
+    )
+  }
+
+  private getChannelPrimaryAssignedUserId(
+    channel:
+      | Pick<SalesChannel, "assignedTo" | "assignedTos">
+      | null
+      | undefined
+  ): string | null {
+    return this.getChannelAssignedUserIds(channel)[0] || null
+  }
+
+  private async validateSalesAssignedUser(
+    userId: string,
+    notFoundMessage: string,
+    invalidRoleMessage: string
+  ): Promise<void> {
+    const user = await this.userModel.findById(userId).lean()
+    if (!user) {
+      throw new HttpException(notFoundMessage, HttpStatus.NOT_FOUND)
+    }
+    if (!user.roles || !user.roles.includes("sales-emp")) {
+      throw new HttpException(invalidRoleMessage, HttpStatus.BAD_REQUEST)
+    }
+  }
+
+  private async resolveChannelPrimaryAssignedUserId(
+    channel:
+      | Pick<SalesChannel, "assignedTo" | "assignedTos">
+      | null
+      | undefined,
+    missingAssigneeMessage: string,
+    notFoundMessage: string,
+    invalidRoleMessage: string
+  ): Promise<string> {
+    const userId = this.getChannelPrimaryAssignedUserId(channel)
+    if (!userId) {
+      throw new HttpException(missingAssigneeMessage, HttpStatus.BAD_REQUEST)
+    }
+
+    await this.validateSalesAssignedUser(
+      userId,
+      notFoundMessage,
+      invalidRoleMessage
+    )
+
+    return userId
+  }
+
+  private async isChannelAssignedUser(
+    channelId: Types.ObjectId | string,
+    userId: string
+  ): Promise<boolean> {
+    const matchedChannel = await this.salesChannelModel
+      .findOne({
+        _id: new Types.ObjectId(channelId.toString()),
+        deletedAt: null,
+        $or: [
+          { assignedTo: new Types.ObjectId(userId) },
+          { assignedTos: new Types.ObjectId(userId) }
+        ]
+      })
+      .lean()
+
+    return !!matchedChannel
+  }
+
+  private async getFunnelPermissionState(
+    funnel: Pick<SalesFunnel, "user" | "channel">,
+    userId: string,
+    isAdmin: boolean
+  ): Promise<{
+    hasPermission: boolean
+    isResponsible: boolean
+    isChannelAssignee: boolean
+  }> {
+    const isResponsible = funnel.user.toString() === userId
+    const isChannelAssignee = await this.isChannelAssignedUser(
+      funnel.channel,
+      userId
+    )
+
+    return {
+      hasPermission: isAdmin || isResponsible || isChannelAssignee,
+      isResponsible,
+      isChannelAssignee
+    }
+  }
+
   async createLead(payload: {
     name: string
     channel: string
@@ -58,33 +163,18 @@ export class SalesFunnelService {
         throw new HttpException("Channel not found", HttpStatus.NOT_FOUND)
       }
 
-      if (!channel.assignedTo) {
-        throw new HttpException(
-          "Kênh này chưa có người phụ trách",
-          HttpStatus.BAD_REQUEST
-        )
-      }
-
-      // Validate assigned user has sales-emp role
-      const user = await this.userModel.findById(channel.assignedTo).lean()
-      if (!user) {
-        throw new HttpException(
-          "Người phụ trách kênh không tồn tại",
-          HttpStatus.NOT_FOUND
-        )
-      }
-      if (!user.roles || !user.roles.includes("sales-emp")) {
-        throw new HttpException(
-          "Người phụ trách kênh không có quyền sales-emp",
-          HttpStatus.BAD_REQUEST
-        )
-      }
+      const assignedUserId = await this.resolveChannelPrimaryAssignedUserId(
+        channel,
+        "Kênh này chưa có người phụ trách",
+        "Người phụ trách kênh không tồn tại",
+        "Người phụ trách kênh không có quyền sales-emp"
+      )
 
       const now = new Date()
       const doc = new this.salesFunnelModel({
         name: payload.name,
         channel: new Types.ObjectId(payload.channel),
-        user: new Types.ObjectId(channel.assignedTo.toString()),
+        user: new Types.ObjectId(assignedUserId),
         stage: "lead",
         updateStageLogs: [
           {
@@ -184,13 +274,19 @@ export class SalesFunnelService {
             continue
           }
 
-          // Get user from channel's assignedTo
-          if (!channel.assignedTo) {
+          const assignedUserId = this.getChannelPrimaryAssignedUserId(channel)
+          if (!assignedUserId) {
             errors.push(
               `Dòng ${rowNumber}: Kênh "${channelName}" chưa có người phụ trách`
             )
             continue
           }
+
+          await this.validateSalesAssignedUser(
+            assignedUserId,
+            `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không tồn tại`,
+            `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không có quyền sales-emp`
+          )
 
           // Find province (optional) - LIKE %{cellValue}% search
           let province = null
@@ -264,7 +360,7 @@ export class SalesFunnelService {
             phoneNumber: phoneNumber || undefined,
             address: address || undefined,
             channel: new Types.ObjectId(channel._id.toString()),
-            user: new Types.ObjectId(channel.assignedTo.toString()),
+            user: new Types.ObjectId(assignedUserId),
             province: province
               ? new Types.ObjectId(province._id.toString())
               : undefined,
@@ -394,7 +490,12 @@ export class SalesFunnelService {
       }
 
       // Check ownership - skip for admin
-      if (!isAdmin && funnel.user.toString() !== user) {
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        user,
+        isAdmin
+      )
+      if (!permission.hasPermission) {
         throw new HttpException(
           "Bạn không có quyền cập nhật lead này",
           HttpStatus.FORBIDDEN
@@ -449,7 +550,12 @@ export class SalesFunnelService {
       }
 
       // Check ownership - skip for admin
-      if (!isAdmin && funnel.user.toString() !== user) {
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        user,
+        isAdmin
+      )
+      if (!permission.hasPermission) {
         throw new HttpException(
           "Bạn không có quyền cập nhật lead này",
           HttpStatus.FORBIDDEN
@@ -506,7 +612,12 @@ export class SalesFunnelService {
       }
 
       // Check ownership - skip for admin
-      if (!isAdmin && funnel.user.toString() !== user) {
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        user,
+        isAdmin
+      )
+      if (!permission.hasPermission) {
         throw new HttpException(
           "Bạn không có quyền cập nhật lead này",
           HttpStatus.FORBIDDEN
@@ -520,31 +631,16 @@ export class SalesFunnelService {
           throw new HttpException("Channel not found", HttpStatus.NOT_FOUND)
         }
 
-        if (!channel.assignedTo) {
-          throw new HttpException(
-            "Kênh này chưa có người phụ trách",
-            HttpStatus.BAD_REQUEST
-          )
-        }
-
-        // Validate assigned user has sales-emp role
-        const newUser = await this.userModel.findById(channel.assignedTo).lean()
-        if (!newUser) {
-          throw new HttpException(
-            "Người phụ trách kênh không tồn tại",
-            HttpStatus.NOT_FOUND
-          )
-        }
-        if (!newUser.roles || !newUser.roles.includes("sales-emp")) {
-          throw new HttpException(
-            "Người phụ trách kênh không có quyền sales-emp",
-            HttpStatus.BAD_REQUEST
-          )
-        }
+        const assignedUserId = await this.resolveChannelPrimaryAssignedUserId(
+          channel,
+          "Kênh này chưa có người phụ trách",
+          "Người phụ trách kênh không tồn tại",
+          "Người phụ trách kênh không có quyền sales-emp"
+        )
 
         // Update both channel and user
         funnel.channel = new Types.ObjectId(payload.channel)
-        funnel.user = new Types.ObjectId(channel.assignedTo.toString())
+        funnel.user = new Types.ObjectId(assignedUserId)
       }
 
       // Update other fields (excluding stage)
@@ -812,9 +908,9 @@ export class SalesFunnelService {
       }
 
       // Use assigned user from channel, or fallback to default user if not assigned
-      const userId = channelDoc.assignedTo
-        ? channelDoc.assignedTo.toString()
-        : "646666666666666666666666"
+      const userId =
+        this.getChannelPrimaryAssignedUserId(channelDoc) ||
+        "646666666666666666666666"
 
       const now = new Date()
       const doc = new this.salesFunnelModel({
@@ -896,7 +992,12 @@ export class SalesFunnelService {
       }
 
       // Check permission: only admin or current responsible user can update
-      if (!isAdmin && funnel.user.toString() !== currentUserId) {
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        currentUserId,
+        isAdmin
+      )
+      if (!permission.hasPermission) {
         throw new HttpException(
           "Bạn không có quyền thay đổi nhân viên phụ trách lead này",
           HttpStatus.FORBIDDEN
@@ -932,13 +1033,17 @@ export class SalesFunnelService {
         throw new HttpException("Funnel not found", HttpStatus.NOT_FOUND)
       }
 
-      const isResponsible = funnel.user.toString() === userId
-      const hasPermission = isAdmin || isResponsible
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        userId,
+        isAdmin
+      )
 
       return {
-        hasPermission,
+        hasPermission: permission.hasPermission,
         isAdmin,
-        isResponsible
+        isResponsible:
+          permission.isResponsible || permission.isChannelAssignee
       }
     } catch (error) {
       if (error instanceof HttpException) throw error
@@ -1090,7 +1195,12 @@ export class SalesFunnelService {
       }
 
       // Check permission: only admin or responsible user can delete
-      if (!isAdmin && funnel.user.toString() !== userId) {
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        userId,
+        isAdmin
+      )
+      if (!permission.hasPermission) {
         throw new HttpException(
           "Bạn không có quyền xóa funnel này",
           HttpStatus.FORBIDDEN
@@ -1128,7 +1238,12 @@ export class SalesFunnelService {
       }
 
       // Check permission: only admin or responsible user can restore
-      if (!isAdmin && funnel.user.toString() !== userId) {
+      const permission = await this.getFunnelPermissionState(
+        funnel,
+        userId,
+        isAdmin
+      )
+      if (!permission.hasPermission) {
         throw new HttpException(
           "Bạn không có quyền khôi phục funnel này",
           HttpStatus.FORBIDDEN

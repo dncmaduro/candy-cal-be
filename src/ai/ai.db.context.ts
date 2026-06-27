@@ -506,6 +506,7 @@ export const AI_DB_TABLES: DbTableContext[] = [
     keyFields: [
       "address",
       "assignedTo",
+      "assignedTos",
       "avatarUrl",
       "channelName",
       "createdAt",
@@ -514,7 +515,7 @@ export const AI_DB_TABLES: DbTableContext[] = [
       "updatedAt"
     ],
     description:
-      "Schema SalesChannel. Cac truong chinh: address, assignedTo, avatarUrl, channelName, createdAt, deletedAt, phoneNumber, updatedAt. Day la bang quan ly cac kenh ban hang cho kenh ban hang si le.",
+      "Schema SalesChannel. Cac truong chinh: address, assignedTo, assignedTos, avatarUrl, channelName, createdAt, deletedAt, phoneNumber, updatedAt. Day la bang quan ly cac kenh ban hang cho kenh ban hang si le.",
     primaryKeys: ["channelName"],
     searchableFields: ["channelName"],
     dateFields: ["createdAt", "updatedAt"],
