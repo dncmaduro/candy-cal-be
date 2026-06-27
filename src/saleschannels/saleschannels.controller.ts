@@ -35,6 +35,7 @@ export class SalesChannelsController {
     body: {
       channelName: string
       assignedTo?: string
+      assignedTos?: string[]
       phoneNumber: string
       address: string
       avatarUrl: string
@@ -64,6 +65,7 @@ export class SalesChannelsController {
     body: {
       channelName?: string
       assignedTo?: string
+      assignedTos?: string[]
       phoneNumber?: string
       address?: string
       avatarUrl?: string
