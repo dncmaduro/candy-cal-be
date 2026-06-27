@@ -69,7 +69,7 @@ export class IncomeService {
     return filter
   }
 
-  private async aggregateHybridAdsCosts(
+  private async aggregateDailyAdsCosts(
     start: Date,
     end: Date,
     channelId?: string
@@ -82,52 +82,88 @@ export class IncomeService {
     metricsDaysCount: number
   }> {
     const filter = this.buildAdsFilter(start, end, channelId)
-    const [metricsRows, legacyRows] = await Promise.all([
-      this.dailyAdsMetricsModel
-        .find(filter)
-        .select({ date: 1, actualAdsCost: 1 })
-        .lean(),
-      this.dailyAdsModel
-        .find(filter)
-        .select({ date: 1, liveAdsCost: 1, shopAdsCost: 1 })
-        .lean()
-    ])
+    const rows = await this.dailyAdsModel
+      .find(filter)
+      .select({ liveAdsCost: 1, shopAdsCost: 1 })
+      .lean()
 
-    const metricsDayKeys = new Set(
-      metricsRows.map((row) => this.getBusinessDayKey(new Date(row.date)))
+    const liveAdsCost = rows.reduce(
+      (sum, row) => sum + Number(row.liveAdsCost || 0),
+      0
     )
-
-    const metricsTotalAdsCost = metricsRows.reduce(
-      (sum, row) => sum + Number(row.actualAdsCost || 0),
+    const shopAdsCost = rows.reduce(
+      (sum, row) => sum + Number(row.shopAdsCost || 0),
       0
     )
 
-    let fallbackLiveAdsCost = 0
-    let fallbackShopAdsCost = 0
-    let hasLegacyFallback = false
-
-    for (const row of legacyRows) {
-      const dayKey = this.getBusinessDayKey(new Date(row.date))
-      if (metricsDayKeys.has(dayKey)) continue
-      hasLegacyFallback = true
-      fallbackLiveAdsCost += Number(row.liveAdsCost || 0)
-      fallbackShopAdsCost += Number(row.shopAdsCost || 0)
+    return {
+      totalAdsCost: liveAdsCost + shopAdsCost,
+      liveAdsCost,
+      shopAdsCost,
+      hasDailyAdsMetrics: false,
+      adsSourceMode: "legacy",
+      metricsDaysCount: 0
     }
+  }
 
-    const hasDailyAdsMetrics = metricsDayKeys.size > 0
-    const adsSourceMode = hasDailyAdsMetrics
-      ? hasLegacyFallback
-        ? "mixed"
-        : "metrics"
-      : "legacy"
+  private buildTrackingOnlyAdsMetricsSummary(params: {
+    incomeBeforeDiscount: number
+    incomeAfterDiscount: number
+    totalAdsCost: number
+  }): {
+    roiProtect: number
+    refundCancelRate: number
+    fullRefundGmv: number
+    tinRefundAmount: number
+    adsTax: number
+    gmvAds: number
+    affiliateCost: number
+    affiliateRefundAmount: number
+    totalRevenue: number
+    adjustedRevenue: number
+    incomeBeforeDiscount: number
+    incomeAfterDiscount: number
+    actualAdsCost: number
+    totalCost: number
+    costAfterRefund: number
+    adsRatioOnBeforeDiscountRevenue: number
+    totalCostRatioOnBeforeDiscountRevenue: number
+    costAfterRefundRatioOnBeforeDiscountRevenue: number
+    affiliateRatioOnBeforeDiscountRevenue: number
+    recordsCount: number
+  } {
+    const totalCost = params.totalAdsCost
 
     return {
-      totalAdsCost: metricsTotalAdsCost + fallbackLiveAdsCost + fallbackShopAdsCost,
-      liveAdsCost: hasDailyAdsMetrics ? 0 : fallbackLiveAdsCost,
-      shopAdsCost: hasDailyAdsMetrics ? 0 : fallbackShopAdsCost,
-      hasDailyAdsMetrics,
-      adsSourceMode,
-      metricsDaysCount: metricsDayKeys.size
+      roiProtect: 0,
+      refundCancelRate: 0,
+      fullRefundGmv: 0,
+      tinRefundAmount: 0,
+      adsTax: 0,
+      gmvAds: 0,
+      affiliateCost: 0,
+      affiliateRefundAmount: 0,
+      totalRevenue: params.incomeBeforeDiscount,
+      adjustedRevenue: params.incomeAfterDiscount,
+      incomeBeforeDiscount: params.incomeBeforeDiscount,
+      incomeAfterDiscount: params.incomeAfterDiscount,
+      actualAdsCost: 0,
+      totalCost,
+      costAfterRefund: totalCost,
+      adsRatioOnBeforeDiscountRevenue: this.toPercentage(
+        params.totalAdsCost,
+        params.incomeBeforeDiscount
+      ),
+      totalCostRatioOnBeforeDiscountRevenue: this.toPercentage(
+        totalCost,
+        params.incomeBeforeDiscount
+      ),
+      costAfterRefundRatioOnBeforeDiscountRevenue: this.toPercentage(
+        totalCost,
+        params.incomeBeforeDiscount
+      ),
+      affiliateRatioOnBeforeDiscountRevenue: 0,
+      recordsCount: 0
     }
   }
 
@@ -1773,7 +1809,7 @@ export class IncomeService {
       const end = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999))
       end.setDate(end.getDate() - 1)
 
-      const hybridAdsPromise = this.aggregateHybridAdsCosts(start, end, channelId)
+      const dailyAdsPromise = this.aggregateDailyAdsCosts(start, end, channelId)
       const splitStatsPromise = this.aggregateMonthSplitStats(
         month,
         year,
@@ -1783,38 +1819,34 @@ export class IncomeService {
       if (channelId) goalFilter.channel = channelId
 
       const monthGoalPromise = this.monthGoalModel.findOne(goalFilter).lean()
-      const [hybridAds, splitStats, monthGoal] = await Promise.all([
-        hybridAdsPromise,
+      const [dailyAds, splitStats, monthGoal] = await Promise.all([
+        dailyAdsPromise,
         splitStatsPromise,
         monthGoalPromise
       ])
-      const liveAdsCost = hybridAds.liveAdsCost
-      const shopAdsCost = hybridAds.shopAdsCost
-      const totalAdsCost = hybridAds.totalAdsCost
-      const metricsAgg = await this.aggregateDailyAdsMetrics(
-        start,
-        end,
-        channelId,
-        {
-          incomeBeforeDiscount:
-            splitStats.income.beforeDiscount.live +
-            splitStats.income.beforeDiscount.shop,
-          incomeAfterDiscount:
-            splitStats.income.afterDiscount.live +
-            splitStats.income.afterDiscount.shop
-        }
-      )
+      const liveAdsCost = dailyAds.liveAdsCost
+      const shopAdsCost = dailyAds.shopAdsCost
+      const totalAdsCost = dailyAds.totalAdsCost
+      const metricsAgg = this.buildTrackingOnlyAdsMetricsSummary({
+        incomeBeforeDiscount:
+          splitStats.income.beforeDiscount.live +
+          splitStats.income.beforeDiscount.shop,
+        incomeAfterDiscount:
+          splitStats.income.afterDiscount.live +
+          splitStats.income.afterDiscount.shop,
+        totalAdsCost
+      })
 
       const live = splitStats.income.afterDiscount.live
       const shop = splitStats.income.afterDiscount.shop
 
       const percentages = {
         liveAdsToLiveIncome:
-          hybridAds.hasDailyAdsMetrics || live === 0
+          dailyAds.hasDailyAdsMetrics || live === 0
             ? 0
             : Math.round((liveAdsCost / live) * 10000) / 100,
         shopAdsToShopIncome:
-          hybridAds.hasDailyAdsMetrics || shop === 0
+          dailyAds.hasDailyAdsMetrics || shop === 0
             ? 0
             : Math.round((shopAdsCost / shop) * 10000) / 100
       }
@@ -1834,9 +1866,9 @@ export class IncomeService {
         totalAdsCost,
         liveAdsCost,
         shopAdsCost,
-        hasDailyAdsMetrics: hybridAds.hasDailyAdsMetrics,
-        adsSourceMode: hybridAds.adsSourceMode,
-        metricsDaysCount: hybridAds.metricsDaysCount,
+        hasDailyAdsMetrics: dailyAds.hasDailyAdsMetrics,
+        adsSourceMode: dailyAds.adsSourceMode,
+        metricsDaysCount: dailyAds.metricsDaysCount,
         actualAdsCost: metricsAgg.actualAdsCost,
         totalCost: metricsAgg.totalCost,
         costAfterRefund: metricsAgg.costAfterRefund,
@@ -1869,9 +1901,9 @@ export class IncomeService {
           incomeBeforeDiscount: metricsAgg.incomeBeforeDiscount,
           incomeAfterDiscount: metricsAgg.incomeAfterDiscount,
           recordsCount: metricsAgg.recordsCount,
-          hasDailyAdsMetrics: hybridAds.hasDailyAdsMetrics,
-          adsSourceMode: hybridAds.adsSourceMode,
-          metricsDaysCount: hybridAds.metricsDaysCount
+          hasDailyAdsMetrics: dailyAds.hasDailyAdsMetrics,
+          adsSourceMode: dailyAds.adsSourceMode,
+          metricsDaysCount: dailyAds.metricsDaysCount
         },
         totalIncome: { live, shop },
         kpi: {
@@ -2071,23 +2103,19 @@ export class IncomeService {
           e,
           channelId
         )
-        const hybridAdsPromise = this.aggregateHybridAdsCosts(s, e, channelId)
-        const [incomeStats, hybridAds] = await Promise.all([
+        const dailyAdsPromise = this.aggregateDailyAdsCosts(s, e, channelId)
+        const [incomeStats, dailyAds] = await Promise.all([
           incomeStatsPromise,
-          hybridAdsPromise
+          dailyAdsPromise
         ])
-        const liveAdsCost = hybridAds.liveAdsCost
-        const shopAdsCost = hybridAds.shopAdsCost
-        const totalAdsCost = hybridAds.totalAdsCost
-        const metricsAgg = await this.aggregateDailyAdsMetrics(
-          s,
-          e,
-          channelId,
-          {
-            incomeBeforeDiscount: incomeStats.beforeDiscount.totalIncome,
-            incomeAfterDiscount: incomeStats.afterDiscount.totalIncome
-          }
-        )
+        const liveAdsCost = dailyAds.liveAdsCost
+        const shopAdsCost = dailyAds.shopAdsCost
+        const totalAdsCost = dailyAds.totalAdsCost
+        const metricsAgg = this.buildTrackingOnlyAdsMetricsSummary({
+          incomeBeforeDiscount: incomeStats.beforeDiscount.totalIncome,
+          incomeAfterDiscount: incomeStats.afterDiscount.totalIncome,
+          totalAdsCost
+        })
         const shopIncomeAfterDiscount =
           incomeStats.afterDiscount.videoIncome +
           incomeStats.afterDiscount.otherIncome
@@ -2099,14 +2127,14 @@ export class IncomeService {
             : 0
         const percentages = {
           liveAdsToLiveIncome:
-            hybridAds.hasDailyAdsMetrics ||
+            dailyAds.hasDailyAdsMetrics ||
             incomeStats.afterDiscount.liveIncome === 0
               ? 0
               : Math.round(
                   (liveAdsCost / incomeStats.afterDiscount.liveIncome) * 10000
                 ) / 100,
           shopAdsToShopIncome:
-            hybridAds.hasDailyAdsMetrics || shopIncomeAfterDiscount === 0
+            dailyAds.hasDailyAdsMetrics || shopIncomeAfterDiscount === 0
               ? 0
               : Math.round((shopAdsCost / shopIncomeAfterDiscount) * 10000) /
                 100
@@ -2121,9 +2149,9 @@ export class IncomeService {
             totalAdsCost,
             liveAdsCost,
             shopAdsCost,
-            hasDailyAdsMetrics: hybridAds.hasDailyAdsMetrics,
-            adsSourceMode: hybridAds.adsSourceMode,
-            metricsDaysCount: hybridAds.metricsDaysCount,
+            hasDailyAdsMetrics: dailyAds.hasDailyAdsMetrics,
+            adsSourceMode: dailyAds.adsSourceMode,
+            metricsDaysCount: dailyAds.metricsDaysCount,
             percentages,
             metrics: {
               roiProtect: metricsAgg.roiProtect,
