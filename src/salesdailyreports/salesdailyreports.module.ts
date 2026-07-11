@@ -6,9 +6,11 @@ import { SalesMonthKpiSchema } from "../database/mongoose/schemas/SalesMonthKpi"
 import { SalesOrderSchema } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnelSchema } from "../database/mongoose/schemas/SalesFunnel"
 import { SalesDailyReportsService } from "./salesdailyreports.service"
+import { SalesDailyAdsModule } from "../salesdailyads/salesdailyads.module"
 
 @Module({
   imports: [
+    SalesDailyAdsModule,
     MongooseModule.forFeature([
       { name: "salesdailyreports", schema: SalesDailyReportSchema },
       { name: "salesmonthkpis", schema: SalesMonthKpiSchema },
