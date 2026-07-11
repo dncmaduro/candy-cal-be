@@ -872,7 +872,7 @@ export class SalesFunnelService {
         return null
       }
 
-      return await this.enrichFunnelWithStats(funnel)
+      return await this.enrichFunnelWithStats(funnel, true)
     } catch (error) {
       console.error(error)
       throw new HttpException(
@@ -1040,7 +1040,10 @@ export class SalesFunnelService {
       )
 
       return {
-        hasPermission: permission.hasPermission,
+        // Any role allowed through the controller can view a funnel. Ownership
+        // remains available below so write operations can keep their existing
+        // restrictions.
+        hasPermission: true,
         isAdmin,
         isResponsible:
           permission.isResponsible || permission.isChannelAssignee
@@ -1081,10 +1084,25 @@ export class SalesFunnelService {
     }
   }
 
-  private async calculateTotalIncome(funnelId: string): Promise<number> {
+  private async calculateTotalIncome(
+    funnelId: string,
+    startDate?: Date,
+    endDate?: Date
+  ): Promise<number> {
     try {
+      const filter: {
+        salesFunnelId: Types.ObjectId
+        date?: { $gte?: Date; $lt?: Date }
+      } = { salesFunnelId: new Types.ObjectId(funnelId) }
+
+      if (startDate || endDate) {
+        filter.date = {}
+        if (startDate) filter.date.$gte = startDate
+        if (endDate) filter.date.$lt = endDate
+      }
+
       const orders = await this.salesOrderModel
-        .find({ salesFunnelId: funnelId })
+        .find(filter)
         .lean()
 
       let totalIncome = 0
@@ -1132,14 +1150,35 @@ export class SalesFunnelService {
     }
   }
 
-  async enrichFunnelWithStats(funnel: any): Promise<any> {
+  async enrichFunnelWithStats(
+    funnel: any,
+    includeMonthlyRevenue = false
+  ): Promise<any> {
     const funnelId = funnel._id.toString()
-    const totalIncome = await this.calculateTotalIncome(funnelId)
-    const rank = await this.calculateCustomerRank(totalIncome)
+    const totalRevenue = await this.calculateTotalIncome(funnelId)
+    const rank = await this.calculateCustomerRank(totalRevenue)
+
+    let monthlyRevenue: number | undefined
+    if (includeMonthlyRevenue) {
+      const now = new Date()
+      const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      const startOfNextMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        1
+      )
+      monthlyRevenue = await this.calculateTotalIncome(
+        funnelId,
+        startOfCurrentMonth,
+        startOfNextMonth
+      )
+    }
 
     return {
       ...funnel,
-      totalIncome,
+      totalIncome: totalRevenue,
+      totalRevenue,
+      ...(monthlyRevenue !== undefined ? { monthlyRevenue } : {}),
       rank
     }
   }

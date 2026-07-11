@@ -3,7 +3,6 @@ import { Schema, Document, model, Types } from "mongoose"
 export interface SalesDailyReport extends Document {
   date: Date
   channel: Types.ObjectId
-  adsCost: number
   dateKpi: number
   revenue: number
   newFunnelRevenue: {
@@ -14,7 +13,6 @@ export interface SalesDailyReport extends Document {
   newOrder: number
   returningOrder: number
   accumulatedRevenue: number
-  accumulatedAdsCost: number
   accumulatedNewFunnelRevenue: {
     ads: number
     other: number
@@ -31,7 +29,6 @@ export const SalesDailyReportSchema = new Schema<SalesDailyReport>({
     ref: "saleschannels",
     required: true
   },
-  adsCost: { type: Number, required: true, default: 0 },
   dateKpi: { type: Number, required: true, default: 0 },
   revenue: { type: Number, required: true, default: 0 },
   newFunnelRevenue: {
@@ -42,7 +39,6 @@ export const SalesDailyReportSchema = new Schema<SalesDailyReport>({
   newOrder: { type: Number, required: true, default: 0 },
   returningOrder: { type: Number, required: true, default: 0 },
   accumulatedRevenue: { type: Number, required: true, default: 0 },
-  accumulatedAdsCost: { type: Number, required: true, default: 0 },
   accumulatedNewFunnelRevenue: {
     ads: { type: Number, required: true, default: 0 },
     other: { type: Number, required: true, default: 0 }

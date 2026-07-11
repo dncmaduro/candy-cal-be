@@ -898,18 +898,24 @@ export class SalesOrdersService {
     userId: string,
     isAdmin: boolean,
     page = 1,
-    limit = 10
+    limit = 10,
+    startDate?: Date,
+    endDate?: Date
   ): Promise<{
     data: SalesOrder[]
     total: number
     daysSinceLastPurchase: number | null
+    totalRevenue: number
+    topProducts: { code: string; name: string; quantity: number }[]
   }> {
     const perf = this.startPerfSession("getOrdersByFunnel", {
       funnelId,
       userId,
       isAdmin,
       page,
-      limit
+      limit,
+      startDate,
+      endDate
     })
 
     try {
@@ -934,7 +940,22 @@ export class SalesOrdersService {
       const safePage = Math.max(1, Number(page) || 1)
       const safeLimit = Math.max(1, Number(limit) || 10)
 
-      const filter = { salesFunnelId: new Types.ObjectId(funnelId) }
+      const filter: {
+        salesFunnelId: Types.ObjectId
+        date?: { $gte?: Date; $lte?: Date }
+      } = { salesFunnelId: new Types.ObjectId(funnelId) }
+
+      if (startDate || endDate) {
+        filter.date = {}
+        if (startDate) {
+          filter.date.$gte = startDate
+        }
+        if (endDate) {
+          const inclusiveEndDate = new Date(endDate)
+          inclusiveEndDate.setHours(23, 59, 59, 999)
+          filter.date.$lte = inclusiveEndDate
+        }
+      }
 
       // Get the most recent order to calculate days since last purchase
       const lastOrder = await this.measurePerfStep(
@@ -951,9 +972,9 @@ export class SalesOrdersService {
         daysSinceLastPurchase = Math.floor(diffTime / (1000 * 60 * 60 * 24))
       }
 
-      const [orders, total] = await this.measurePerfStep(
+      const [orders, total, statistics] = await this.measurePerfStep(
         perf,
-        "salesOrder.find.populate + countDocuments",
+        "salesOrder.find.populate + statistics",
         () =>
           Promise.all([
             this.salesOrderModel
@@ -970,9 +991,76 @@ export class SalesOrdersService {
               .skip((safePage - 1) * safeLimit)
               .limit(safeLimit)
               .lean(),
-            this.salesOrderModel.countDocuments(filter)
+            this.salesOrderModel.countDocuments(filter),
+            this.salesOrderModel.aggregate<{
+              summary: { totalRevenue: number }[]
+              topProducts: { code: string; name: string; quantity: number }[]
+            }>([
+              { $match: filter },
+              {
+                $facet: {
+                  summary: [
+                    {
+                      $group: {
+                        _id: null,
+                        totalRevenue: {
+                          $sum: {
+                            $subtract: [
+                              {
+                                $add: [
+                                  {
+                                    $subtract: [
+                                      "$total",
+                                      {
+                                        $add: [
+                                          { $ifNull: ["$orderDiscount", 0] },
+                                          { $ifNull: ["$otherDiscount", 0] }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  { $ifNull: ["$tax", 0] },
+                                  { $ifNull: ["$shippingCost", 0] }
+                                ]
+                              },
+                              { $ifNull: ["$deposit", 0] }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  topProducts: [
+                    { $unwind: "$items" },
+                    {
+                      $group: {
+                        _id: "$items.code",
+                        name: { $first: "$items.name" },
+                        quantity: { $sum: "$items.quantity" }
+                      }
+                    },
+                    { $sort: { quantity: -1, name: 1 } },
+                    { $limit: 3 },
+                    {
+                      $project: {
+                        _id: 0,
+                        code: "$_id",
+                        name: 1,
+                        quantity: 1
+                      }
+                    }
+                  ]
+                }
+              }
+            ])
           ])
       )
+
+      const calculatedStatistics = statistics[0] || {
+        summary: [],
+        topProducts: []
+      }
+      const totalRevenue = calculatedStatistics.summary[0]?.totalRevenue || 0
 
       // Enrich items with factory and source information
       const enrichedOrders = await this.measurePerfStep(
@@ -1013,13 +1101,16 @@ export class SalesOrdersService {
           (sum, order) => sum + (order.items?.length || 0),
           0
         ),
-        daysSinceLastPurchase
+        daysSinceLastPurchase,
+        totalRevenue
       })
 
       return {
         data: enrichedOrders as SalesOrder[],
         total,
-        daysSinceLastPurchase
+        daysSinceLastPurchase,
+        totalRevenue,
+        topProducts: calculatedStatistics.topProducts
       }
     } catch (error) {
       this.finishPerfSession(perf, {

@@ -47,6 +47,7 @@ import { SalesActivitiesModule } from "./salesactivities/salesactivities.module"
 import { SalesTasksModule } from "./salestasks/salestasks.module"
 import { AppController } from "./app.controller"
 import { SalesDailyReportsModule } from "./salesdailyreports/salesdailyreports.module"
+import { SalesDailyAdsModule } from "./salesdailyads/salesdailyads.module"
 import { GreetModule } from "./greet/greet.module"
 import { ShopeeIncomesModule } from "./shopeeincomes/shopeeincomes.module"
 import { ShopeeDailyAdsModule } from "./shopeedailyads/shopeedailyads.module"
@@ -102,6 +103,7 @@ import { AiModule } from "./ai/ai.module"
     SalesActivitiesModule,
     SalesTasksModule,
     SalesDailyReportsModule,
+    SalesDailyAdsModule,
     GreetModule,
     ShopeeIncomesModule,
     ShopeeDailyAdsModule,

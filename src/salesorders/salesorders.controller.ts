@@ -267,13 +267,17 @@ export class SalesOrdersController {
   @HttpCode(HttpStatus.OK)
   async getOrdersByFunnel(
     @Param("funnelId") funnelId: string,
+    @Req() req,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
     @Query("page") page = 1,
-    @Query("limit") limit = 10,
-    @Req() req
+    @Query("limit") limit = 10
   ): Promise<{
     data: SalesOrder[]
     total: number
     daysSinceLastPurchase: number | null
+    totalRevenue: number
+    topProducts: { code: string; name: string; quantity: number }[]
   }> {
     const isAdmin = req.user.roles?.includes("admin") || false
     return this.salesOrdersService.getOrdersByFunnel(
@@ -281,7 +285,9 @@ export class SalesOrdersController {
       req.user.userId,
       isAdmin,
       Number(page),
-      Number(limit)
+      Number(limit),
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined
     )
   }
 
