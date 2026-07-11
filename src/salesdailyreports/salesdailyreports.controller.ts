@@ -16,12 +16,15 @@ import { Roles } from "../roles/roles.decorator"
 import { SalesDailyReportsService } from "./salesdailyreports.service"
 import { SalesDailyReport } from "../database/mongoose/schemas/SalesDailyReport"
 import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
+import { SalesDailyAds } from "../database/mongoose/schemas/SalesDailyAds"
+import { SalesDailyAdsService } from "../salesdailyads/salesdailyads.service"
 
 @Controller("salesdailyreports")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SalesDailyReportsController {
   constructor(
-    private readonly salesDailyReportsService: SalesDailyReportsService
+    private readonly salesDailyReportsService: SalesDailyReportsService,
+    private readonly salesDailyAdsService: SalesDailyAdsService
   ) {}
 
   @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
@@ -40,7 +43,6 @@ export class SalesDailyReportsController {
     newOrder: number
     returningOrder: number
     accumulatedRevenue: number
-    accumulatedAdsCost: number
     accumulatedNewFunnelRevenue: {
       ads: number
       other: number
@@ -76,13 +78,12 @@ export class SalesDailyReportsController {
     @Body()
     body: {
       date: string
-      channel: string
       adsCost: number
     }
-  ): Promise<SalesDailyReport> {
-    return this.salesDailyReportsService.updateAdsCost({
-      ...body,
-      date: new Date(body.date)
+  ): Promise<SalesDailyAds> {
+    return this.salesDailyAdsService.upsertAdsCost({
+      date: new Date(body.date),
+      adsCost: body.adsCost
     })
   }
 

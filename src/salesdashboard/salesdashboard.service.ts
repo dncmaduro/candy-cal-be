@@ -7,6 +7,7 @@ import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
 import { SalesDailyReport } from "../database/mongoose/schemas/SalesDailyReport"
+import { SalesDailyAds } from "../database/mongoose/schemas/SalesDailyAds"
 
 const SALES_DASHBOARD_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
@@ -103,7 +104,9 @@ export class SalesDashboardService {
     @InjectModel("salesmonthkpi")
     private readonly salesMonthKpiModel: Model<SalesMonthKpi>,
     @InjectModel("salesdailyreports")
-    private readonly salesDailyReportModel: Model<SalesDailyReport>
+    private readonly salesDailyReportModel: Model<SalesDailyReport>,
+    @InjectModel("salesdailyads")
+    private readonly salesDailyAdsModel: Model<SalesDailyAds>
   ) {}
 
   private getZonedDate(date: Date): Date {
@@ -358,31 +361,51 @@ export class SalesDashboardService {
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
         return sum + order.total - totalDiscount
       }, 0)
-      const adsCostFilter: {
-        date: { $gte: Date; $lte: Date }
-        deletedAt: null
-        channel?: Types.ObjectId
-      } = {
-        date: { $gte: start, $lte: end },
-        deletedAt: null
-      }
-
-      if (channel) {
-        adsCostFilter.channel = new Types.ObjectId(channel)
-      }
-
-      const adsCostResult = await this.salesDailyReportModel.aggregate<{
+      const legacyAdsCostResult = await this.salesDailyReportModel.aggregate<{
+        _id: Date
         totalAdsCost: number
       }>([
-        { $match: adsCostFilter },
+        {
+          $match: {
+            date: { $gte: start, $lte: end },
+            deletedAt: null
+          }
+        },
         {
           $group: {
-            _id: null,
+            _id: "$date",
             totalAdsCost: { $sum: "$adsCost" }
           }
         }
       ])
-      const totalAdsCost = Number(adsCostResult[0]?.totalAdsCost || 0)
+      const salesDailyAds = await this.salesDailyAdsModel
+        .find({ date: { $gte: start, $lte: end } })
+        .select("date adsCost")
+        .lean()
+
+      // A new company-wide entry takes precedence for its date. Legacy reports
+      // are only used for dates that have not been migrated to salesdailyads.
+      const adsCostByDate = new Map<number, number>()
+      for (const legacyAdsCost of legacyAdsCostResult) {
+        adsCostByDate.set(
+          new Date(legacyAdsCost._id).getTime(),
+          Number(legacyAdsCost.totalAdsCost || 0)
+        )
+      }
+      for (const salesDailyAd of salesDailyAds) {
+        adsCostByDate.set(
+          new Date(salesDailyAd.date).getTime(),
+          Number(salesDailyAd.adsCost || 0)
+        )
+      }
+      const totalAdsCost = Array.from(adsCostByDate.values()).reduce(
+        (sum, adsCost) => sum + adsCost,
+        0
+      )
+
+      // Ads are intentionally not filtered by channel: the new source is a
+      // sales-wide daily figure, and the fallback preserves the old total of
+      // all channels.
       const totalOrders = orders.length
 
       // Calculate total quantity of all items across all orders

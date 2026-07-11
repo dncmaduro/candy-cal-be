@@ -33,6 +33,7 @@ import { SalesActivitySchema } from "./mongoose/schemas/SalesActivity"
 import { SalesTaskSchema } from "./mongoose/schemas/SalesTask"
 import { SalesMonthKpiSchema } from "./mongoose/schemas/SalesMonthKpi"
 import { SalesDailyReportSchema } from "./mongoose/schemas/SalesDailyReport"
+import { SalesDailyAdsSchema } from "./mongoose/schemas/SalesDailyAds"
 import { LivestreamAltRequestSchema } from "./mongoose/schemas/LivestreamAltRequest"
 import { LivestreamPerformanceSchema } from "./mongoose/schemas/LivestreamPerformance"
 import { LivestreamSalarySchema } from "./mongoose/schemas/LivestreamSalary"
@@ -76,6 +77,7 @@ import { ShopeeDailyLiveRevenueSchema } from "./mongoose/schemas/ShopeeDailyLive
       { name: "salesactivities", schema: SalesActivitySchema },
       { name: "salestasks", schema: SalesTaskSchema },
       { name: "salesdailyreports", schema: SalesDailyReportSchema },
+      { name: "salesdailyads", schema: SalesDailyAdsSchema },
       { name: "salesmonthkpis", schema: SalesMonthKpiSchema },
       { name: "livestreamaltrequests", schema: LivestreamAltRequestSchema },
       { name: "livestreamperformance", schema: LivestreamPerformanceSchema },

@@ -728,10 +728,8 @@ export const AI_DB_TABLES: DbTableContext[] = [
     collection: "salesdailyreports",
     schemaFile: "SalesDailyReport",
     keyFields: [
-      "accumulatedAdsCost",
       "accumulatedNewFunnelRevenue",
       "accumulatedRevenue",
-      "adsCost",
       "channel",
       "createdAt",
       "date",
@@ -745,7 +743,7 @@ export const AI_DB_TABLES: DbTableContext[] = [
       "updatedAt"
     ],
     description:
-      "Schema SalesDailyReport. Cac truong chinh: accumulatedAdsCost, accumulatedNewFunnelRevenue, accumulatedRevenue, adsCost, channel, createdAt, date, dateKpi, deletedAt, newFunnelRevenue, newOrder, returningFunnelRevenue, returningOrder, revenue, updatedAt. Day la bang quan ly cac bao cao hang ngay cho kenh ban hang si le.",
+      "Schema SalesDailyReport. Cac truong chinh: accumulatedNewFunnelRevenue, accumulatedRevenue, channel, createdAt, date, dateKpi, deletedAt, newFunnelRevenue, newOrder, returningFunnelRevenue, returningOrder, revenue, updatedAt. Day la bang quan ly cac bao cao hang ngay theo kenh ban hang si le; chi phi ads nam o bang salesdailyads.",
     primaryKeys: [],
     searchableFields: [],
     dateFields: ["createdAt", "date", "updatedAt"],
@@ -756,6 +754,24 @@ export const AI_DB_TABLES: DbTableContext[] = [
     examples: [
       "Lay du lieu tu bang salesdailyreports theo dieu kien phu hop",
       "Tim kiem trong bang salesdailyreports"
+    ]
+  },
+  {
+    collection: "salesdailyads",
+    schemaFile: "SalesDailyAds",
+    keyFields: ["adsCost", "createdAt", "date", "updatedAt"],
+    description:
+      "Schema SalesDailyAds. Luu chi phi ads tong cua Sales theo ngay, khong chia theo kenh. Khi can chi phi ads, uu tien bang nay; neu mot ngay chua co du lieu thi fallback sang tong adsCost cua cac kenh trong salesdailyreports.",
+    primaryKeys: [],
+    searchableFields: [],
+    dateFields: ["createdAt", "date", "updatedAt"],
+    statusFields: [],
+    relationships: [],
+    commonFilters: [],
+    queryHints: [],
+    examples: [
+      "Lay chi phi ads Sales theo ngay tu bang salesdailyads",
+      "Tim kiem trong bang salesdailyads"
     ]
   },
   {
