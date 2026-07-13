@@ -41,7 +41,7 @@ export const SalesFunnelSchema = new Schema<SalesFunnel>({
   channel: {
     type: Schema.Types.ObjectId,
     ref: "saleschannels",
-    required: true
+    required: false
   }, // Reference to SalesChannel schema
   user: {
     type: Schema.Types.ObjectId,

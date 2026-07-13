@@ -528,7 +528,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "sales-leader", "sales-accounting")
+  @Roles("admin", "sales-emp", "sales-hunter", "sales-accounting")
   @Post("export/xlsx/by-ids")
   @HttpCode(HttpStatus.OK)
   async exportOrdersToExcelByIds(

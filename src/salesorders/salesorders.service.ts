@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
+import { SalesLeadsService } from "../salesleads/salesleads.service"
 import * as XLSX from "xlsx"
 import * as ExcelJS from "exceljs"
 import {
@@ -53,7 +54,8 @@ export class SalesOrdersService {
     @InjectModel("salesfunnel")
     private readonly salesFunnelModel: Model<SalesFunnel>,
     @InjectModel("provinces")
-    private readonly provinceModel: Model<Province>
+    private readonly provinceModel: Model<Province>,
+    private readonly salesLeadsService: SalesLeadsService
   ) {}
 
   private startPerfSession(
@@ -2719,6 +2721,9 @@ export class SalesOrdersService {
       order.updatedAt = new Date()
 
       const savedOrder = await order.save()
+      if (nextStatus === "official") {
+        await this.salesLeadsService.handleOfficialOrder(savedOrder)
+      }
       await this.salesFunnelModel.findByIdAndUpdate(
         order.salesFunnelId.toString(),
         {
