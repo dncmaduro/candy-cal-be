@@ -31,7 +31,7 @@ export class SalesPriceItemsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createSalesPriceItem(
@@ -53,7 +53,7 @@ export class SalesPriceItemsController {
     return created
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateSalesPriceItem(
@@ -75,7 +75,7 @@ export class SalesPriceItemsController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getSalesPriceItems(
@@ -87,7 +87,7 @@ export class SalesPriceItemsController {
     return this.salesPriceItemsService.getSalesPriceItems(p, l)
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getSalesPriceItemByItemId(
@@ -96,7 +96,7 @@ export class SalesPriceItemsController {
     return this.salesPriceItemsService.getSalesPriceItemByItemId(id)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSalesPriceItem(

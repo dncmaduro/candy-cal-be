@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"c4779f64c19d42acb88b8dbc6e310503","collectionName":"landing-orders","type":"collection"}

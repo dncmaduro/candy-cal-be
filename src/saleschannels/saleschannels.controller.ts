@@ -27,7 +27,7 @@ export class SalesChannelsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-hunter")
+  @Roles("admin", "sales-cs", "system-emp", "sales-hunter")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createChannel(
@@ -56,7 +56,7 @@ export class SalesChannelsController {
     return created
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-hunter")
+  @Roles("admin", "sales-cs", "system-emp", "sales-hunter")
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateChannel(
@@ -86,7 +86,7 @@ export class SalesChannelsController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "sales-hunter")
+  @Roles("admin", "sales-cs", "system-emp", "sales-hunter")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteChannel(@Param("id") id: string, @Req() req): Promise<void> {
@@ -105,12 +105,11 @@ export class SalesChannelsController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp",
-    "sales-hunter",
-    "sales-cs"
+    "sales-hunter"
   )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
@@ -120,12 +119,11 @@ export class SalesChannelsController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp",
-    "sales-hunter",
-    "sales-cs"
+    "sales-hunter"
   )
   @Get()
   @HttpCode(HttpStatus.OK)
@@ -165,11 +163,10 @@ export class SalesChannelsController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "facebook-ads-emp",
-    "sales-hunter",
-    "sales-cs"
+    "sales-hunter"
   )
   @Get("my/channel")
   @HttpCode(HttpStatus.OK)

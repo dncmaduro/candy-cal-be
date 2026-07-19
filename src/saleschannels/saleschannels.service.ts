@@ -273,7 +273,7 @@ export class SalesChannelsService {
 
       await this.validateAssignedUsers(
         userId ? [userId] : [],
-        "Người dùng phải có quyền sales-emp"
+        "Người dùng phải có quyền sales-cs"
       )
 
       // Update channel

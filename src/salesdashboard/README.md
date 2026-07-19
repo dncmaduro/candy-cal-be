@@ -53,7 +53,7 @@ Lấy thống kê doanh thu trong một khoảng thời gian.
 }
 ```
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 
@@ -101,7 +101,7 @@ Lấy các chỉ số kinh doanh theo tháng (CAC, CRR, churn rate, conversion r
   - Công thức: Trung bình số ngày giữa hai stage transitions
 - **Stage Transitions**: Số lượng khách hàng chuyển sang mỗi stage trong tháng
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 

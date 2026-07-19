@@ -9,10 +9,10 @@ người chăm sóc. Luồng mới tách hai trách nhiệm nhưng **không sử
 | Quy tắc | Quyết định |
 | --- | --- |
 | Người tìm lead | `sales-hunter` nhập số mới vào hệ thống. |
-| Người chăm sóc | `sales-cs` trực tiếp chăm sóc lead. Hunter có thể chọn CS khi nhập lead, hoặc để lead ở hàng chờ. |
+| Người chăm sóc | Hunter phân lead cho `sales-cs`. CS chỉ thấy khách đã được phân cho mình, không thấy lead thô hay hàng chờ. |
 | Mức gọi tối thiểu | CS ghi ít nhất một cuộc gọi và tình trạng trong chu kỳ tháng. |
 | Lead chưa có đơn | Hết tháng dương lịch mà chưa có đơn `official` thì tự về hàng chờ. |
-| Phân lại | Hunter hoặc Sales CS có thể chọn CS đang bật nhận khách từ hàng chờ; hiển thị CS đã care tháng trước nhưng không bắt buộc tránh. |
+| Phân lại | Hunter chọn CS đang bật nhận khách từ hàng chờ; hiển thị CS đã care tháng trước nhưng không bắt buộc tránh. |
 | Lead đã có đơn `official` | CS hiện tại giữ khách dài hạn; không tự trả pool nữa. |
 | Chuyển khách thủ công | CS được chuyển khách cho một CS đang bật nhận khách. |
 | Khách/funnel cũ | Không tạo vào pipeline mới, không chạy quy tắc trả pool; giữ nguyên người `user` hiện tại. |
@@ -28,7 +28,7 @@ Tạo SalesFunnel cũ (để dùng luồng đơn hàng hiện hữu)
 + SalesLeadCase mới
        |
        v
-Lead ở trạng thái chưa gán -> Sales CS nhận lead -> SalesLeadAssignment (kỳ YYYY-MM)
+Lead ở trạng thái chưa gán -> Hunter phân cho Sales CS -> SalesLeadAssignment (kỳ YYYY-MM)
        |
        +---- CS ghi >= 1 SalesLeadCall trong tháng
        |
@@ -36,7 +36,7 @@ Lead ở trạng thái chưa gán -> Sales CS nhận lead -> SalesLeadAssignment
        |
        `---- 00:05 ngày đầu tháng kế tiếp, không có official
                  -> đóng assignment -> case = pooled
-                 -> hàng chờ để Sales CS nhận lại
+                 -> hàng chờ để Hunter phân lại
 ```
 
 Việc "lead mới" chỉ có ý nghĩa trong một kỳ chưa có đơn `official`. Khi
@@ -47,18 +47,17 @@ mới, nhưng lịch sử phân công vẫn được giữ để truy vết.
 
 ### Roles mới
 
-- `sales-hunter`: tạo lead, phân CS cho lead chưa gán/trong hàng chờ và xem
-  danh sách lead do mình tạo ở mức tổng quan; không có quyền gọi, ghi log hay
-  chuyển khách.
-- `sales-cs`: nhận lead, gọi và ghi log, quản lý khách đang sở hữu, chuyển
-  khách cho CS đang bật. Đây là role duy nhất thực hiện các thao tác chăm sóc.
-- `sales-leader`, `admin`: quản trị toàn bộ pipeline, bật/tắt người nhận
-  lead, xem báo cáo và toàn bộ audit trail.
+- `sales-hunter`: tạo lead, phân CS cho lead chưa gán/trong hàng chờ, bật/tắt
+  người nhận khách và xem danh sách lead do mình tạo ở mức tổng quan; không có
+  quyền gọi, ghi log hay chuyển khách.
+- `sales-cs`: gọi/ghi log và quản lý khách đã được phân cho mình, chuyển
+  khách cho CS đang bật. CS không xem pool hoặc lead chưa được phân.
+- `sales-leader`, `admin`: quản trị toàn bộ pipeline, xem báo cáo và toàn bộ
+  audit trail.
 
 `User.roles` hiện là mảng string, không có enum, nên thêm hai role trên
-không đòi hỏi sửa schema `User`. Trong giai đoạn chuyển tiếp, sales CS nên
-vẫn có `sales-emp` cho tới khi toàn bộ endpoint legacy đã được thay thế,
-vì các endpoint cũ vẫn yêu cầu role đó.
+không đòi hỏi sửa schema `User`. Toàn bộ quyền legacy từng cấp cho
+`sales-emp` được chuyển sang `sales-cs`; không giữ role tương thích.
 
 ### Legacy funnel/order
 
@@ -259,11 +258,12 @@ Cron `0 5 0 1 * *` với timezone `Asia/Ho_Chi_Minh`:
 2. trong transaction, chuyển assignment thành `recycled` với
    `endReason: "month_expired"`, xóa `currentAssignmentId`, set case là
    `pooled`;
-3. gửi notification cho CS vừa care và tạo badge hàng chờ cho các Sales CS;
+3. gửi notification cho CS vừa care và tạo notification cho Sales Hunter để
+   phân lại;
 4. cron idempotent: query chỉ lấy record `active`, vì vậy chạy lại không tạo
    bản ghi trùng.
 
-Khi CS nhận từ hàng chờ, API tạo assignment `recycled` cho tháng mới (hoặc
+Khi Hunter phân lại từ hàng chờ, API tạo assignment `recycled` cho tháng mới (hoặc
 `initial` nếu đây là lead mới chưa từng được gán). Response phải trả
 `previousSalesCs` và `previousCycleKey` để UI hiển thị người care tháng trước.
 Việc claim case và tạo assignment diễn ra trong một transaction; request thứ
@@ -283,12 +283,12 @@ hai nhận `409 Conflict` nếu lead đã được nhận.
 | Dữ liệu/hành động | Hunter | CS hiện tại | CS cũ | Leader/Admin |
 | --- | --- | --- | --- | --- |
 | Tạo lead | Có | Không | Không | Có |
-| Xem/nhận lead từ hàng chờ | Có, chọn CS nhận lead | Có, nhận cho mình | Không | Có |
+| Xem/nhận lead từ hàng chờ | Có, chọn CS nhận lead | Không | Không | Có |
 | Xem case đang assigned | Chỉ trạng thái tổng quát lead do mình tạo | Có | Không | Có |
 | Gọi/ghi note | Không | Chỉ assignment active của mình | Không | Có |
 | Xem kỳ đã kết thúc | Không có call/note CS | Nếu là kỳ mình từng sở hữu: snapshot + call của kỳ đó | Snapshot + call của kỳ đó | Toàn bộ |
 | Chuyển khách | Không | Có, chỉ recipient đang bật | Không | Có |
-| Bật/tắt nhận lead | Không | Không | Không | Có |
+| Bật/tắt nhận lead | Có | Không | Không | Có |
 
 Tất cả endpoint mới tự kiểm tra assignment ở backend. Không dựa vào việc ẩn
 nút trên FE. Legacy endpoint không được dùng để hiển thị lead pipeline mới;
@@ -326,9 +326,6 @@ Base path: `/v1/sales-leads`.
 
 ### Sales CS
 
-- `GET /pool` — lead chưa gán hoặc đã trả hàng chờ, có previous CS/cycle.
-- `POST /:id/assign` — CS tự nhận lead để chăm sóc; không truyền
-  `salesCsId`.
 - `GET /mine/active` — danh sách case/khách hiện tại, filter `needsCall`.
 - `GET /:id` — detail đã được cắt dữ liệu theo quyền và assignment.
 - `POST /:id/calls` — tạo call log, outcome + note bắt buộc.
@@ -350,14 +347,14 @@ Mọi mutation ghi `SystemLog` với case/assignment id, actor và action.
 Thêm các route dưới `/sales`:
 
 - `/sales/leads/new`: hunter tạo lead; có thể để trống channel và Sales CS.
-- `/sales/leads/pool`: Hunter và CS xem hàng chờ; cột bắt buộc: tên/số, tháng
-  trả pool, CS care gần nhất, số call kỳ trước, action phân/nhận lead.
-- `/sales/leads/my-acquired`: hunter xem các lead mình nhập ở mức trạng thái.
+- `/sales/leads?view=acquired`: màn mặc định của Hunter, có filter trạng thái
+  `unassigned`/`assigned`/`pooled`/`retained`; lead `pooled` được phân lại
+  ngay trên danh sách này.
 - `/sales/leads/my-customers`: CS xem active + retained; tab "Cần gọi" đặt
   mặc định, badge đỏ cho lead chưa có call trong kỳ.
 - `/sales/leads/:id`: timeline assignment, call log đúng phạm vi quyền, form
   ghi cuộc gọi và chuyển khách.
-- `/sales/leads/availability`: leader/admin bật/tắt CS nhận số.
+- `/sales/leads/availability`: hunter/leader/admin bật/tắt CS nhận số.
 - `/sales/leads/report/call-compliance`: ẩn feature flag ở phase đầu, nhưng
   API/schema đã đủ dữ liệu để mở ở phase sau.
 
@@ -367,8 +364,8 @@ link thẳng đến detail/pool.
 ## 9. Migration và rollout
 
 1. Thêm role labels/permissions cho `sales-hunter`, `sales-cs`.
-2. Gán role cho Hạnh, Quân, Khiến và tài khoản liên quan; CS cần giữ
-   `sales-emp` tương thích legacy trong đợt đầu.
+2. Gán role cho Hạnh, Quân, Khiến và tài khoản liên quan; quyền cũ
+   `sales-emp` được chuyển hoàn toàn sang `sales-cs`.
 3. Tạo `SalesCsAvailability` ban đầu cho từng CS, mặc định tắt để leader
    chủ động mở người nhận số.
 4. Deploy schema/module/API mới và UI mới, không backfill funnel cũ.
@@ -382,7 +379,7 @@ không tự động làm trong phase đầu.
 ## 10. Test acceptance bắt buộc
 
 1. CS không thể nhận lead khi tài khoản tắt hoặc không có role `sales-cs`.
-2. Hai CS cùng nhận một lead trong hàng chờ: chỉ một request thành công.
+2. Hai Hunter cùng phân một lead trong hàng chờ: chỉ một request thành công.
 3. CS không ghi call cho case không thuộc assignment active của mình.
 4. Case có ít nhất một call không còn trong danh sách "chưa gọi".
 5. Case không official bị trả pool đúng 00:05 đầu tháng theo Asia/Ho_Chi_Minh.

@@ -33,7 +33,7 @@ export class SalesTasksService {
       // Get assignee from funnel's user field
       const assigneeId = funnel.user
 
-      // Validate assignee exists and has sales-emp role
+      // Validate assignee exists and has sales-cs role
       const assignee = await this.userModel.findById(assigneeId)
       if (!assignee) {
         throw new HttpException(
@@ -41,9 +41,9 @@ export class SalesTasksService {
           HttpStatus.NOT_FOUND
         )
       }
-      if (!assignee.roles || !assignee.roles.includes("sales-emp")) {
+      if (!assignee.roles || !assignee.roles.includes("sales-cs")) {
         throw new HttpException(
-          "Nhân viên phụ trách funnel không có quyền sales-emp",
+          "Nhân viên phụ trách funnel không có quyền sales-cs",
           HttpStatus.BAD_REQUEST
         )
       }
@@ -158,15 +158,15 @@ export class SalesTasksService {
         throw new HttpException("Task không tồn tại", HttpStatus.NOT_FOUND)
       }
 
-      // If updating assignee, validate they exist and have sales-emp role
+      // If updating assignee, validate they exist and have sales-cs role
       if (payload.assigneeId) {
         const assignee = await this.userModel.findById(payload.assigneeId)
         if (!assignee) {
           throw new HttpException("Assignee not found", HttpStatus.NOT_FOUND)
         }
-        if (!assignee.roles || !assignee.roles.includes("sales-emp")) {
+        if (!assignee.roles || !assignee.roles.includes("sales-cs")) {
           throw new HttpException(
-            "Assignee must have sales-emp role",
+            "Assignee must have sales-cs role",
             HttpStatus.BAD_REQUEST
           )
         }

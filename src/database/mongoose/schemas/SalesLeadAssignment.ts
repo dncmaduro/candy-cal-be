@@ -1,6 +1,6 @@
 import { Document, model, Schema, Types } from "mongoose"
 
-export type SalesLeadAssignmentKind = "initial" | "recycled" | "manual_transfer"
+export type SalesLeadAssignmentKind = "initial" | "recycled" | "manual_transfer" | "migrated"
 export type SalesLeadAssignmentStatus = "active" | "retained" | "recycled" | "transferred"
 
 export interface SalesLeadAssignment extends Document {
@@ -25,7 +25,7 @@ export const SalesLeadAssignmentSchema = new Schema<SalesLeadAssignment>({
   leadCaseId: { type: Schema.Types.ObjectId, ref: "salesleadcases", required: true },
   salesCsId: { type: Schema.Types.ObjectId, ref: "users", required: true },
   assignedById: { type: Schema.Types.ObjectId, ref: "users", required: true },
-  kind: { type: String, enum: ["initial", "recycled", "manual_transfer"], required: true },
+  kind: { type: String, enum: ["initial", "recycled", "manual_transfer", "migrated"], required: true },
   status: { type: String, enum: ["active", "retained", "recycled", "transferred"], required: true },
   cycleKey: String, cycleStartAt: { type: Date, required: true }, cycleEndAt: Date,
   startedAt: { type: Date, required: true }, endedAt: Date,

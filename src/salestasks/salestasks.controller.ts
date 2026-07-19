@@ -60,7 +60,7 @@ export class SalesTasksController {
   @Roles(
     "admin",
     "sales-hunter",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "facebook-ads-emp"
   )
@@ -85,7 +85,7 @@ export class SalesTasksController {
   @Roles(
     "admin",
     "sales-hunter",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "facebook-ads-emp"
   )
@@ -95,7 +95,7 @@ export class SalesTasksController {
     return this.salesTasksService.getTaskById(id)
   }
 
-  @Roles("admin", "sales-hunter", "sales-emp")
+  @Roles("admin", "sales-hunter", "sales-cs")
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateTask(
@@ -126,7 +126,7 @@ export class SalesTasksController {
     return updated
   }
 
-  @Roles("admin", "sales-hunter", "sales-emp")
+  @Roles("admin", "sales-hunter", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteTask(@Param("id") id: string, @Req() req): Promise<void> {
@@ -144,7 +144,7 @@ export class SalesTasksController {
     )
   }
 
-  @Roles("admin", "sales-hunter", "sales-emp")
+  @Roles("admin", "sales-hunter", "sales-cs")
   @Post(":id/complete")
   @HttpCode(HttpStatus.OK)
   async completeTask(@Param("id") id: string, @Req() req): Promise<SalesTask> {

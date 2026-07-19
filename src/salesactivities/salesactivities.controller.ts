@@ -27,7 +27,16 @@ export class SalesActivitiesController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-emp")
+  private isSalesCsOnly(req: any) {
+    const roles: string[] = req.user?.roles || []
+    return (
+      roles.includes("sales-cs") &&
+      !roles.includes("admin") &&
+      !roles.includes("sales-leader")
+    )
+  }
+
+  @Roles("admin", "sales-cs")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createActivity(
@@ -64,24 +73,26 @@ export class SalesActivitiesController {
     return created
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllActivities(
     @Query("page") page: string = "1",
     @Query("limit") limit: string = "20",
     @Query("salesFunnelId") salesFunnelId?: string,
-    @Query("type") type?: "call" | "message" | "other"
+    @Query("type") type?: "call" | "message" | "other",
+    @Req() req?: any
   ): Promise<{ data: SalesActivity[]; total: number }> {
     return this.salesActivitiesService.getAllActivities(
       Number(page),
       Number(limit),
       salesFunnelId,
-      type
+      type,
+      this.isSalesCsOnly(req) ? req.user.userId : undefined
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("funnel/:salesFunnelId/latest")
   @HttpCode(HttpStatus.OK)
   async getLatestActivitiesByFunnel(
@@ -94,14 +105,14 @@ export class SalesActivitiesController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getActivityById(@Param("id") id: string): Promise<SalesActivity> {
     return this.salesActivitiesService.getActivityById(id)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateActivity(
@@ -138,7 +149,7 @@ export class SalesActivitiesController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteActivity(@Param("id") id: string, @Req() req): Promise<void> {

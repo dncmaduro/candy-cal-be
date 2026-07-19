@@ -36,7 +36,17 @@ export class SalesFunnelController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-emp")
+  private scopeSalesCsToOwnFunnels(req: any) {
+    const roles: string[] = req.user?.roles || []
+    return (
+      roles.includes("sales-cs") &&
+      !roles.includes("admin") &&
+      !roles.includes("sales-leader") &&
+      !roles.includes("sales-hunter")
+    )
+  }
+
+  @Roles("admin", "sales-cs")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLead(
@@ -60,7 +70,7 @@ export class SalesFunnelController {
     return created
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Post("upload")
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
@@ -100,7 +110,7 @@ export class SalesFunnelController {
     return result
   }
 
-  @Roles("admin", "sales-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "facebook-ads-emp")
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   async downloadUploadTemplate(@Res() res: Response): Promise<void> {
@@ -115,7 +125,7 @@ export class SalesFunnelController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/contacted")
   @HttpCode(HttpStatus.OK)
   async moveToContacted(
@@ -143,7 +153,7 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/stage")
   @HttpCode(HttpStatus.OK)
   async updateStage(
@@ -172,7 +182,7 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateInfo(
@@ -211,17 +221,21 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
-  async getFunnelById(@Param("id") id: string): Promise<any> {
-    return this.salesFunnelService.getFunnelById(id)
+  async getFunnelById(@Param("id") id: string, @Req() req): Promise<any> {
+    return this.salesFunnelService.getFunnelById(
+      id,
+      this.scopeSalesCsToOwnFunnels(req) ? req.user.userId : undefined
+    )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "sales-hunter", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchFunnels(
+    @Req() req,
     @Query("stage") stage?: SalesFunnelStage,
     @Query("channel") channel?: string,
     @Query("province") province?: string,
@@ -238,12 +252,15 @@ export class SalesFunnelController {
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: any[]; total: number }> {
+    const assignedUserId = this.scopeSalesCsToOwnFunnels(req)
+      ? req.user.userId
+      : user
     return this.salesFunnelService.searchFunnels(
       {
         stage,
         channel,
         province,
-        user,
+        user: assignedUserId,
         searchText,
         rank,
         startDate: startDate ? new Date(startDate) : undefined,
@@ -260,7 +277,7 @@ export class SalesFunnelController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("/psid/:psid")
   @HttpCode(HttpStatus.OK)
   async getFunnelByPsid(
@@ -269,7 +286,7 @@ export class SalesFunnelController {
     return this.salesFunnelService.getFunnelByPsid(psid)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/cost")
   @HttpCode(HttpStatus.OK)
   async updateCost(
@@ -291,7 +308,7 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/user")
   @HttpCode(HttpStatus.OK)
   async updateResponsibleUser(
@@ -320,7 +337,7 @@ export class SalesFunnelController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get(":id/check-permission")
   @HttpCode(HttpStatus.OK)
   async checkFunnelPermission(
@@ -335,11 +352,12 @@ export class SalesFunnelController {
     return this.salesFunnelService.checkFunnelPermission(
       id,
       req.user.userId,
-      isAdmin
+      isAdmin,
+      this.scopeSalesCsToOwnFunnels(req)
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("user/:userId")
   @HttpCode(HttpStatus.OK)
   async getFunnelsByUser(
@@ -353,7 +371,7 @@ export class SalesFunnelController {
     return { data }
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/delete")
   @HttpCode(HttpStatus.OK)
   async softDelete(@Param("id") id: string, @Req() req): Promise<SalesFunnel> {
@@ -376,7 +394,7 @@ export class SalesFunnelController {
     return deleted
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/restore")
   @HttpCode(HttpStatus.OK)
   async restoreFunnel(
