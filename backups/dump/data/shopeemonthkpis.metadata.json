@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"month":{"$numberInt":"1"},"year":{"$numberInt":"1"},"channel":{"$numberInt":"1"}},"name":"month_1_year_1_channel_1","background":true,"unique":true}],"uuid":"4010c9f29a854d0b9d8dd40002d77350","collectionName":"shopeemonthkpis","type":"collection"}

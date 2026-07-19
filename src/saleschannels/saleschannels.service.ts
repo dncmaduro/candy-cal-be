@@ -29,7 +29,7 @@ export class SalesChannelsService {
 
   private async validateAssignedUsers(
     userIds: string[],
-    errorMessage = "Người dùng phải có quyền sales-emp"
+    errorMessage = "Người dùng phải có quyền sales-cs"
   ): Promise<void> {
     const normalizedIds = Array.from(
       new Set(userIds.filter(Boolean).map((userId) => userId.trim()))
@@ -43,7 +43,7 @@ export class SalesChannelsService {
           HttpStatus.NOT_FOUND
         )
       }
-      if (!user.roles || !user.roles.includes("sales-emp")) {
+      if (!user.roles || !user.roles.includes("sales-cs")) {
         throw new HttpException(errorMessage, HttpStatus.BAD_REQUEST)
       }
     }
@@ -273,7 +273,7 @@ export class SalesChannelsService {
 
       await this.validateAssignedUsers(
         userId ? [userId] : [],
-        "Người dùng phải có quyền sales-emp"
+        "Người dùng phải có quyền sales-cs"
       )
 
       // Update channel

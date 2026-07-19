@@ -19,7 +19,7 @@ import { SalesDailyAdsService } from "./salesdailyads.service"
 export class SalesDailyAdsController {
   constructor(private readonly salesDailyAdsService: SalesDailyAdsService) {}
 
-  @Roles("admin", "facebook-ads-emp")
+  @Roles("admin", "sales-hunter", "facebook-ads-emp")
   @Post()
   @HttpCode(HttpStatus.OK)
   async upsertAdsCost(
@@ -31,7 +31,7 @@ export class SalesDailyAdsController {
     })
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "sales-hunter", "system-emp", "facebook-ads-emp")
   @Get("by-month")
   @HttpCode(HttpStatus.OK)
   async getAdsByMonth(

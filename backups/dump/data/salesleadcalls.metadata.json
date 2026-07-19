@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"assignmentId":{"$numberInt":"1"},"calledAt":{"$numberInt":"-1"}},"name":"assignmentId_1_calledAt_-1","background":true}],"uuid":"e66188323430419d9f25c7c4f0ed0895","collectionName":"salesleadcalls","type":"collection"}

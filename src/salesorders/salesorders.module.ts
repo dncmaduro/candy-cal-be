@@ -8,6 +8,7 @@ import { SalesFunnelSchema } from "../database/mongoose/schemas/SalesFunnel"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 import { SalesChannelSchema } from "../database/mongoose/schemas/SalesChannel"
 import { ProvinceSchema } from "../database/mongoose/schemas/Province"
+import { SalesLeadsModule } from "../salesleads/salesleads.module"
 
 @Module({
   imports: [
@@ -18,7 +19,8 @@ import { ProvinceSchema } from "../database/mongoose/schemas/Province"
       { name: "saleschannels", schema: SalesChannelSchema },
       { name: "provinces", schema: ProvinceSchema }
     ]),
-    SystemLogsModule
+    SystemLogsModule,
+    SalesLeadsModule
   ],
   controllers: [SalesOrdersController],
   providers: [SalesOrdersService],

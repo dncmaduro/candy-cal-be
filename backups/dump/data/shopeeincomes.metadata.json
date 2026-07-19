@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"orderId":{"$numberInt":"1"},"channel":{"$numberInt":"1"}},"name":"orderId_1_channel_1","background":true,"unique":true}],"uuid":"4ce0e073eb4f4c849f9d7e0402c934e0","collectionName":"shopeeincomes","type":"collection"}

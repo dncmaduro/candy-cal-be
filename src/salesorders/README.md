@@ -63,7 +63,7 @@ Tạo đơn hàng mới.
 - `returning` được tự động xác định dựa trên `hasBuyed` của funnel
 - Sau khi tạo đơn đầu tiên, funnel sẽ được đánh dấu `hasBuyed = true`
 
-**Authorization:** Requires role `admin` or `sales-emp`
+**Authorization:** Requires role `admin` or `sales-cs`
 
 ---
 
@@ -130,7 +130,7 @@ Cập nhật items của đơn hàng.
 - `orderDiscountType` là optional, nếu không truyền thì giữ nguyên type cũ
 - Nếu `orderDiscountType` là `null` hoặc không truyền thì FE hiểu là `value`
 
-**Authorization:** Requires role `admin` or `sales-emp`
+**Authorization:** Requires role `admin` or `sales-cs`
 
 ---
 
@@ -152,7 +152,7 @@ Cập nhật thông tin vận chuyển.
 - Cả `shippingCode` và `shippingType` đều là optional
 - Chỉ cập nhật những field được truyền vào
 
-**Authorization:** Requires role `admin` or `sales-emp`
+**Authorization:** Requires role `admin` or `sales-cs`
 
 ---
 
@@ -164,7 +164,7 @@ Xóa đơn hàng.
 
 - Nếu xóa đơn hàng cuối cùng của funnel, `hasBuyed` sẽ được đặt lại về `false`
 
-**Authorization:** Requires role `admin` or `sales-emp`
+**Authorization:** Requires role `admin` or `sales-cs`
 
 ---
 
@@ -201,7 +201,7 @@ Lấy thông tin chi tiết đơn hàng.
 
 - Mỗi item sẽ được enriched với thông tin `factory` và `source` từ bảng `SalesItem`
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 
@@ -248,7 +248,7 @@ Tìm kiếm và lọc đơn hàng.
 
 - Mỗi item sẽ được enriched với `factory` và `source`
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 
@@ -264,7 +264,7 @@ Cập nhật kho lưu trữ.
 }
 ```
 
-**Authorization:** Requires role `admin` or `sales-emp`
+**Authorization:** Requires role `admin` or `sales-cs`
 
 ---
 
@@ -283,7 +283,7 @@ Lấy danh sách các kho có sẵn.
 }
 ```
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 
@@ -302,7 +302,7 @@ Lấy danh sách các loại vận chuyển có sẵn.
 }
 ```
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 
@@ -394,7 +394,7 @@ GET /salesorders/export/xlsx?startDate=2024-11-01&endDate=2024-11-30&shippingTyp
 - Mỗi item trong order tạo thành 1 dòng riêng trong Excel
 - Các cột trống được để để người dùng điền thủ công nếu cần
 
-**Authorization:** Requires role `admin`, `sales-emp`, or `system-emp`
+**Authorization:** Requires role `admin`, `sales-cs`, or `system-emp`
 
 ---
 

@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
+import { SalesLeadsService } from "../salesleads/salesleads.service"
 import * as XLSX from "xlsx"
 import * as ExcelJS from "exceljs"
 import {
@@ -53,7 +54,8 @@ export class SalesOrdersService {
     @InjectModel("salesfunnel")
     private readonly salesFunnelModel: Model<SalesFunnel>,
     @InjectModel("provinces")
-    private readonly provinceModel: Model<Province>
+    private readonly provinceModel: Model<Province>,
+    private readonly salesLeadsService: SalesLeadsService
   ) {}
 
   private startPerfSession(
@@ -1323,8 +1325,8 @@ export class SalesOrdersService {
     }
   }
 
-  async getOrderById(orderId: string): Promise<SalesOrder | null> {
-    const perf = this.startPerfSession("getOrderById", { orderId })
+  async getOrderById(orderId: string, salesCsId?: string): Promise<SalesOrder | null> {
+    const perf = this.startPerfSession("getOrderById", { orderId, salesCsId })
 
     try {
       const order = await this.measurePerfStep(
@@ -1349,6 +1351,14 @@ export class SalesOrdersService {
           status: "not_found"
         })
         return null
+      }
+
+      const ownerId = (order.salesFunnelId as any)?.user?._id
+      if (salesCsId && ownerId?.toString() !== salesCsId) {
+        throw new HttpException(
+          "Bạn không có quyền xem đơn hàng của khách này",
+          HttpStatus.FORBIDDEN
+        )
       }
 
       const itemCodes = await this.measurePerfStep(
@@ -1416,6 +1426,7 @@ export class SalesOrdersService {
         status: "error",
         errorMessage: error instanceof Error ? error.message : String(error)
       })
+      if (error instanceof HttpException) throw error
       console.error(error)
       throw new HttpException(
         "Lỗi khi lấy thông tin đơn hàng",
@@ -2417,7 +2428,10 @@ export class SalesOrdersService {
   //   }
   // }
 
-  async exportOrdersToExcelByOrderIds(orderIds: string[]): Promise<Buffer> {
+  async exportOrdersToExcelByOrderIds(
+    orderIds: string[],
+    salesCsId?: string
+  ): Promise<Buffer> {
     const perf = this.startPerfSession("exportOrdersToExcelByOrderIds", {
       requestedOrderIds: Array.isArray(orderIds) ? orderIds.length : 0
     })
@@ -2439,12 +2453,20 @@ export class SalesOrdersService {
         )
       }
 
+      const filter: any = { _id: { $in: validObjectIds } }
+      if (salesCsId) {
+        const ownFunnelIds = await this.salesFunnelModel
+          .find({ user: new Types.ObjectId(salesCsId) })
+          .distinct("_id")
+        filter.salesFunnelId = { $in: ownFunnelIds }
+      }
+
       const orders = await this.measurePerfStep(
         perf,
         "salesOrder.findByIds.populate",
         () =>
           this.salesOrderModel
-            .find({ _id: { $in: validObjectIds } })
+            .find(filter)
             .populate({
               path: "salesFunnelId",
               populate: [
@@ -2719,6 +2741,9 @@ export class SalesOrdersService {
       order.updatedAt = new Date()
 
       const savedOrder = await order.save()
+      if (nextStatus === "official") {
+        await this.salesLeadsService.handleOfficialOrder(savedOrder)
+      }
       await this.salesFunnelModel.findByIdAndUpdate(
         order.salesFunnelId.toString(),
         {

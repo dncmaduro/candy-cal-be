@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"date":{"$numberInt":"1"},"channel":{"$numberInt":"1"}},"name":"date_1_channel_1","background":true,"unique":true}],"uuid":"6162dd124bbe46c79de4e7589bac6fab","collectionName":"dailylogs","type":"collection"}
