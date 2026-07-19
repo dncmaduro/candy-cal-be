@@ -12,9 +12,6 @@
 const EXECUTE = false
 const DATABASE_NAME = "data"
 const MIGRATION_ID = "sales-lead-legacy-2026-07-18-v1"
-const HUNTER_ID = ObjectId("6a55052d2d6d42701fc1a440")
-const MIGRATION_NOTE = "Legacy Sales → Sales Lead migration"
-
 const appDb = db.getSiblingDB(DATABASE_NAME)
 const now = new Date()
 const users = appDb.users
@@ -22,12 +19,9 @@ const funnels = appDb.salesfunnels
 const orders = appDb.salesorders
 const cases = appDb.salesleadcases
 const assignments = appDb.salesleadassignments
-const availability = appDb.salescsavailabilities
-const systemLogs = appDb.systemlogs
 
 const hasRole = (user, role) => Array.isArray(user?.roles) && user.roles.includes(role)
 const isActive = (user) => user?.active !== false
-const sameId = (left, right) => left && right && left.toString() === right.toString()
 
 function vietnamCycle(date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -53,11 +47,10 @@ const activeHunters = users
   .find({ roles: "sales-hunter", active: { $ne: false } }, { _id: 1, username: 1, name: 1 })
   .toArray()
 
-if (activeHunters.length !== 1 || !sameId(activeHunters[0]._id, HUNTER_ID)) {
-  throw new Error(
-    `Expected exactly one active Sales Hunter (${HUNTER_ID}). Found: ${JSON.stringify(activeHunters)}`
-  )
+if (activeHunters.length !== 1) {
+  throw new Error(`Expected exactly one active Sales Hunter. Found: ${JSON.stringify(activeHunters)}`)
 }
+const hunterId = activeHunters[0]._id
 
 const candidateFunnels = funnels
   .aggregate([
@@ -98,15 +91,10 @@ const officialByFunnel = new Map(
     .map((row) => [row._id.toString(), row.firstOfficialOrder])
 )
 
-const roleConversions = users
-  .find({ roles: "sales-emp" }, { _id: 1, username: 1, name: 1, roles: 1, active: 1 })
-  .toArray()
-
 const validationErrors = []
 for (const funnel of candidateFunnels) {
   const owner = funnel.owner
-  const eligibleOwner =
-    owner && isActive(owner) && (hasRole(owner, "sales-cs") || hasRole(owner, "sales-emp"))
+  const eligibleOwner = owner && isActive(owner) && hasRole(owner, "sales-cs")
   const hasOfficial = officialByFunnel.has(funnel._id.toString())
   if (hasOfficial && !eligibleOwner) {
     validationErrors.push({
@@ -126,23 +114,17 @@ const plan = {
     startAt: cycle.startAt.toISOString(),
     endAt: cycle.endAt.toISOString()
   },
-  roleConversions: roleConversions.map((user) => ({
-    id: user._id.toString(),
-    username: user.username,
-    name: user.name,
-    active: isActive(user)
-  })),
+  salesEmpUsersKept: users.countDocuments({ roles: "sales-emp" }),
   candidateFunnels: candidateFunnels.length,
   retainedCases: candidateFunnels.filter((funnel) => officialByFunnel.has(funnel._id.toString())).length,
   activeCases: candidateFunnels.filter((funnel) => {
     const owner = funnel.owner
-    return !officialByFunnel.has(funnel._id.toString()) && owner && isActive(owner) &&
-      (hasRole(owner, "sales-cs") || hasRole(owner, "sales-emp"))
+    return !officialByFunnel.has(funnel._id.toString()) && owner && isActive(owner) && hasRole(owner, "sales-cs")
   }).length,
   pooledCases: candidateFunnels.filter((funnel) => {
     const owner = funnel.owner
     return !officialByFunnel.has(funnel._id.toString()) &&
-      (!owner || !isActive(owner) || (!hasRole(owner, "sales-cs") && !hasRole(owner, "sales-emp")))
+      (!owner || !isActive(owner) || !hasRole(owner, "sales-cs"))
   }).length,
   validationErrors
 }
@@ -177,33 +159,6 @@ ensureIndex(assignments, { leadCaseId: 1 }, {
   name: "one_active_assignment_per_case"
 })
 
-for (const user of roleConversions) {
-  const nextRoles = [...new Set((user.roles || []).filter((role) => role !== "sales-emp").concat("sales-cs"))]
-  users.updateOne({ _id: user._id }, { $set: { roles: nextRoles } })
-  availability.updateOne(
-    { salesCsId: user._id },
-    {
-      $set: {
-        isReceivingLeads: true,
-        changedById: HUNTER_ID,
-        changedAt: now,
-        note: `${MIGRATION_NOTE} (${MIGRATION_ID})`
-      }
-    },
-    { upsert: true }
-  )
-  systemLogs.insertOne({
-    type: "saleslead-migration",
-    action: "role_migrated_to_sales_cs",
-    userId: HUNTER_ID.toString(),
-    time: now,
-    entity: "user",
-    entityId: user._id.toString(),
-    result: "success",
-    meta: { migrationId: MIGRATION_ID, previousRoles: user.roles, nextRoles }
-  })
-}
-
 const session = db.getMongo().startSession()
 // Compass mongosh serializes `{ session }` incorrectly for some collection
 // methods. Obtain transaction-bound collections from the session instead.
@@ -225,13 +180,12 @@ try {
       }
 
       const owner = funnel.owner
-      const ownerCanCare =
-        owner && isActive(owner) && (hasRole(owner, "sales-cs") || hasRole(owner, "sales-emp"))
+      const ownerCanCare = owner && isActive(owner) && hasRole(owner, "sales-cs")
       const firstOfficialOrder = officialByFunnel.get(funnel._id.toString())
       const caseStatus = firstOfficialOrder ? "retained" : ownerCanCare ? "assigned" : "pooled"
       const caseDocument = {
         salesFunnelId: funnel._id,
-        hunterId: HUNTER_ID,
+        hunterId,
         ...(funnel.channel ? { sourceChannelId: funnel.channel } : {}),
         status: caseStatus,
         ...(firstOfficialOrder
@@ -251,7 +205,7 @@ try {
         const assignmentDocument = {
           leadCaseId: caseResult.insertedId,
           salesCsId: funnel.user,
-          assignedById: HUNTER_ID,
+          assignedById: hunterId,
           kind: "migrated",
           status: assignmentStatus,
           ...(assignmentStatus === "active"
@@ -287,7 +241,7 @@ try {
         {
           type: "saleslead-migration",
           action: "legacy_case_migrated",
-          userId: HUNTER_ID.toString(),
+          userId: hunterId.toString(),
           time: now,
           entity: "salesleadcase",
           entityId: caseResult.insertedId.toString(),

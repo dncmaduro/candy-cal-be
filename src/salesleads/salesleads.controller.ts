@@ -113,7 +113,7 @@ export class SalesLeadsController {
   ) {
     return this.service.addCall(id, body, req.user.userId, req.user.roles)
   }
-  @Post(":id/transfer") @Roles("sales-cs", "sales-leader", "admin") transfer(
+  @Post(":id/transfer") @Roles("sales-hunter", "sales-cs", "sales-leader", "admin") transfer(
     @Param("id") id: string,
     @Body("salesCsId") salesCsId: string,
     @Req() req: any

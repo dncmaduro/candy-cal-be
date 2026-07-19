@@ -45,7 +45,7 @@ export class SalesLeadsService {
     private systemLogs: SystemLogsService
   ) {}
   private manager(roles: string[] = []) {
-    return roles.includes("admin") || roles.includes("sales-leader")
+    return roles.includes("admin") || roles.includes("sales-leader") || roles.includes("sales-hunter")
   }
   private month(now = new Date()) {
     const zonedNow = toZonedTime(now, SALES_TIME_ZONE)
@@ -618,6 +618,7 @@ export class SalesLeadsService {
       const funnel: any = await this.funnels.findById(lead.salesFunnelId).session(session)
       if (!funnel) throw new HttpException("Funnel không tồn tại", HttpStatus.NOT_FOUND)
       const now = new Date()
+      const isRetained = !!lead.firstOfficialOrderId
       const [created] = await this.assignments.create(
         [
           {
@@ -625,10 +626,10 @@ export class SalesLeadsService {
             salesCsId,
             assignedById: actor,
             kind: "manual_transfer",
-            status: "active",
-            cycleKey: lead.firstOfficialOrderId ? undefined : active.cycleKey,
+            status: isRetained ? "retained" : "active",
+            cycleKey: isRetained ? undefined : active.cycleKey,
             cycleStartAt: now,
-            cycleEndAt: lead.firstOfficialOrderId ? undefined : active.cycleEndAt,
+            cycleEndAt: isRetained ? undefined : active.cycleEndAt,
             startedAt: now,
             previousSalesCsId: active.salesCsId,
             customerSnapshot: this.snapshot(funnel)
