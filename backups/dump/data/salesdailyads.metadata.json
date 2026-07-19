@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"date":{"$numberInt":"1"}},"name":"date_1","background":true,"unique":true}],"uuid":"81ffa666929b47fa925c2e6bb68bf7ca","collectionName":"salesdailyads","type":"collection"}

@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"channel":{"$numberInt":"1"},"date":{"$numberInt":"1"}},"name":"channel_1_date_1","background":true,"unique":true}],"uuid":"b7b81287f00146fc97356bcf23e9bd63","collectionName":"shopeedailyliverevenues","type":"collection"}
