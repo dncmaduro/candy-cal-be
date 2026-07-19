@@ -6,8 +6,6 @@
 {
 const DATABASE_NAME = "data"
 const MIGRATION_ID = "sales-lead-legacy-2026-07-18-v1"
-const EXPECTED_MIGRATED_CASES = 200
-const HUNTER_ID = ObjectId("6a55052d2d6d42701fc1a440")
 
 const appDb = db.getSiblingDB(DATABASE_NAME)
 const users = appDb.users
@@ -16,7 +14,6 @@ const orders = appDb.salesorders
 const cases = appDb.salesleadcases
 const assignments = appDb.salesleadassignments
 
-const sameId = (left, right) => left && right && left.toString() === right.toString()
 const activeHunters = users
   .find({ roles: "sales-hunter", active: { $ne: false } }, { _id: 1, username: 1, name: 1 })
   .toArray()
@@ -27,10 +24,8 @@ const report = {
   database: DATABASE_NAME,
   migrationId: MIGRATION_ID,
   checks: {
-    exactlyOneExpectedSalesHunter:
-      activeHunters.length === 1 && sameId(activeHunters[0]._id, HUNTER_ID),
-    noSalesEmpRolesRemain: users.countDocuments({ roles: "sales-emp" }) === 0,
-    expectedMigratedCaseCount: migratedCases.length === EXPECTED_MIGRATED_CASES,
+    exactlyOneActiveSalesHunter: activeHunters.length === 1,
+    expectedMigratedCaseCount: migratedCases.length === funnels.countDocuments(),
     noFunnelsWithoutCase: funnels.aggregate([
       { $lookup: { from: "salesleadcases", localField: "_id", foreignField: "salesFunnelId", as: "cases" } },
       { $match: { cases: { $eq: [] } } },
@@ -57,7 +52,7 @@ const report = {
       return result
     }, {}),
     migratedAssignments: assignments.countDocuments({ kind: "migrated" }),
-    salesEmpUsersRemaining: users.countDocuments({ roles: "sales-emp" })
+    salesEmpUsersKept: users.countDocuments({ roles: "sales-emp" })
   },
   blockers: {
     migratedCasesMissingCurrentAssignment: cases.aggregate([

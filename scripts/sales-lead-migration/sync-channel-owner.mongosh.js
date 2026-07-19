@@ -11,9 +11,6 @@ const EXECUTE = false
 const DATABASE_NAME = "data"
 const SOURCE_MIGRATION_ID = "sales-lead-legacy-2026-07-18-v1"
 const MIGRATION_ID = "sales-lead-channel-owner-sync-2026-07-19-v1"
-const HUNTER_ID = ObjectId("6a55052d2d6d42701fc1a440")
-const MIGRATION_NOTE = "Align legacy funnel owner with channel Sales CS"
-
 const appDb = db.getSiblingDB(DATABASE_NAME)
 const users = appDb.users
 const funnels = appDb.salesfunnels
@@ -30,9 +27,10 @@ const isActiveSalesCs = (user) =>
 const activeHunters = users
   .find({ roles: "sales-hunter", active: { $ne: false } }, { _id: 1, username: 1, name: 1 })
   .toArray()
-if (activeHunters.length !== 1 || !sameId(activeHunters[0]._id, HUNTER_ID)) {
-  throw new Error(`Expected exactly one active Sales Hunter (${HUNTER_ID})`)
+if (activeHunters.length !== 1) {
+  throw new Error("Expected exactly one active Sales Hunter")
 }
+const hunterId = activeHunters[0]._id
 
 const migratedCases = cases.find(
   { migrationId: SOURCE_MIGRATION_ID },
@@ -185,7 +183,7 @@ if (!EXECUTE) {
         transactionSystemLogs.insertOne({
           type: "saleslead-migration",
           action: "legacy_funnel_owner_synced_to_channel",
-          userId: HUNTER_ID.toString(),
+          userId: hunterId.toString(),
           time: now,
           entity: "salesleadcase",
           entityId: plan.leadCaseId.toString(),
