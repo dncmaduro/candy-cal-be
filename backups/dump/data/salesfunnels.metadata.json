@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"psid":{"$numberInt":"1"}},"name":"psid_1","background":true,"unique":true,"sparse":true}],"uuid":"03f18cb7790d468cb3125e9d8d4a7d1d","collectionName":"salesfunnels","type":"collection"}

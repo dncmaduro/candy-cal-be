@@ -9,7 +9,7 @@
 // Keep all declarations block-scoped so the whole script can be pasted again
 // in the same MongoDB Compass mongosh tab after changing EXECUTE.
 {
-const EXECUTE = true
+const EXECUTE = false
 const DATABASE_NAME = "data"
 const MIGRATION_ID = "sales-lead-legacy-2026-07-18-v1"
 const HUNTER_ID = ObjectId("6a55052d2d6d42701fc1a440")
