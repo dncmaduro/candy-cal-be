@@ -389,6 +389,19 @@ export class UsersService {
     }
   }
 
+  async updateUserRoles(
+    userId: string,
+    roles: string[],
+    actorUsername: string
+  ): Promise<{ message: string; data: { _id: string; roles: string[] } }> {
+    const normalized = Array.from(new Set((roles || []).map((role) => String(role).trim()).filter(Boolean)))
+    if (!normalized.length) throw new HttpException("Người dùng cần ít nhất một role", HttpStatus.BAD_REQUEST)
+    const user = await this.userModel.findByIdAndUpdate(userId, { $set: { roles: normalized } }, { new: true })
+    if (!user) throw new HttpException("User not found", HttpStatus.NOT_FOUND)
+    void this.systemLogsService.createSystemLog({ type: "users", action: "updated_roles", entity: "user", entityId: userId, result: "success", meta: { roles: normalized } }, actorUsername)
+    return { message: "Cập nhật role thành công", data: { _id: user._id.toString(), roles: user.roles } }
+  }
+
   async adminListUsers(
     searchText: string,
     role?: string,

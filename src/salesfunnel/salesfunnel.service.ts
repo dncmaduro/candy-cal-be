@@ -83,7 +83,7 @@ export class SalesFunnelService {
     if (!user) {
       throw new HttpException(notFoundMessage, HttpStatus.NOT_FOUND)
     }
-    if (!user.roles || !user.roles.includes("sales-emp")) {
+    if (!user.roles || !user.roles.includes("sales-cs")) {
       throw new HttpException(invalidRoleMessage, HttpStatus.BAD_REQUEST)
     }
   }
@@ -167,7 +167,7 @@ export class SalesFunnelService {
         channel,
         "Kênh này chưa có người phụ trách",
         "Người phụ trách kênh không tồn tại",
-        "Người phụ trách kênh không có quyền sales-emp"
+        "Người phụ trách kênh không có quyền sales-cs"
       )
 
       const now = new Date()
@@ -285,7 +285,7 @@ export class SalesFunnelService {
           await this.validateSalesAssignedUser(
             assignedUserId,
             `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không tồn tại`,
-            `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không có quyền sales-emp`
+            `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không có quyền sales-cs`
           )
 
           // Find province (optional) - LIKE %{cellValue}% search
@@ -635,7 +635,7 @@ export class SalesFunnelService {
           channel,
           "Kênh này chưa có người phụ trách",
           "Người phụ trách kênh không tồn tại",
-          "Người phụ trách kênh không có quyền sales-emp"
+          "Người phụ trách kênh không có quyền sales-cs"
         )
 
         // Update both channel and user
@@ -859,10 +859,13 @@ export class SalesFunnelService {
     }
   }
 
-  async getFunnelById(id: string): Promise<any> {
+  async getFunnelById(id: string, assignedUserId?: string): Promise<any> {
     try {
       const funnel = await this.salesFunnelModel
-        .findById(id)
+        .findOne({
+          _id: id,
+          ...(assignedUserId ? { user: new Types.ObjectId(assignedUserId) } : {})
+        })
         .populate("province", "name")
         .populate("channel", "channelName")
         .populate("user", "username name")
@@ -974,14 +977,14 @@ export class SalesFunnelService {
     isAdmin = false
   ): Promise<SalesFunnel> {
     try {
-      // Validate new user has sales-emp role
+      // Validate new user has sales-cs role
       const newUser = await this.userModel.findById(newUserId).lean()
       if (!newUser) {
         throw new HttpException("User not found", HttpStatus.NOT_FOUND)
       }
-      if (!newUser.roles || !newUser.roles.includes("sales-emp")) {
+      if (!newUser.roles || !newUser.roles.includes("sales-cs")) {
         throw new HttpException(
-          "User must have sales-emp role",
+          "User must have sales-cs role",
           HttpStatus.BAD_REQUEST
         )
       }
@@ -1021,7 +1024,8 @@ export class SalesFunnelService {
   async checkFunnelPermission(
     funnelId: string,
     userId: string,
-    isAdmin: boolean
+    isAdmin: boolean,
+    requireResponsibleUser = false
   ): Promise<{
     hasPermission: boolean
     isAdmin: boolean
@@ -1040,10 +1044,11 @@ export class SalesFunnelService {
       )
 
       return {
-        // Any role allowed through the controller can view a funnel. Ownership
-        // remains available below so write operations can keep their existing
-        // restrictions.
-        hasPermission: true,
+        // Sales CS can only open funnels currently assigned to them. Other
+        // roles retain the existing detail-view access policy.
+        hasPermission: requireResponsibleUser
+          ? permission.isResponsible
+          : true,
         isAdmin,
         isResponsible:
           permission.isResponsible || permission.isChannelAssignee

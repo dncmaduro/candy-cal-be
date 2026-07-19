@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"monthKey":{"$numberInt":"1"}},"name":"monthKey_1","background":true,"unique":true}],"uuid":"d2d8b30a0ed04837bcdeee285fd0da4b","collectionName":"aiusages","type":"collection"}

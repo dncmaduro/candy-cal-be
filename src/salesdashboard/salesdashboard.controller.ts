@@ -18,10 +18,11 @@ export class SalesDashboardController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
-    "facebook-ads-emp"
+    "facebook-ads-emp",
+    "sales-hunter"
   )
   @Get("province-stats")
   @HttpCode(HttpStatus.OK)
@@ -41,10 +42,11 @@ export class SalesDashboardController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
-    "facebook-ads-emp"
+    "facebook-ads-emp",
+    "sales-hunter"
   )
   @Get("revenue-stats")
   @HttpCode(HttpStatus.OK)
@@ -62,10 +64,11 @@ export class SalesDashboardController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
-    "facebook-ads-emp"
+    "facebook-ads-emp",
+    "sales-hunter"
   )
   @Get("monthly-metrics")
   @HttpCode(HttpStatus.OK)
@@ -83,10 +86,11 @@ export class SalesDashboardController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
-    "facebook-ads-emp"
+    "facebook-ads-emp",
+    "sales-hunter"
   )
   @Get("top-customers")
   @HttpCode(HttpStatus.OK)

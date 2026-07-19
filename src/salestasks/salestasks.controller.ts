@@ -27,7 +27,7 @@ export class SalesTasksController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-leader")
+  @Roles("admin", "sales-hunter")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createTask(
@@ -59,8 +59,8 @@ export class SalesTasksController {
 
   @Roles(
     "admin",
-    "sales-leader",
-    "sales-emp",
+    "sales-hunter",
+    "sales-cs",
     "system-emp",
     "facebook-ads-emp"
   )
@@ -84,8 +84,8 @@ export class SalesTasksController {
 
   @Roles(
     "admin",
-    "sales-leader",
-    "sales-emp",
+    "sales-hunter",
+    "sales-cs",
     "system-emp",
     "facebook-ads-emp"
   )
@@ -95,7 +95,7 @@ export class SalesTasksController {
     return this.salesTasksService.getTaskById(id)
   }
 
-  @Roles("admin", "sales-leader", "sales-emp")
+  @Roles("admin", "sales-hunter", "sales-cs")
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateTask(
@@ -126,7 +126,7 @@ export class SalesTasksController {
     return updated
   }
 
-  @Roles("admin", "sales-leader", "sales-emp")
+  @Roles("admin", "sales-hunter", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteTask(@Param("id") id: string, @Req() req): Promise<void> {
@@ -144,7 +144,7 @@ export class SalesTasksController {
     )
   }
 
-  @Roles("admin", "sales-leader", "sales-emp")
+  @Roles("admin", "sales-hunter", "sales-cs")
   @Post(":id/complete")
   @HttpCode(HttpStatus.OK)
   async completeTask(@Param("id") id: string, @Req() req): Promise<SalesTask> {

@@ -65,11 +65,32 @@ export class SalesActivitiesService {
     page: number = 1,
     limit: number = 20,
     salesFunnelId?: string,
-    type?: "call" | "message" | "other"
+    type?: "call" | "message" | "other",
+    assignedUserId?: string
   ): Promise<{ data: SalesActivity[]; total: number }> {
     try {
       const skip = (page - 1) * limit
       const filter: any = {}
+
+      if (assignedUserId) {
+        if (!salesFunnelId) {
+          throw new HttpException(
+            "Sales CS chỉ được xem lịch sử của funnel được phân công",
+            HttpStatus.FORBIDDEN
+          )
+        }
+
+        const assignedFunnel = await this.salesFunnelModel.exists({
+          _id: new Types.ObjectId(salesFunnelId),
+          user: new Types.ObjectId(assignedUserId)
+        })
+        if (!assignedFunnel) {
+          throw new HttpException(
+            "Bạn không có quyền xem lịch sử của funnel này",
+            HttpStatus.FORBIDDEN
+          )
+        }
+      }
 
       if (salesFunnelId) {
         filter.salesFunnelId = new Types.ObjectId(salesFunnelId)
@@ -91,6 +112,7 @@ export class SalesActivitiesService {
 
       return { data, total }
     } catch (error) {
+      if (error instanceof HttpException) throw error
       console.error("Error in getAllActivities:", error)
       throw new HttpException(
         "Có lỗi khi lấy danh sách hoạt động",

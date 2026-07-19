@@ -36,7 +36,7 @@ export class SalesItemsController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Post("upload")
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
@@ -76,7 +76,7 @@ export class SalesItemsController {
     return result
   }
 
-  @Roles("admin", "sales-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "facebook-ads-emp")
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   async downloadUploadTemplate(@Res() res: Response): Promise<void> {
@@ -91,7 +91,7 @@ export class SalesItemsController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllSalesItems(
@@ -101,7 +101,7 @@ export class SalesItemsController {
     return this.salesItemsService.getAllSalesItems(Number(page), Number(limit))
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchSalesItems(
@@ -120,7 +120,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("export/xlsx")
   @HttpCode(HttpStatus.OK)
   async exportSalesItemsToXlsx(
@@ -156,7 +156,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("factories")
   @HttpCode(HttpStatus.OK)
   async getAllFactories(): Promise<{
@@ -165,7 +165,7 @@ export class SalesItemsController {
     return this.salesItemsService.getAllFactories()
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("sources")
   @HttpCode(HttpStatus.OK)
   async getAllSources(): Promise<{
@@ -174,7 +174,7 @@ export class SalesItemsController {
     return this.salesItemsService.getAllSources()
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
   async createSalesItem(
@@ -206,14 +206,14 @@ export class SalesItemsController {
     return created
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getSalesItemById(@Param("id") id: string): Promise<SalesItem | null> {
     return this.salesItemsService.getSalesItemById(id)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateSalesItem(
@@ -246,7 +246,7 @@ export class SalesItemsController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSalesItem(@Param("id") id: string, @Req() req): Promise<void> {
@@ -263,7 +263,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("stats/:code/quantity")
   @HttpCode(HttpStatus.OK)
   async getItemPurchaseQuantity(
@@ -278,7 +278,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-emp", "system-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
   @Get("stats/:code/top-customers")
   @HttpCode(HttpStatus.OK)
   async getTopCustomersByItem(

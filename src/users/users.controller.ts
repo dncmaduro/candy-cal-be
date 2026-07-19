@@ -139,6 +139,18 @@ export class UsersController {
     )
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
+  @Patch(":userId/roles")
+  @HttpCode(HttpStatus.OK)
+  async updateUserRoles(
+    @Req() req,
+    @Body() body: { roles: string[] },
+    @Param("userId") userId: string
+  ): Promise<{ message: string; data: { _id: string; roles: string[] } }> {
+    return this.usersService.updateUserRoles(userId, body.roles, req.user.username)
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get("publicsearch")
   @HttpCode(HttpStatus.OK)

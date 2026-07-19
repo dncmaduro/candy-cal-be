@@ -39,7 +39,17 @@ export class SalesOrdersController {
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-emp")
+  private scopeSalesCsToOwnOrders(req: any): boolean {
+    const roles: string[] = req?.user?.roles || []
+    return (
+      roles.includes("sales-cs") &&
+      !roles.includes("admin") &&
+      !roles.includes("sales-hunter") &&
+      !roles.includes("sales-leader")
+    )
+  }
+
+  @Roles("admin", "sales-cs")
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createOrder(
@@ -80,7 +90,7 @@ export class SalesOrdersController {
     return created
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Post("upload")
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
@@ -118,7 +128,7 @@ export class SalesOrdersController {
     return result
   }
 
-  @Roles("admin", "sales-emp", "facebook-ads-emp")
+  @Roles("admin", "sales-cs", "facebook-ads-emp")
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   async downloadUploadTemplate(@Res() res: Response): Promise<void> {
@@ -133,7 +143,7 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/items")
   @HttpCode(HttpStatus.OK)
   async updateOrderItems(
@@ -175,7 +185,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/date")
   @HttpCode(HttpStatus.OK)
   async updateOrderDate(
@@ -200,7 +210,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/shipping-tax")
   @HttpCode(HttpStatus.OK)
   async updateShippingAndTax(
@@ -232,7 +242,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteOrder(@Param("id") id: string, @Req() req): Promise<void> {
@@ -251,18 +261,28 @@ export class SalesOrdersController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
+    "sales-hunter",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp"
   )
   @Get(":id")
   @HttpCode(HttpStatus.OK)
-  async getOrderById(@Param("id") id: string): Promise<SalesOrder | null> {
-    return this.salesOrdersService.getOrderById(id)
+  async getOrderById(@Param("id") id: string, @Req() req): Promise<SalesOrder | null> {
+    return this.salesOrdersService.getOrderById(
+      id,
+      this.scopeSalesCsToOwnOrders(req) ? req.user.userId : undefined
+    )
   }
 
-  @Roles("admin", "sales-emp", "sales-accounting", "facebook-ads-emp")
+  @Roles(
+    "admin",
+    "sales-cs",
+    "sales-hunter",
+    "sales-accounting",
+    "facebook-ads-emp"
+  )
   @Get("funnel/:funnelId")
   @HttpCode(HttpStatus.OK)
   async getOrdersByFunnel(
@@ -279,11 +299,13 @@ export class SalesOrdersController {
     totalRevenue: number
     topProducts: { code: string; name: string; quantity: number }[]
   }> {
-    const isAdmin = req.user.roles?.includes("admin") || false
+    const canViewAll = req.user.roles?.some(
+      (role: string) => role === "admin" || role === "sales-hunter"
+    ) || false
     return this.salesOrdersService.getOrdersByFunnel(
       funnelId,
       req.user.userId,
-      isAdmin,
+      canViewAll,
       Number(page),
       Number(limit),
       startDate ? new Date(startDate) : undefined,
@@ -293,7 +315,8 @@ export class SalesOrdersController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
+    "sales-hunter",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp"
@@ -314,8 +337,9 @@ export class SalesOrdersController {
     @Query("limit") limit = 10,
     @Req() req: any = undefined
   ): Promise<{ data: SalesOrder[]; total: number }> {
-    const isSalesEmp = req?.user?.roles?.includes("sales-emp") || false
-    const effectiveUserId = isSalesEmp ? undefined : userId
+    const effectiveUserId = this.scopeSalesCsToOwnOrders(req)
+      ? req.user.userId
+      : userId
 
     return this.salesOrdersService.searchOrders(
       {
@@ -339,7 +363,7 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/storage")
   @HttpCode(HttpStatus.OK)
   async updateStorage(
@@ -366,7 +390,8 @@ export class SalesOrdersController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
+    "sales-hunter",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp"
@@ -381,7 +406,8 @@ export class SalesOrdersController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
+    "sales-hunter",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp"
@@ -396,7 +422,8 @@ export class SalesOrdersController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
+    "sales-hunter",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp"
@@ -413,11 +440,15 @@ export class SalesOrdersController {
     @Query("searchText") searchText?: string,
     @Query("shippingType") shippingType?: SalesOrderShippingType,
     @Query("status") status?: SalesOrderStatus,
+    @Req() req?: any,
     @Res() res?: Response
   ): Promise<void> {
+    const effectiveUserId = this.scopeSalesCsToOwnOrders(req)
+      ? req.user.userId
+      : userId
     const buffer = await this.salesOrdersService.exportOrdersToExcel({
       salesFunnelId,
-      userId,
+      userId: effectiveUserId,
       channelId,
       returning:
         returning === "true" ? true : returning === "false" ? false : undefined,
@@ -439,7 +470,7 @@ export class SalesOrdersController {
 
   @Roles(
     "admin",
-    "sales-emp",
+    "sales-cs",
     "system-emp",
     "sales-accounting",
     "facebook-ads-emp"
@@ -485,7 +516,7 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-emp")
+  @Roles("admin", "sales-cs")
   @Patch(":id/status")
   @HttpCode(HttpStatus.OK)
   async transitionOrderStatus(
@@ -528,11 +559,12 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-emp", "sales-leader", "sales-accounting")
+  @Roles("admin", "sales-cs", "sales-hunter", "sales-accounting")
   @Post("export/xlsx/by-ids")
   @HttpCode(HttpStatus.OK)
   async exportOrdersToExcelByIds(
     @Body() body: { orderIds: string[] },
+    @Req() req: any,
     @Res() res: Response
   ): Promise<void> {
     if (!body?.orderIds?.length) {
@@ -540,7 +572,8 @@ export class SalesOrdersController {
     }
 
     const buffer = await this.salesOrdersService.exportOrdersToExcelByOrderIds(
-      body.orderIds
+      body.orderIds,
+      this.scopeSalesCsToOwnOrders(req) ? req.user.userId : undefined
     )
 
     const filename = `orders_${Date.now()}.xlsx`
