@@ -19,7 +19,8 @@ jobs:
     name: Build and deploy
     runs-on:
       - self-hosted
-      - candy-cal-be-production
+      - Linux
+      - X64
 
     timeout-minutes: 20
 
