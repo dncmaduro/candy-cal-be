@@ -1,9 +1,15 @@
-version: "3.8"
 services:
-  nestjs-app:
-    build: .
-    ports:
-      - "3333:3333"
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: candy-cal-be
+
+    restart: unless-stopped
+
     env_file:
-      - .env
-    restart: always
+      - /opt/candy-cal-be/.env
+
+    ports:
+      - "127.0.0.1:3333:3333"
