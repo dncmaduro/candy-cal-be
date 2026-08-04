@@ -6,7 +6,7 @@
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "build": "tsc",
+    "build": "nest build",
     "test:range-stats-orders": "npm run build && node scripts/test-range-stats-order-split.js",
     "test:shopee-delete-api": "node scripts/test-shopee-delete-api.js",
     "start:prod": "node dist/main"
@@ -21,6 +21,7 @@
     "@nestjs/platform-express": "^11.0.12",
     "@nestjs/platform-socket.io": "^11.1.3",
     "@nestjs/schedule": "^6.0.0",
+    "@nestjs/swagger": "^11.4.6",
     "@nestjs/websockets": "^11.1.3",
     "axios": "^1.12.2",
     "body-parser": "^1.20.3",
