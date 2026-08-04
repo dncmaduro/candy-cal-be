@@ -10,6 +10,17 @@ NestJS + Mongoose backend cho hệ thống quản lý đơn hàng, kho, doanh th
 - Logging nội bộ: Module `systemlogs` chuẩn hoá type/action/entity/result
 - Exception Handling: Global `AllExceptionsFilter` (hiện chỉ log lỗi không phải HttpException)
 - Realtime: `NotificationsGateway` (WebSocket) (nếu đã khai báo trong notifications module)
+- API docs: Swagger/OpenAPI (tự động quét tất cả REST controller)
+
+## Swagger / OpenAPI
+
+Sau khi khởi động ứng dụng, tài liệu API có tại:
+
+- Swagger UI: `GET /api/v1/docs`
+- OpenAPI JSON: `GET /api/v1/docs/openapi.json`
+- OpenAPI YAML: `GET /api/v1/docs/openapi.yaml`
+
+Swagger tự động liệt kê toàn bộ REST endpoint đã đăng ký trong các module và nhóm theo controller. Với API yêu cầu xác thực, nhấn **Authorize** và dán access token JWT (không thêm tiền tố `Bearer`). Các endpoint công khai vẫn hoạt động nếu request có kèm Authorization header. WebSocket gateway không thuộc chuẩn OpenAPI nên không xuất hiện trong Swagger.
 
 ## Các Domain Chính
 
