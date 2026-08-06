@@ -76,6 +76,120 @@ export class SalesItemsController {
     return result
   }
 
+  @Roles("admin", "sales-cs")
+  @Post("inventory/upload")
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } })
+  )
+  async uploadInventory(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req
+  ): Promise<{
+    success: true
+    imported: number
+    skipped: number
+    uploadBatchId: string
+    warnings?: string[]
+    totalWarnings?: number
+  }> {
+    const result = await this.salesItemsService.uploadInventoryFile(
+      file,
+      req.user.userId
+    )
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesitems",
+        action: "inventory_import",
+        entity: "salesinventory",
+        result: "success",
+        meta: {
+          fileSize: file?.size,
+          imported: result.imported,
+          uploadBatchId: result.uploadBatchId
+        }
+      },
+      req.user.userId
+    )
+    return result
+  }
+
+  @Roles("admin", "sales-cs", "facebook-ads-emp")
+  @Get("inventory/template")
+  @HttpCode(HttpStatus.OK)
+  async downloadInventoryTemplate(@Res() res: Response): Promise<void> {
+    const buffer =
+      await this.salesItemsService.generateInventoryUploadTemplate()
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="nhapkho-template.xlsx"`
+    )
+    res.send(buffer)
+  }
+
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Get("inventory/daily-report")
+  @HttpCode(HttpStatus.OK)
+  async getDailyInventoryReport(@Query("date") date?: string) {
+    return this.salesItemsService.getDailyInventoryReport(
+      date ? new Date(date) : new Date()
+    )
+  }
+
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Get("inventory/daily-report/xlsx")
+  @HttpCode(HttpStatus.OK)
+  async downloadDailyInventoryReport(
+    @Query("date") date: string | undefined,
+    @Res() res: Response
+  ): Promise<void> {
+    const targetDate = date ? new Date(date) : new Date()
+    const buffer =
+      await this.salesItemsService.generateDailyInventoryReportXlsx(targetDate)
+    const dateLabel = targetDate.toISOString().slice(0, 10)
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="bao-cao-ton-kho-${dateLabel}.xlsx"`
+    )
+    res.send(buffer)
+  }
+
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Get("inventory/daily-reports")
+  @HttpCode(HttpStatus.OK)
+  async getInventoryDailyReportHistory(
+    @Query("month") month: string,
+    @Query("year") year: string
+  ) {
+    return this.salesItemsService.getInventoryDailyReportHistory(
+      Number(month),
+      Number(year)
+    )
+  }
+
+  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Get("inventory/history")
+  @HttpCode(HttpStatus.OK)
+  async getInventoryHistory(
+    @Query("code") code?: string,
+    @Query("page") page: string = "1",
+    @Query("limit") limit: string = "50"
+  ) {
+    return this.salesItemsService.getInventoryHistory(
+      code,
+      Number(page),
+      Number(limit)
+    )
+  }
+
   @Roles("admin", "sales-cs", "facebook-ads-emp")
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
