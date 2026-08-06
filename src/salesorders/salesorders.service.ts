@@ -14,6 +14,8 @@ import {
 import { SalesItem } from "../database/mongoose/schemas/SalesItem"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import { Province } from "../database/mongoose/schemas/Province"
+import { SalesInventoryLog } from "../database/mongoose/schemas/SalesInventoryLog"
+import { SalesInventoryPeriod } from "../database/mongoose/schemas/SalesInventoryPeriod"
 
 interface XlsxSalesOrderData {
   "SĐT Khách hàng"?: string
@@ -55,8 +57,80 @@ export class SalesOrdersService {
     private readonly salesFunnelModel: Model<SalesFunnel>,
     @InjectModel("provinces")
     private readonly provinceModel: Model<Province>,
+    @InjectModel("salesinventorylogs")
+    private readonly salesInventoryLogModel: Model<SalesInventoryLog>,
+    @InjectModel("salesinventoryperiods")
+    private readonly salesInventoryPeriodModel: Model<SalesInventoryPeriod>,
     private readonly salesLeadsService: SalesLeadsService
   ) {}
+
+  private getOrderItemQuantities(order: SalesOrder): Map<string, number> {
+    const quantities = new Map<string, number>()
+    order.items.forEach((item) => {
+      if (!item.code || !Number.isFinite(item.quantity) || item.quantity <= 0) {
+        throw new HttpException(
+          `Số lượng sản phẩm "${item.code}" không hợp lệ`,
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      quantities.set(
+        item.code,
+        (quantities.get(item.code) || 0) + item.quantity
+      )
+    })
+    return quantities
+  }
+
+  private async exportInventoryForOfficialOrder(
+    order: SalesOrder,
+    now: Date,
+    session: any
+  ): Promise<void> {
+    const quantities = this.getOrderItemQuantities(order)
+    for (const [code, quantity] of quantities) {
+      const item = await this.salesItemModel.findOneAndUpdate(
+        { code, inventoryQuantity: { $gte: quantity } },
+        {
+          $inc: {
+            inventoryQuantity: -quantity,
+            currentPeriodExportedQuantity: quantity
+          },
+          $set: { inventoryUpdatedAt: now, updatedAt: now }
+        },
+        { new: true, session }
+      )
+      if (!item) {
+        throw new HttpException(
+          `Không đủ tồn kho cho mã hàng "${code}" để chuyển đơn sang chính thức`,
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      await this.salesInventoryPeriodModel.findOneAndUpdate(
+        { code },
+        {
+          $inc: { exportedQuantity: quantity, currentQuantity: -quantity },
+          $set: { updatedAt: now }
+        },
+        { new: true, session, sort: { importedAt: -1, createdAt: -1 } }
+      )
+      await this.salesInventoryLogModel.create(
+        [
+          {
+            code,
+            itemId: item._id,
+            type: "export",
+            quantity,
+            quantityBefore: item.inventoryQuantity + quantity,
+            quantityAfter: item.inventoryQuantity,
+            warehouse: order.storage,
+            salesOrderId: order._id,
+            date: now
+          }
+        ],
+        { session }
+      )
+    }
+  }
 
   private startPerfSession(
     method: string,
@@ -687,6 +761,12 @@ export class SalesOrdersService {
       if (!order) {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
+      if (order.status === "official") {
+        throw new HttpException(
+          "Không thể sửa mặt hàng của đơn hàng chính thức",
+          HttpStatus.BAD_REQUEST
+        )
+      }
 
       // Get phone number from channel
       const funnel = await this.measurePerfStep(
@@ -821,10 +901,16 @@ export class SalesOrdersService {
   async deleteOrder(orderId: string): Promise<void> {
     try {
       const order = await this.salesOrderModel.findById(orderId)
-      const funnel = await this.salesFunnelModel.findById(order.salesFunnelId)
       if (!order) {
         throw new HttpException("Order not found", HttpStatus.NOT_FOUND)
       }
+      if (order.status === "official") {
+        throw new HttpException(
+          "Không thể xóa đơn hàng chính thức vì đã xuất kho",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      const funnel = await this.salesFunnelModel.findById(order.salesFunnelId)
 
       const salesFunnelId = order.salesFunnelId
 
@@ -837,7 +923,7 @@ export class SalesOrdersService {
       })
 
       // If no orders left, set hasBuyed back to false
-      if (remainingCount === 0 && !funnel.fromSystem) {
+      if (remainingCount === 0 && funnel && !funnel.fromSystem) {
         await this.resetFunnelBuyStatus(salesFunnelId.toString())
       }
     } catch (error) {
@@ -1325,7 +1411,10 @@ export class SalesOrdersService {
     }
   }
 
-  async getOrderById(orderId: string, salesCsId?: string): Promise<SalesOrder | null> {
+  async getOrderById(
+    orderId: string,
+    salesCsId?: string
+  ): Promise<SalesOrder | null> {
     const perf = this.startPerfSession("getOrderById", { orderId, salesCsId })
 
     try {
@@ -2720,27 +2809,41 @@ export class SalesOrdersService {
           )
         }
 
-        order.shippingCode = payload.shippingCode
-        order.shippingType = payload.shippingType
-        order.tax = payload.tax
-        order.shippingCost = payload.shippingCost
-
-        if (payload.receivedDate !== undefined) {
-          order.receivedDate = payload.receivedDate
+        const now = new Date()
+        const session = await this.salesOrderModel.db.startSession()
+        try {
+          await session.withTransaction(async () => {
+            await this.exportInventoryForOfficialOrder(order, now, session)
+            order.shippingCode = payload.shippingCode
+            order.shippingType = payload.shippingType
+            order.tax = payload.tax
+            order.shippingCost = payload.shippingCost
+            if (payload.receivedDate !== undefined) {
+              order.receivedDate = payload.receivedDate
+            }
+            // Keep the current behavior: official orders get re-dated to the transition day.
+            order.date = new Date(
+              new Date().setUTCHours(0, 0, 0, 0) - 7 * 3600 * 1000
+            )
+            order.status = nextStatus
+            order.updatedAt = now
+            await order.save({ session })
+          })
+        } finally {
+          await session.endSession()
         }
-
-        // Keep the current behavior: official orders get re-dated to the transition day.
-        order.date = new Date(
-          new Date().setUTCHours(0, 0, 0, 0) - 7 * 3600 * 1000
-        )
       } else if (payload.receivedDate !== undefined) {
         order.receivedDate = payload.receivedDate
       }
 
-      order.status = nextStatus
-      order.updatedAt = new Date()
-
-      const savedOrder = await order.save()
+      let savedOrder: SalesOrder
+      if (nextStatus === "official") {
+        savedOrder = order
+      } else {
+        order.status = nextStatus
+        order.updatedAt = new Date()
+        savedOrder = await order.save()
+      }
       if (nextStatus === "official") {
         await this.salesLeadsService.handleOfficialOrder(savedOrder)
       }

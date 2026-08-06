@@ -1,6 +1,8 @@
 import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
+import { endOfDay, startOfDay } from "date-fns"
+import { fromZonedTime, toZonedTime } from "date-fns-tz"
 import {
   SalesItem,
   SalesItemFactory,
@@ -8,7 +10,13 @@ import {
 } from "../database/mongoose/schemas/SalesItem"
 import { SalesOrder } from "../database/mongoose/schemas/SalesOrder"
 import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
+import {
+  SalesInventoryLog,
+  SalesInventoryLogType
+} from "../database/mongoose/schemas/SalesInventoryLog"
+import { SalesInventoryPeriod } from "../database/mongoose/schemas/SalesInventoryPeriod"
 import * as XLSX from "xlsx"
+import * as ExcelJS from "exceljs"
 
 interface XlsxSalesItemData {
   Mã?: string
@@ -21,6 +29,15 @@ interface XlsxSalesItemData {
   "Cân nặng"?: number
 }
 
+type InventoryUploadRow = {
+  code: string
+  quantity: number
+  warehouse?: string
+  rowNumber: number
+}
+
+const INVENTORY_TIME_ZONE = "Asia/Ho_Chi_Minh"
+
 @Injectable()
 export class SalesItemsService {
   constructor(
@@ -29,8 +46,553 @@ export class SalesItemsService {
     @InjectModel("salesorders")
     private readonly salesOrderModel: Model<SalesOrder>,
     @InjectModel("salesfunnel")
-    private readonly salesFunnelModel: Model<SalesFunnel>
+    private readonly salesFunnelModel: Model<SalesFunnel>,
+    @InjectModel("salesinventorylogs")
+    private readonly salesInventoryLogModel: Model<SalesInventoryLog>,
+    @InjectModel("salesinventoryperiods")
+    private readonly salesInventoryPeriodModel: Model<SalesInventoryPeriod>
   ) {}
+
+  private normalizeSpreadsheetHeader(value: string): string {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .toLowerCase()
+  }
+
+  private getVietnamDayRange(date: Date): { start: Date; end: Date } {
+    const zonedDate = toZonedTime(date, INVENTORY_TIME_ZONE)
+    return {
+      start: fromZonedTime(startOfDay(zonedDate), INVENTORY_TIME_ZONE),
+      end: fromZonedTime(endOfDay(zonedDate), INVENTORY_TIME_ZONE)
+    }
+  }
+
+  private toQuantity(value: unknown): number {
+    if (typeof value === "number") return value
+    if (typeof value !== "string") return Number(value)
+    return Number(value.replace(/[\s,]/g, ""))
+  }
+
+  private parseInventoryUploadRows(file: Express.Multer.File): {
+    rows: InventoryUploadRow[]
+    warnings: string[]
+  } {
+    const workbook = XLSX.read(file.buffer, { type: "buffer" })
+    const sheetName = workbook.SheetNames[0]
+    const sheet = workbook.Sheets[sheetName]
+    const headerRow = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      blankrows: false
+    })[0]
+    const headers = (headerRow || [])
+      .filter((header) => header !== undefined && header !== null)
+      .map((header) => String(header).trim())
+      .filter(Boolean)
+
+    if (!headers.length) {
+      throw new HttpException(
+        "File trống hoặc không hợp lệ",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const nonUppercaseHeaders = headers.filter(
+      (header) => header !== header.toLocaleUpperCase("vi-VN")
+    )
+    if (nonUppercaseHeaders.length) {
+      throw new HttpException(
+        `Header file tồn kho phải viết HOA. Header không hợp lệ: ${nonUppercaseHeaders.join(", ")}`,
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const normalizedHeaders = new Set(
+      headers.map((header) => this.normalizeSpreadsheetHeader(header))
+    )
+    if (
+      !normalizedHeaders.has("mahang") ||
+      (!normalizedHeaders.has("soluongnhap") &&
+        !normalizedHeaders.has("nhaptrongky") &&
+        !normalizedHeaders.has("xuattrongky"))
+    ) {
+      throw new HttpException(
+        "File nhập kho phải có header MÃ HÀNG và cột số lượng theo template (viết HOA)",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const data = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: undefined
+    })
+
+    if (!data.length) {
+      throw new HttpException(
+        "File trống hoặc không hợp lệ",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const rows: InventoryUploadRow[] = []
+    const warnings: string[] = []
+
+    data.forEach((rawRow, index) => {
+      const rowNumber = index + 2
+      const row = Object.entries(rawRow).reduce<Record<string, unknown>>(
+        (result, [key, value]) => {
+          result[this.normalizeSpreadsheetHeader(key)] = value
+          return result
+        },
+        {}
+      )
+      const codeValue = row.mahang ?? row.masanpham ?? row.ma
+      const importValue = row.soluongnhap ?? row.nhaptrongky ?? row.xuattrongky
+      const warehouseValue = row.kho
+
+      if (codeValue === undefined && importValue === undefined) return
+
+      const code = codeValue?.toString().trim()
+      const quantity = this.toQuantity(importValue)
+      if (!code) {
+        warnings.push(`Dòng ${rowNumber}: Thiếu MÃ HÀNG`)
+        return
+      }
+      if (!Number.isFinite(quantity) || quantity < 0) {
+        warnings.push(`Dòng ${rowNumber}: SỐ LƯỢNG NHẬP không hợp lệ`)
+        return
+      }
+      if (quantity === 0) return
+
+      rows.push({
+        code,
+        quantity,
+        warehouse: warehouseValue?.toString().trim() || undefined,
+        rowNumber
+      })
+    })
+
+    return { rows, warnings }
+  }
+
+  async generateInventoryUploadTemplate(): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet("Sheet1")
+    const headers = [
+      "MÃ HÀNG",
+      "TÊN HÀNG",
+      "ĐVT",
+      "XUẤT \nTRONG KỲ",
+      "KHO",
+      "KÊNH",
+      "GHI CHÚ"
+    ]
+    const widths = [27.71, 16.57, 18, 18.43, 27.57, 9.43, 8.71]
+
+    worksheet.columns = widths.map((width) => ({
+      width,
+      style: {
+        font: { name: "Times New Roman", size: 10 },
+        alignment: { vertical: "middle", wrapText: true }
+      }
+    }))
+    worksheet.addRow(headers)
+
+    headers.forEach((_, index) => {
+      const cell = worksheet.getRow(1).getCell(index + 1)
+      cell.font = {
+        name: "Times New Roman",
+        size: 14,
+        bold: true,
+        color: { argb: "FF000000" }
+      }
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF8EA9DB" },
+        bgColor: { argb: "FF8EA9DB" }
+      }
+      cell.alignment = {
+        horizontal: "center",
+        vertical: "middle",
+        wrapText: true
+      }
+      cell.border = {
+        left: {
+          style: "medium",
+          color: { argb: index === 0 ? "FF000000" : "FFCCCCCC" }
+        },
+        right: { style: "medium", color: { argb: "FF000000" } },
+        top: { style: "medium", color: { argb: "FFCCCCCC" } },
+        bottom: { style: "medium", color: { argb: "FF000000" } }
+      }
+    })
+
+    // Keep the same pre-sized input area as nhapkho-template.xlsx.
+    worksheet.getRow(2998).height = 15.75
+    worksheet.getCell("G2998").font = { name: "Times New Roman", size: 10 }
+
+    const output = await workbook.xlsx.writeBuffer()
+    return Buffer.from(output)
+  }
+
+  async uploadInventoryFile(
+    file: Express.Multer.File,
+    uploadedBy?: string
+  ): Promise<{
+    success: true
+    imported: number
+    skipped: number
+    uploadBatchId: string
+    warnings?: string[]
+    totalWarnings?: number
+  }> {
+    if (!file) {
+      throw new HttpException("Thiếu file tồn kho", HttpStatus.BAD_REQUEST)
+    }
+
+    const { rows, warnings } = this.parseInventoryUploadRows(file)
+    if (!rows.length) {
+      throw new HttpException(
+        "File không có dòng NHẬP TRONG KỲ lớn hơn 0 hợp lệ",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const items = await this.salesItemModel
+      .find({ code: { $in: [...new Set(rows.map((row) => row.code))] } })
+      .select("_id code")
+      .lean()
+    const itemByCode = new Map(items.map((item) => [item.code, item]))
+    const acceptedRows = rows
+
+    const uploadBatchId = new Types.ObjectId().toHexString()
+    const createdBy =
+      uploadedBy && Types.ObjectId.isValid(uploadedBy)
+        ? new Types.ObjectId(uploadedBy)
+        : undefined
+    const now = new Date()
+    const session = await this.salesItemModel.db.startSession()
+
+    try {
+      await session.withTransaction(async () => {
+        for (const row of acceptedRows) {
+          let item = itemByCode.get(row.code)
+          if (!item) {
+            const createdItem = await this.salesItemModel.create(
+              [
+                {
+                  code: row.code,
+                  name: { vn: row.code },
+                  price: 0,
+                  inventoryQuantity: 0,
+                  createdAt: now,
+                  updatedAt: now
+                }
+              ],
+              { session }
+            )
+            item = createdItem[0]
+            itemByCode.set(row.code, item)
+          }
+          const updatedItem = await this.salesItemModel.findByIdAndUpdate(
+            item._id,
+            {
+              $inc: { inventoryQuantity: row.quantity },
+              $set: {
+                previousPeriodQuantity: 0,
+                lastImportedQuantity: row.quantity,
+                currentPeriodExportedQuantity: 0,
+                inventoryUpdatedAt: now,
+                lastImportedAt: now,
+                updatedAt: now
+              }
+            },
+            { new: true, session }
+          )
+          if (!updatedItem) {
+            throw new HttpException(
+              `Mã sản phẩm "${row.code}" không tồn tại`,
+              HttpStatus.NOT_FOUND
+            )
+          }
+
+          const previousQuantity = updatedItem.inventoryQuantity - row.quantity
+          updatedItem.previousPeriodQuantity = previousQuantity
+          await updatedItem.save({ session })
+
+          await this.salesInventoryPeriodModel.create(
+            [
+              {
+                itemId: updatedItem._id,
+                code: row.code,
+                previousQuantity,
+                importedQuantity: row.quantity,
+                exportedQuantity: 0,
+                currentQuantity: updatedItem.inventoryQuantity,
+                warehouse: row.warehouse,
+                uploadBatchId,
+                createdBy,
+                importedAt: now,
+                createdAt: now,
+                updatedAt: now
+              }
+            ],
+            { session }
+          )
+
+          await this.salesInventoryLogModel.create(
+            [
+              {
+                code: row.code,
+                itemId: updatedItem._id,
+                type: "import" as SalesInventoryLogType,
+                quantity: row.quantity,
+                quantityBefore: previousQuantity,
+                quantityAfter: updatedItem.inventoryQuantity,
+                warehouse: row.warehouse,
+                uploadBatchId,
+                createdBy,
+                date: now
+              }
+            ],
+            { session }
+          )
+        }
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    return {
+      success: true,
+      imported: acceptedRows.length,
+      skipped: warnings.length,
+      uploadBatchId,
+      ...(warnings.length > 0 && {
+        warnings: warnings.slice(0, 20),
+        totalWarnings: warnings.length
+      })
+    }
+  }
+
+  async getDailyInventoryReport(date: Date): Promise<{
+    date: Date
+    data: Array<{
+      code: string
+      name: string
+      openingQuantity: number
+      importedQuantity: number
+      exportedQuantity: number
+      closingQuantity: number
+    }>
+  }> {
+    const { start, end } = this.getVietnamDayRange(date)
+    const [items, daySummaries, latestBalances] = await Promise.all([
+      this.salesItemModel
+        .find()
+        .select("code name.vn inventoryQuantity")
+        .sort({ code: 1 })
+        .lean(),
+      this.salesInventoryLogModel.aggregate<{
+        _id: string
+        openingQuantity: number
+        closingQuantity: number
+        importedQuantity: number
+        exportedQuantity: number
+      }>([
+        { $match: { date: { $gte: start, $lte: end } } },
+        { $sort: { date: 1, createdAt: 1 } },
+        {
+          $group: {
+            _id: "$code",
+            openingQuantity: { $first: "$quantityBefore" },
+            closingQuantity: { $last: "$quantityAfter" },
+            importedQuantity: {
+              $sum: { $cond: [{ $eq: ["$type", "import"] }, "$quantity", 0] }
+            },
+            exportedQuantity: {
+              $sum: { $cond: [{ $eq: ["$type", "export"] }, "$quantity", 0] }
+            }
+          }
+        }
+      ]),
+      this.salesInventoryLogModel.aggregate<{
+        _id: string
+        closingQuantity: number
+      }>([
+        { $match: { date: { $lte: end } } },
+        { $sort: { date: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: "$code",
+            closingQuantity: { $first: "$quantityAfter" }
+          }
+        }
+      ])
+    ])
+    const daySummaryByCode = new Map(
+      daySummaries.map((summary) => [summary._id, summary])
+    )
+    const latestBalanceByCode = new Map(
+      latestBalances.map((balance) => [balance._id, balance.closingQuantity])
+    )
+
+    return {
+      date: start,
+      data: items.map((item) => {
+        const code = item.code || ""
+        const daySummary = daySummaryByCode.get(code)
+        const latestBalance = latestBalanceByCode.get(code)
+        return {
+          code,
+          name: item.name?.vn || "",
+          openingQuantity:
+            daySummary?.openingQuantity ??
+            latestBalance ??
+            item.inventoryQuantity ??
+            0,
+          importedQuantity: daySummary?.importedQuantity ?? 0,
+          exportedQuantity: daySummary?.exportedQuantity ?? 0,
+          closingQuantity:
+            daySummary?.closingQuantity ??
+            latestBalance ??
+            item.inventoryQuantity ??
+            0
+        }
+      })
+    }
+  }
+
+  async generateDailyInventoryReportXlsx(date: Date): Promise<Buffer> {
+    const report = await this.getDailyInventoryReport(date)
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet("Báo cáo tồn kho")
+    worksheet.addRow([
+      "MÃ HÀNG",
+      "TÊN HÀNG",
+      "TỒN KỲ TRƯỚC",
+      "NHẬP",
+      "XUẤT",
+      "TỒN"
+    ])
+    report.data.forEach((item) => {
+      worksheet.addRow([
+        item.code,
+        item.name,
+        item.openingQuantity,
+        item.importedQuantity,
+        item.exportedQuantity,
+        item.closingQuantity
+      ])
+    })
+    worksheet.getRow(1).font = { bold: true, name: "Times New Roman" }
+    worksheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF8EA9DB" }
+    }
+    worksheet.columns = [
+      { width: 22 },
+      { width: 36 },
+      { width: 18 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 }
+    ]
+    worksheet.eachRow((row) => {
+      row.alignment = { vertical: "middle" }
+      row.font = { ...row.font, name: "Times New Roman" }
+    })
+    const output = await workbook.xlsx.writeBuffer()
+    return Buffer.from(output)
+  }
+
+  async getInventoryDailyReportHistory(
+    month: number,
+    year: number
+  ): Promise<{
+    data: Array<{ date: Date; importedQuantity: number; exportedQuantity: number }>
+    total: number
+  }> {
+    if (month < 1 || month > 12 || !Number.isInteger(year)) {
+      throw new HttpException("Tháng hoặc năm không hợp lệ", HttpStatus.BAD_REQUEST)
+    }
+
+    const firstDay = fromZonedTime(
+      `${year}-${String(month).padStart(2, "0")}-01T12:00:00.000`,
+      INVENTORY_TIME_ZONE
+    )
+    const lastDay = fromZonedTime(
+      `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}T12:00:00.000`,
+      INVENTORY_TIME_ZONE
+    )
+    const { start } = this.getVietnamDayRange(firstDay)
+    const { end } = this.getVietnamDayRange(lastDay)
+    const summary = await this.salesInventoryLogModel.aggregate<{
+      _id: string
+      importedQuantity: number
+      exportedQuantity: number
+    }>([
+      { $match: { date: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$date",
+              timezone: INVENTORY_TIME_ZONE
+            }
+          },
+          importedQuantity: {
+            $sum: { $cond: [{ $eq: ["$type", "import"] }, "$quantity", 0] }
+          },
+          exportedQuantity: {
+            $sum: { $cond: [{ $eq: ["$type", "export"] }, "$quantity", 0] }
+          }
+        }
+      }
+    ])
+    const summaryByDate = new Map(summary.map((item) => [item._id, item]))
+    const today = toZonedTime(new Date(), INVENTORY_TIME_ZONE)
+    const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month
+    const maxDay = isCurrentMonth
+      ? today.getDate()
+      : new Date(year, month, 0).getDate()
+    const data = Array.from({ length: maxDay }, (_, index) => {
+      const day = index + 1
+      const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+      const totals = summaryByDate.get(dateKey)
+      return {
+        date: fromZonedTime(`${dateKey}T12:00:00.000`, INVENTORY_TIME_ZONE),
+        importedQuantity: totals?.importedQuantity || 0,
+        exportedQuantity: totals?.exportedQuantity || 0
+      }
+    }).reverse()
+
+    return { data, total: data.length }
+  }
+
+  async getInventoryHistory(
+    code?: string,
+    page: number = 1,
+    limit: number = 50
+  ): Promise<{ data: SalesInventoryLog[]; total: number }> {
+    const filter = code ? { code } : {}
+    const skip = Math.max(page - 1, 0) * Math.min(Math.max(limit, 1), 200)
+    const safeLimit = Math.min(Math.max(limit, 1), 200)
+    const [data, total] = await Promise.all([
+      this.salesInventoryLogModel
+        .find(filter)
+        .sort({ date: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .lean(),
+      this.salesInventoryLogModel.countDocuments(filter)
+    ])
+    return { data: data as SalesInventoryLog[], total }
+  }
 
   private mapFactory(factoryValue: string): SalesItemFactory {
     const normalizedValue = factoryValue.toLowerCase().trim()
@@ -348,7 +910,9 @@ export class SalesItemsService {
   ): Promise<Buffer> {
     try {
       const filter = this.buildSearchFilter(searchText, factory, source)
-      const items = await this.salesItemModel.find(filter).sort({ createdAt: -1 })
+      const items = await this.salesItemModel
+        .find(filter)
+        .sort({ createdAt: -1 })
 
       const workbook = XLSX.utils.book_new()
       const headers = [

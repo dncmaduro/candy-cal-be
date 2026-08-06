@@ -8,6 +8,8 @@ import { SalesFunnelSchema } from "../database/mongoose/schemas/SalesFunnel"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 import { SalesChannelSchema } from "../database/mongoose/schemas/SalesChannel"
 import { ProvinceSchema } from "../database/mongoose/schemas/Province"
+import { SalesInventoryLogSchema } from "../database/mongoose/schemas/SalesInventoryLog"
+import { SalesInventoryPeriodSchema } from "../database/mongoose/schemas/SalesInventoryPeriod"
 import { SalesLeadsModule } from "../salesleads/salesleads.module"
 
 @Module({
@@ -17,7 +19,9 @@ import { SalesLeadsModule } from "../salesleads/salesleads.module"
       { name: "salesitems", schema: SalesItemSchema },
       { name: "salesfunnel", schema: SalesFunnelSchema },
       { name: "saleschannels", schema: SalesChannelSchema },
-      { name: "provinces", schema: ProvinceSchema }
+      { name: "provinces", schema: ProvinceSchema },
+      { name: "salesinventorylogs", schema: SalesInventoryLogSchema },
+      { name: "salesinventoryperiods", schema: SalesInventoryPeriodSchema }
     ]),
     SystemLogsModule,
     SalesLeadsModule
