@@ -21,7 +21,10 @@ import { FileInterceptor } from "@nestjs/platform-express"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { RolesGuard } from "../roles/roles.guard"
 import { Roles } from "../roles/roles.decorator"
-import { SalesOrdersService } from "./salesorders.service"
+import {
+  InventoryExportHandling,
+  SalesOrdersService
+} from "./salesorders.service"
 import {
   SalesOrder,
   SalesOrderDiscountType,
@@ -529,6 +532,7 @@ export class SalesOrdersController {
       tax?: number
       shippingCost?: number
       receivedDate?: string
+      inventoryHandling?: InventoryExportHandling
     },
     @Req() req
   ): Promise<SalesOrder> {
@@ -540,7 +544,8 @@ export class SalesOrdersController {
         shippingType: body.shippingType,
         tax: body.tax,
         shippingCost: body.shippingCost,
-        receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined
+        receivedDate: body.receivedDate ? new Date(body.receivedDate) : undefined,
+        inventoryHandling: body.inventoryHandling
       }
     )
     void this.systemLogsService.createSystemLog(

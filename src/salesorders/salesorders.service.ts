@@ -44,6 +44,11 @@ type SalesOrderPerfSession = {
   }>
 }
 
+export type InventoryExportHandling =
+  | "require_full_stock"
+  | "export_available_items"
+  | "skip_inventory_export"
+
 @Injectable()
 export class SalesOrdersService {
   private readonly logger = new Logger(SalesOrdersService.name)
@@ -84,7 +89,8 @@ export class SalesOrdersService {
   private async exportInventoryForOfficialOrder(
     order: SalesOrder,
     now: Date,
-    session: any
+    session: any,
+    handling: Exclude<InventoryExportHandling, "skip_inventory_export">
   ): Promise<void> {
     const quantities = this.getOrderItemQuantities(order)
     for (const [code, quantity] of quantities) {
@@ -100,6 +106,7 @@ export class SalesOrdersService {
         { new: true, session }
       )
       if (!item) {
+        if (handling === "export_available_items") continue
         throw new HttpException(
           `Không đủ tồn kho cho mã hàng "${code}" để chuyển đơn sang chính thức`,
           HttpStatus.BAD_REQUEST
@@ -2759,6 +2766,7 @@ export class SalesOrdersService {
       tax?: number
       shippingCost?: number
       receivedDate?: Date
+      inventoryHandling?: InventoryExportHandling
     } = {}
   ): Promise<SalesOrder> {
     try {
@@ -2795,6 +2803,20 @@ export class SalesOrdersService {
       }
 
       if (nextStatus === "official") {
+        const inventoryHandling =
+          payload.inventoryHandling || "require_full_stock"
+        if (
+          ![
+            "require_full_stock",
+            "export_available_items",
+            "skip_inventory_export"
+          ].includes(inventoryHandling)
+        ) {
+          throw new HttpException(
+            "Phương án xuất kho không hợp lệ",
+            HttpStatus.BAD_REQUEST
+          )
+        }
         if (!payload.shippingCode || !payload.shippingType) {
           throw new HttpException(
             "Thiếu thông tin vận chuyển để chuyển sang chính thức",
@@ -2813,7 +2835,14 @@ export class SalesOrdersService {
         const session = await this.salesOrderModel.db.startSession()
         try {
           await session.withTransaction(async () => {
-            await this.exportInventoryForOfficialOrder(order, now, session)
+            if (inventoryHandling !== "skip_inventory_export") {
+              await this.exportInventoryForOfficialOrder(
+                order,
+                now,
+                session,
+                inventoryHandling
+              )
+            }
             order.shippingCode = payload.shippingCode
             order.shippingType = payload.shippingType
             order.tax = payload.tax
