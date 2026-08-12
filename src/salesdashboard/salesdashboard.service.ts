@@ -56,6 +56,7 @@ export interface RevenueStatsResponse {
   totalRevenue: number
   totalRevenueBeforeDiscount: number
   totalAdsCost: number
+  newLeads: number
   totalOrders: number
   totalQuantity: number
   totalTax: number
@@ -78,20 +79,20 @@ export interface TopCustomerByRevenue {
 }
 
 export interface MetricsResponse {
-  cac: number // Customer Acquisition Cost
-  crr: number // Customer Retention Rate
+  cac: number
+  crr: number
   churnRate: number
   conversionRate: number
   avgDealSize: number
-  salesCycleLength: number // in days
+  salesCycleLength: number
   stageTransitions: {
     lead: number
     contacted: number
     customer: number
     closed: number
   }
-  monthlyGoal: number // KPI for the month
-  goalCompletionPercentage: number // % of KPI completed
+  monthlyGoal: number
+  goalCompletionPercentage: number
 }
 
 @Injectable()
@@ -321,7 +322,6 @@ export class SalesDashboardService {
       const { start } = this.getUtcDayRange(startDate)
       const { end } = this.getUtcDayRange(endDate)
 
-      // Get all orders in date range (only official status)
       let ordersQuery = await this.salesOrderModel
         .find({
           date: { $gte: start, $lte: end },
@@ -336,31 +336,35 @@ export class SalesDashboardService {
         })
         .lean()
 
-      // Filter by channel if provided
       let orders = ordersQuery
       if (channel) {
         orders = ordersQuery.filter((order) => {
           const funnel = order.salesFunnelId as any
+
           if (funnel && funnel.channel) {
             const channelId = funnel.channel._id
               ? funnel.channel._id.toString()
               : funnel.channel.toString()
+
             return channelId === channel
           }
+
           return false
         })
       }
 
-      // Calculate total revenue and total orders
       const totalRevenueBeforeDiscount = orders.reduce(
         (sum, order) => sum + order.total,
         0
       )
+
       const totalRevenue = orders.reduce((sum, order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
+
         return sum + order.total - totalDiscount
       }, 0)
+
       const legacyAdsCostResult = await this.salesDailyReportModel.aggregate<{
         _id: Date
         totalAdsCost: number
@@ -378,53 +382,70 @@ export class SalesDashboardService {
           }
         }
       ])
+
       const salesDailyAds = await this.salesDailyAdsModel
-        .find({ date: { $gte: start, $lte: end } })
-        .select("date adsCost")
+        .find({
+          date: {
+            $gte: start,
+            $lte: end
+          }
+        })
+        .select("date adsCost newLeads")
         .lean()
 
-      // A new company-wide entry takes precedence for its date. Legacy reports
-      // are only used for dates that have not been migrated to salesdailyads.
-      const adsCostByDate = new Map<number, number>()
+      const adsByDate = new Map<
+        number,
+        {
+          adsCost: number
+          newLeads: number
+        }
+      >()
+
       for (const legacyAdsCost of legacyAdsCostResult) {
-        adsCostByDate.set(
-          new Date(legacyAdsCost._id).getTime(),
-          Number(legacyAdsCost.totalAdsCost || 0)
-        )
+        adsByDate.set(new Date(legacyAdsCost._id).getTime(), {
+          adsCost: Number(legacyAdsCost.totalAdsCost || 0),
+          newLeads: 0
+        })
       }
+
       for (const salesDailyAd of salesDailyAds) {
-        adsCostByDate.set(
-          new Date(salesDailyAd.date).getTime(),
-          Number(salesDailyAd.adsCost || 0)
-        )
+        adsByDate.set(new Date(salesDailyAd.date).getTime(), {
+          adsCost: Number(salesDailyAd.adsCost || 0),
+          newLeads: Number(salesDailyAd.newLeads || 0)
+        })
       }
-      const totalAdsCost = Array.from(adsCostByDate.values()).reduce(
-        (sum, adsCost) => sum + adsCost,
+
+      const totalAdsCost = Array.from(adsByDate.values()).reduce(
+        (sum, item) => sum + item.adsCost,
         0
       )
 
-      // Ads are intentionally not filtered by channel: the new source is a
-      // sales-wide daily figure, and the fallback preserves the old total of
-      // all channels.
+      const newLeads = Array.from(adsByDate.values()).reduce(
+        (sum, item) => sum + item.newLeads,
+        0
+      )
+
       const totalOrders = orders.length
 
-      // Calculate total quantity of all items across all orders
       const totalQuantity = orders.reduce((sum, order) => {
         const orderQuantity = order.items.reduce(
           (itemSum, item) => itemSum + item.quantity,
           0
         )
+
         return sum + orderQuantity
       }, 0)
 
-      // Calculate total tax and total shipping cost
-      const totalTax = orders.reduce((sum, order) => sum + (order.tax || 0), 0)
+      const totalTax = orders.reduce(
+        (sum, order) => sum + (order.tax || 0),
+        0
+      )
+
       const totalShippingCost = orders.reduce(
         (sum, order) => sum + (order.shippingCost || 0),
         0
       )
 
-      // Calculate revenue from new vs returning customers
       let revenueFromNewCustomers = 0
       let revenueFromReturningCustomers = 0
 
@@ -440,54 +461,64 @@ export class SalesDashboardService {
         }
       })
 
-      // Calculate items sold with revenue from item.price * item.quantity
       const itemsMap = new Map<string, RevenueByItem>()
+
       orders.forEach((order) => {
         order.items.forEach((item) => {
           const existing = itemsMap.get(item.code)
+
           if (existing) {
             existing.quantity += item.quantity
-            // Revenue is calculated from price stored in order item
             existing.revenue += item.price * item.quantity
           } else {
             itemsMap.set(item.code, {
               code: item.code,
               name: item.name,
               quantity: item.quantity,
-              // Revenue is calculated from price stored in order item
               revenue: item.price * item.quantity
             })
           }
         })
       })
 
-      // Create two separate top 10 lists
       const allItems = Array.from(itemsMap.values())
+
       const topItemsByRevenue = [...allItems]
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 10)
-        .map(({ code, name, revenue }) => ({ code, name, revenue }))
+        .map(({ code, name, revenue }) => ({
+          code,
+          name,
+          revenue
+        }))
+
       const topItemsByQuantity = [...allItems]
         .sort((a, b) => b.quantity - a.quantity)
         .slice(0, 10)
-        .map(({ code, name, quantity }) => ({ code, name, quantity }))
+        .map(({ code, name, quantity }) => ({
+          code,
+          name,
+          quantity
+        }))
 
-      // Calculate other items revenue (items not in top 10 by revenue)
       const top10RevenueCodes = new Set(
         topItemsByRevenue.map((item) => item.code)
       )
+
       const otherItemsRevenue = allItems
         .filter((item) => !top10RevenueCodes.has(item.code))
         .reduce((sum, item) => sum + item.revenue, 0)
 
-      // Calculate revenue by channel
       const channelMap = new Map<string, RevenueByChannel>()
+
       for (const order of orders) {
         const funnel = order.salesFunnelId as any
+
         if (funnel && funnel.channel) {
           const channelId = funnel.channel._id
             ? funnel.channel._id.toString()
             : funnel.channel.toString()
+
           const channelName = funnel.channel.channelName || "Unknown"
 
           const totalDiscount =
@@ -495,6 +526,7 @@ export class SalesDashboardService {
           const actualRevenue = order.total - totalDiscount
 
           const existing = channelMap.get(channelId)
+
           if (existing) {
             existing.revenue += actualRevenue
             existing.orderCount += 1
@@ -508,18 +540,21 @@ export class SalesDashboardService {
           }
         }
       }
+
       const revenueByChannel = Array.from(channelMap.values()).sort(
         (a, b) => b.revenue - a.revenue
       )
 
-      // Calculate revenue by user (with new/returning split)
       const userMap = new Map<string, RevenueByUser>()
+
       for (const order of orders) {
         const funnel = order.salesFunnelId as any
+
         if (funnel && funnel.user) {
           const userId = funnel.user._id
             ? funnel.user._id.toString()
             : funnel.user.toString()
+
           const userName = funnel.user.name || "Unknown"
 
           const totalDiscount =
@@ -527,11 +562,11 @@ export class SalesDashboardService {
           const actualRevenue = order.total - totalDiscount
 
           const existing = userMap.get(userId)
+
           if (existing) {
             existing.revenue += actualRevenue
             existing.orderCount += 1
 
-            // Update order count by customer type
             if (order.returning) {
               existing.ordersByCustomerType.returning += 1
               existing.revenueByCustomerType.returning += actualRevenue
@@ -557,6 +592,7 @@ export class SalesDashboardService {
           }
         }
       }
+
       const revenueByUser = Array.from(userMap.values()).sort(
         (a, b) => b.revenue - a.revenue
       )
@@ -565,6 +601,7 @@ export class SalesDashboardService {
         totalRevenue,
         totalRevenueBeforeDiscount,
         totalAdsCost,
+        newLeads,
         totalOrders,
         totalQuantity,
         totalTax,
@@ -579,6 +616,7 @@ export class SalesDashboardService {
       }
     } catch (error) {
       console.error("Error in getRevenueStats:", error)
+
       throw new HttpException(
         "Lỗi khi lấy thống kê doanh thu",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -595,7 +633,6 @@ export class SalesDashboardService {
       const { start: startOfMonth, end: endOfMonth } =
         this.getUtcMonthRange(month, year)
 
-      // Get all orders in this month (only official status)
       let ordersQuery = await this.salesOrderModel
         .find({
           date: { $gte: startOfMonth, $lte: endOfMonth },
@@ -610,67 +647,65 @@ export class SalesDashboardService {
         })
         .lean()
 
-      // Filter by channel if provided
       let orders = ordersQuery
+
       if (channel) {
         orders = ordersQuery.filter((order) => {
           const funnel = order.salesFunnelId as any
+
           if (funnel && funnel.channel) {
             const channelId = funnel.channel._id
               ? funnel.channel._id.toString()
               : funnel.channel.toString()
+
             return channelId === channel
           }
+
           return false
         })
       }
 
-      // Calculate Average Deal Size
       const avgDealSize =
         orders.length > 0
           ? orders.reduce((sum, order) => sum + order.total, 0) / orders.length
           : 0
 
-      // Get all funnels for this month's analysis
       const allFunnels = await this.salesFunnelModel
         .find()
         .populate("channel", "channelName")
         .populate("user", "name")
         .lean()
 
-      // Count new customers in this month (first order in this month with returning = false)
       const newCustomerFunnelIds = new Set<string>()
+
       orders.forEach((order) => {
         if (!order.returning && order.salesFunnelId) {
           newCustomerFunnelIds.add(order.salesFunnelId.toString())
         }
       })
+
       const newCustomersCount = newCustomerFunnelIds.size
 
-      // Get total marketing cost for new customers
       const newCustomerFunnels = allFunnels.filter((f) =>
         newCustomerFunnelIds.has(f._id.toString())
       )
+
       const totalMarketingCost = newCustomerFunnels.reduce(
         (sum, f) => sum + (f.cost || 0),
         0
       )
 
-      // Calculate CAC
       const cac =
         newCustomersCount > 0 ? totalMarketingCost / newCustomersCount : 0
 
-      // Count customers at start of month (not closed)
       const customersAtStartOfMonth = allFunnels.filter(
         (f) => f.createdAt < startOfMonth && f.stage !== "closed"
       ).length
 
-      // Count customers at end of month (not closed)
       const customersAtEndOfMonth = allFunnels.filter(
         (f) => f.createdAt <= endOfMonth && f.stage !== "closed"
       ).length
 
-      // Calculate CRR
       const crr =
         customersAtStartOfMonth > 0
           ? ((customersAtEndOfMonth - newCustomersCount) /
@@ -678,14 +713,13 @@ export class SalesDashboardService {
             100
           : 0
 
-      // Calculate Churn Rate
       const churnRate = 100 - crr
 
-      // Calculate Conversion Rate (contacted -> customer)
       const contactedToCustomer = allFunnels.filter((f) => {
-        if (!f.updateStageLogs || f.updateStageLogs.length === 0) return false
+        if (!f.updateStageLogs || f.updateStageLogs.length === 0) {
+          return false
+        }
 
-        // Check if there was a transition from contacted to customer in this month
         for (let i = 0; i < f.updateStageLogs.length - 1; i++) {
           const current = f.updateStageLogs[i]
           const next = f.updateStageLogs[i + 1]
@@ -699,26 +733,31 @@ export class SalesDashboardService {
             return true
           }
         }
+
         return false
       }).length
 
       const totalContacted = allFunnels.filter((f) => {
-        if (!f.updateStageLogs || f.updateStageLogs.length === 0) return false
+        if (!f.updateStageLogs || f.updateStageLogs.length === 0) {
+          return false
+        }
 
-        // Check if reached contacted stage in or before this month
         return f.updateStageLogs.some(
           (log) =>
-            log.stage === "contacted" && new Date(log.updatedAt) <= endOfMonth
+            log.stage === "contacted" &&
+            new Date(log.updatedAt) <= endOfMonth
         )
       }).length
 
       const conversionRate =
         totalContacted > 0 ? (contactedToCustomer / totalContacted) * 100 : 0
 
-      // Calculate Sales Cycle Length (contacted -> customer)
       const salesCycles: number[] = []
+
       allFunnels.forEach((f) => {
-        if (!f.updateStageLogs || f.updateStageLogs.length === 0) return
+        if (!f.updateStageLogs || f.updateStageLogs.length === 0) {
+          return
+        }
 
         let contactedDate: Date | null = null
         let customerDate: Date | null = null
@@ -727,6 +766,7 @@ export class SalesDashboardService {
           if (log.stage === "contacted" && !contactedDate) {
             contactedDate = new Date(log.updatedAt)
           }
+
           if (log.stage === "customer" && contactedDate && !customerDate) {
             customerDate = new Date(log.updatedAt)
           }
@@ -742,16 +782,17 @@ export class SalesDashboardService {
             (customerDate.getTime() - contactedDate.getTime()) /
               (1000 * 60 * 60 * 24)
           )
+
           salesCycles.push(cycleLength)
         }
       })
 
       const salesCycleLength =
         salesCycles.length > 0
-          ? salesCycles.reduce((sum, len) => sum + len, 0) / salesCycles.length
+          ? salesCycles.reduce((sum, len) => sum + len, 0) /
+            salesCycles.length
           : 0
 
-      // Calculate stage transitions in this month
       const stageTransitions = {
         lead: 0,
         contacted: 0,
@@ -760,20 +801,22 @@ export class SalesDashboardService {
       }
 
       allFunnels.forEach((f) => {
-        if (!f.updateStageLogs || f.updateStageLogs.length === 0) return
+        if (!f.updateStageLogs || f.updateStageLogs.length === 0) {
+          return
+        }
 
         f.updateStageLogs.forEach((log) => {
           const logDate = new Date(log.updatedAt)
+
           if (logDate >= startOfMonth && logDate <= endOfMonth) {
             stageTransitions[log.stage]++
           }
         })
       })
 
-      // Get monthly goal (KPI) for this month and channel
       let monthlyGoal = 0
+
       if (channel) {
-        // Get KPI for specific channel
         const kpiRecord = await this.salesMonthKpiModel
           .findOne({
             month,
@@ -781,29 +824,31 @@ export class SalesDashboardService {
             channel: new Types.ObjectId(channel)
           })
           .lean()
+
         monthlyGoal = kpiRecord ? kpiRecord.kpi : 0
       } else {
-        // Get sum of all KPIs for all channels in this month
         const kpiRecords = await this.salesMonthKpiModel
           .find({
             month,
             year
           })
           .lean()
-        monthlyGoal = kpiRecords.reduce((sum, record) => sum + record.kpi, 0)
+
+        monthlyGoal = kpiRecords.reduce(
+          (sum, record) => sum + record.kpi,
+          0
+        )
       }
 
-      // Calculate actual revenue for the month
-      // When no channel filter: use all orders (ordersQuery)
-      // When channel filter: use filtered orders (orders)
       const ordersForRevenue = channel ? orders : ordersQuery
+
       const actualRevenue = ordersForRevenue.reduce((sum, order) => {
         const totalDiscount =
           (order.orderDiscount || 0) + (order.otherDiscount || 0)
+
         return sum + order.total - totalDiscount
       }, 0)
 
-      // Calculate goal completion percentage
       const goalCompletionPercentage =
         monthlyGoal > 0
           ? Math.round((actualRevenue / monthlyGoal) * 10000) / 100
@@ -822,6 +867,7 @@ export class SalesDashboardService {
       }
     } catch (error) {
       console.error("Error in getMonthlyMetrics:", error)
+
       throw new HttpException(
         "Lỗi khi lấy chỉ số tháng",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -843,7 +889,6 @@ export class SalesDashboardService {
       const { start: startOfMonth, end: endOfMonth } =
         this.getUtcMonthRange(month, year)
 
-      // Get all orders in this month (only official status)
       let ordersQuery = await this.salesOrderModel
         .find({
           date: { $gte: startOfMonth, $lte: endOfMonth },
@@ -856,22 +901,24 @@ export class SalesDashboardService {
         })
         .lean()
 
-      // Filter by channel if provided
       let orders = ordersQuery
+
       if (channel) {
         orders = ordersQuery.filter((order) => {
           const funnel = order.salesFunnelId as any
+
           if (funnel && funnel.channel) {
             const channelId = funnel.channel._id
               ? funnel.channel._id.toString()
               : funnel.channel.toString()
+
             return channelId === channel
           }
+
           return false
         })
       }
 
-      // Calculate revenue by customer
       const customerRevenueMap = new Map<
         string,
         {
@@ -885,6 +932,7 @@ export class SalesDashboardService {
 
       orders.forEach((order) => {
         const funnel = order.salesFunnelId as any
+
         if (funnel && funnel._id) {
           const funnelId = funnel._id.toString()
           const customerName = funnel.name || "Unknown"
@@ -895,6 +943,7 @@ export class SalesDashboardService {
           const actualRevenue = order.total - totalDiscount
 
           const existing = customerRevenueMap.get(funnelId)
+
           if (existing) {
             existing.revenue += actualRevenue
             existing.orderCount += 1
@@ -910,20 +959,24 @@ export class SalesDashboardService {
         }
       })
 
-      // Convert to array and sort by revenue
       const allCustomers = Array.from(customerRevenueMap.values()).sort(
         (a, b) => b.revenue - a.revenue
       )
 
       const total = allCustomers.length
+
       const data = allCustomers.slice(
         (safePage - 1) * safeLimit,
         safePage * safeLimit
       )
 
-      return { data, total }
+      return {
+        data,
+        total
+      }
     } catch (error) {
       console.error("Error in getTopCustomersByRevenue:", error)
+
       throw new HttpException(
         "Lỗi khi lấy danh sách khách hàng theo doanh thu",
         HttpStatus.INTERNAL_SERVER_ERROR

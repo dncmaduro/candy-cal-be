@@ -6,6 +6,7 @@ import { Document, model, Schema } from "mongoose"
 export interface SalesDailyAds extends Document {
   date: Date
   adsCost: number
+  newLeads: number
   createdAt: Date
   updatedAt: Date
 }
@@ -13,6 +14,7 @@ export interface SalesDailyAds extends Document {
 export const SalesDailyAdsSchema = new Schema<SalesDailyAds>({
   date: { type: Date, required: true },
   adsCost: { type: Number, required: true, default: 0 },
+  newLeads: { type: Number, required: true, default: 0 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })
