@@ -71,22 +71,6 @@ export class SalesDailyReportsController {
     })
   }
 
-  @Roles("admin", "facebook-ads-emp")
-  @Post("ads-cost")
-  @HttpCode(HttpStatus.OK)
-  async updateAdsCost(
-    @Body()
-    body: {
-      date: string
-      adsCost: number
-    }
-  ): Promise<SalesDailyAds> {
-    return this.salesDailyAdsService.upsertAdsCost({
-      date: new Date(body.date),
-      adsCost: body.adsCost
-    })
-  }
-
   @Roles("admin", "sales-cs")
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)

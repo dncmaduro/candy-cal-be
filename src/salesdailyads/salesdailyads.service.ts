@@ -25,15 +25,26 @@ export class SalesDailyAdsService {
   async upsertAdsCost(payload: {
     date: Date
     adsCost: number
+    newLeads: number
   }): Promise<SalesDailyAds> {
     if (Number.isNaN(payload.date.getTime())) {
       throw new HttpException("Ngày không hợp lệ", HttpStatus.BAD_REQUEST)
     }
 
     const adsCost = Number(payload.adsCost)
+
     if (!Number.isFinite(adsCost) || adsCost < 0) {
       throw new HttpException(
         "Chi phí quảng cáo phải là số không âm",
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const newLeads = Number(payload.newLeads)
+
+    if (!Number.isFinite(newLeads) || newLeads < 0) {
+      throw new HttpException(
+        "Số lead mới phải là số không âm",
         HttpStatus.BAD_REQUEST
       )
     }
@@ -44,10 +55,21 @@ export class SalesDailyAdsService {
     return this.salesDailyAdsModel.findOneAndUpdate(
       { date },
       {
-        $set: { adsCost, updatedAt: now },
-        $setOnInsert: { date, createdAt: now }
+        $set: {
+          adsCost,
+          newLeads,
+          updatedAt: now
+        },
+        $setOnInsert: {
+          date,
+          createdAt: now
+        }
       },
-      { upsert: true, new: true, runValidators: true }
+      {
+        upsert: true,
+        new: true,
+        runValidators: true
+      }
     )
   }
 
@@ -55,7 +77,7 @@ export class SalesDailyAdsService {
     month: number,
     year: number
   ): Promise<{
-    data: Array<Pick<SalesDailyAds, "date" | "adsCost">>
+    data: Array<Pick<SalesDailyAds, "date" | "adsCost" | "newLeads">>
     total: number
   }> {
     if (
@@ -64,47 +86,89 @@ export class SalesDailyAdsService {
       month > 12 ||
       !Number.isInteger(year)
     ) {
-      throw new HttpException("Tháng hoặc năm không hợp lệ", HttpStatus.BAD_REQUEST)
+      throw new HttpException(
+        "Tháng hoặc năm không hợp lệ",
+        HttpStatus.BAD_REQUEST
+      )
     }
 
     const zonedMonth = new Date(year, month - 1, 1)
+
     const start = fromZonedTime(
       startOfMonth(zonedMonth),
       SALES_DAILY_ADS_TIME_ZONE
     )
+
     const end = fromZonedTime(
       endOfDay(endOfMonth(zonedMonth)),
       SALES_DAILY_ADS_TIME_ZONE
     )
-    const filter = { date: { $gte: start, $lte: end } }
+
+    const filter = {
+      date: {
+        $gte: start,
+        $lte: end
+      }
+    }
 
     const [newAds, legacyAds] = await Promise.all([
-      this.salesDailyAdsModel.find(filter).select("date adsCost").lean(),
+      this.salesDailyAdsModel
+        .find(filter)
+        .select("date adsCost newLeads")
+        .lean(),
+
       this.salesDailyReportModel.aggregate<{
         _id: Date
         adsCost: number
       }>([
-        { $match: { ...filter, deletedAt: null } },
-        { $group: { _id: "$date", adsCost: { $sum: "$adsCost" } } }
+        {
+          $match: {
+            ...filter,
+            deletedAt: null
+          }
+        },
+        {
+          $group: {
+            _id: "$date",
+            adsCost: {
+              $sum: "$adsCost"
+            }
+          }
+        }
       ])
     ])
 
-    const adsByDate = new Map<number, number>()
+    const adsByDate = new Map<
+      number,
+      {
+        adsCost: number
+        newLeads: number
+      }
+    >()
+
     for (const legacyAd of legacyAds) {
-      adsByDate.set(
-        new Date(legacyAd._id).getTime(),
-        Number(legacyAd.adsCost || 0)
-      )
-    }
-    for (const newAd of newAds) {
-      adsByDate.set(new Date(newAd.date).getTime(), Number(newAd.adsCost || 0))
+      adsByDate.set(new Date(legacyAd._id).getTime(), {
+        adsCost: Number(legacyAd.adsCost || 0),
+        newLeads: 0
+      })
     }
 
-    const data = Array.from(adsByDate, ([time, adsCost]) => ({
+    for (const newAd of newAds) {
+      adsByDate.set(new Date(newAd.date).getTime(), {
+        adsCost: Number(newAd.adsCost || 0),
+        newLeads: Number(newAd.newLeads || 0)
+      })
+    }
+
+    const data = Array.from(adsByDate, ([time, value]) => ({
       date: new Date(time),
-      adsCost
+      adsCost: value.adsCost,
+      newLeads: value.newLeads
     })).sort((a, b) => a.date.getTime() - b.date.getTime())
 
-    return { data, total: data.length }
+    return {
+      data,
+      total: data.length
+    }
   }
 }

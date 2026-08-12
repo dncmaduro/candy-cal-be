@@ -23,24 +23,39 @@ export class SalesDailyAdsController {
   @Post()
   @HttpCode(HttpStatus.OK)
   async upsertAdsCost(
-    @Body() body: { date: string; adsCost: number }
+    @Body()
+    body: {
+      date: string
+      adsCost: number
+      newLeads: number
+    }
   ): Promise<SalesDailyAds> {
     return this.salesDailyAdsService.upsertAdsCost({
       date: new Date(body.date),
-      adsCost: body.adsCost
+      adsCost: body.adsCost,
+      newLeads: body.newLeads
     })
   }
 
-  @Roles("admin", "sales-cs", "sales-hunter", "system-emp", "facebook-ads-emp")
+  @Roles(
+    "admin",
+    "sales-cs",
+    "sales-hunter",
+    "system-emp",
+    "facebook-ads-emp"
+  )
   @Get("by-month")
   @HttpCode(HttpStatus.OK)
   async getAdsByMonth(
     @Query("month") month: string,
     @Query("year") year: string
   ): Promise<{
-    data: Array<Pick<SalesDailyAds, "date" | "adsCost">>
+    data: Array<Pick<SalesDailyAds, "date" | "adsCost" | "newLeads">>
     total: number
   }> {
-    return this.salesDailyAdsService.getAdsByMonth(Number(month), Number(year))
+    return this.salesDailyAdsService.getAdsByMonth(
+      Number(month),
+      Number(year)
+    )
   }
 }
