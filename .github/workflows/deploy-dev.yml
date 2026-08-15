@@ -1,0 +1,76 @@
+name: Deploy NestJS Development
+
+on:
+  push:
+    branches:
+      - develop
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candy-cal-be-development-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy development
+
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Validate development environment
+        run: |
+          set -euo pipefail
+          test -s /opt/candy-cal-be-dev/.env
+
+      - name: Validate Docker Compose
+        run: |
+          set -euo pipefail
+          docker compose \
+            -p candy-cal-be-dev \
+            -f docker-compose.dev.yml \
+            config
+
+      - name: Build Docker image
+        run: |
+          set -euo pipefail
+          docker compose \
+            -p candy-cal-be-dev \
+            -f docker-compose.dev.yml \
+            build --pull
+
+      - name: Deploy development container
+        run: |
+          set -euo pipefail
+          docker compose \
+            -p candy-cal-be-dev \
+            -f docker-compose.dev.yml \
+            up -d --remove-orphans
+
+      - name: Show deployment status
+        run: |
+          docker compose \
+            -p candy-cal-be-dev \
+            -f docker-compose.dev.yml \
+            ps
+
+          docker compose \
+            -p candy-cal-be-dev \
+            -f docker-compose.dev.yml \
+            logs --tail=100 api
+
+      - name: Remove unused Docker images
+        if: success()
+        run: |
+          docker image prune -f
