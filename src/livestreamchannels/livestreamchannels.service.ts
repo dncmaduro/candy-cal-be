@@ -15,9 +15,13 @@ export class LivestreamchannelsService {
     username: string
     usernames?: string[]
     link: string
+    platform: "tiktokshop" | "shopee"
     sortOrder?: number
   }): Promise<LivestreamChannel> {
     try {
+      if (payload.platform !== "tiktokshop" && payload.platform !== "shopee") {
+        throw new HttpException("Platform không hợp lệ", HttpStatus.BAD_REQUEST)
+      }
       const exists = await this.livestreamChannelModel
         .findOne({ username: payload.username })
         .exec()
