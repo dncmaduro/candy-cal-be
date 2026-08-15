@@ -18,7 +18,15 @@ export const allowConfiguredOrigin = (
     return
   }
 
-  if (getAllowedOrigins().includes(normalizeOrigin(origin))) {
+  const allowedOrigins = getAllowedOrigins()
+
+  // `*` deliberately permits every browser origin. We return `true` instead
+  // of the literal wildcard so the cors middleware reflects the requesting
+  // origin, which remains compatible with `credentials: true`.
+  if (
+    allowedOrigins.includes("*") ||
+    allowedOrigins.includes(normalizeOrigin(origin))
+  ) {
     callback(null, true)
     return
   }
