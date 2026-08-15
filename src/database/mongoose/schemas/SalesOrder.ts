@@ -4,7 +4,12 @@ export type SalesOrderStorage = "position_HaNam" | "position_MKT"
 
 export type SalesOrderShippingType = "shipping_vtp" | "shipping_cargo"
 
-export type SalesOrderStatus = "draft" | "confirmed" | "official"
+export type SalesOrderStatus = "draft" | "confirmed" | "official" | "cancelled"
+
+export type SalesOrderInventoryHandling =
+  | "require_full_stock"
+  | "export_available_items"
+  | "skip_inventory_export"
 
 export type SalesOrderDiscountType = "percent" | "value"
 
@@ -34,6 +39,8 @@ export interface SalesOrder extends Document {
   shippingCost: number
   storage: SalesOrderStorage
   status: SalesOrderStatus
+  inventoryHandling?: SalesOrderInventoryHandling
+  cancelReason?: string
   phoneNumber?: string
   address?: string
   province?: {
@@ -90,10 +97,20 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   },
   status: {
     type: String,
-    enum: ["draft", "confirmed", "official"],
+    enum: ["draft", "confirmed", "official", "cancelled"],
     default: "draft",
     required: true
   },
+  inventoryHandling: {
+    type: String,
+    enum: [
+      "require_full_stock",
+      "export_available_items",
+      "skip_inventory_export"
+    ],
+    required: false
+  },
+  cancelReason: { type: String, required: false },
   phoneNumber: { type: String, required: false },
   address: { type: String, required: false },
   province: {
