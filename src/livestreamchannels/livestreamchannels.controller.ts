@@ -36,6 +36,7 @@ export class LivestreamchannelsController {
       username: string
       usernames?: string[]
       link: string
+      platform: "tiktokshop" | "shopee"
       sortOrder?: number
     },
     @Req() req
