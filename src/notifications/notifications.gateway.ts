@@ -6,8 +6,11 @@ import {
   OnGatewayDisconnect
 } from "@nestjs/websockets"
 import { Server, Socket } from "socket.io"
+import { allowConfiguredOrigin } from "../common/cors-policy"
 
-@WebSocketGateway({ cors: { origin: "*" } })
+@WebSocketGateway({
+  cors: { origin: allowConfiguredOrigin, credentials: true }
+})
 export class NotificationsGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
