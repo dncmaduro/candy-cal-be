@@ -11,6 +11,7 @@ export interface SalesInventoryLog extends Document {
   quantityAfter: number
   warehouse?: string
   salesOrderId?: Types.ObjectId
+  salesInventoryPeriodId?: Types.ObjectId
   uploadBatchId?: string
   createdBy?: Types.ObjectId
   date: Date
@@ -35,6 +36,11 @@ export const SalesInventoryLogSchema = new Schema<SalesInventoryLog>({
     ref: "salesorders",
     required: false,
     index: true
+  },
+  salesInventoryPeriodId: {
+    type: Schema.Types.ObjectId,
+    ref: "salesinventoryperiods",
+    required: false
   },
   uploadBatchId: { type: String, required: false, index: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "users", required: false },
