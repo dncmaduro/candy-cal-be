@@ -7,6 +7,7 @@ import * as ExcelJS from "exceljs"
 import {
   SalesOrder,
   SalesOrderDiscountType,
+  SalesOrderInventoryHandling,
   SalesOrderShippingType,
   SalesOrderStorage,
   SalesOrderStatus
@@ -44,10 +45,7 @@ type SalesOrderPerfSession = {
   }>
 }
 
-export type InventoryExportHandling =
-  | "require_full_stock"
-  | "export_available_items"
-  | "skip_inventory_export"
+export type InventoryExportHandling = SalesOrderInventoryHandling
 
 @Injectable()
 export class SalesOrdersService {
@@ -112,14 +110,15 @@ export class SalesOrdersService {
           HttpStatus.BAD_REQUEST
         )
       }
-      await this.salesInventoryPeriodModel.findOneAndUpdate(
-        { code },
-        {
-          $inc: { exportedQuantity: quantity, currentQuantity: -quantity },
-          $set: { updatedAt: now }
-        },
-        { new: true, session, sort: { importedAt: -1, createdAt: -1 } }
-      )
+      const inventoryPeriod =
+        await this.salesInventoryPeriodModel.findOneAndUpdate(
+          { code },
+          {
+            $inc: { exportedQuantity: quantity, currentQuantity: -quantity },
+            $set: { updatedAt: now }
+          },
+          { new: true, session, sort: { importedAt: -1, createdAt: -1 } }
+        )
       await this.salesInventoryLogModel.create(
         [
           {
@@ -131,6 +130,100 @@ export class SalesOrdersService {
             quantityAfter: item.inventoryQuantity,
             warehouse: order.storage,
             salesOrderId: order._id,
+            salesInventoryPeriodId: inventoryPeriod?._id,
+            date: now
+          }
+        ],
+        { session }
+      )
+    }
+  }
+
+  private async restoreInventoryForCancelledOrder(
+    order: SalesOrder,
+    now: Date,
+    session: any
+  ): Promise<void> {
+    // Orders confirmed with this option never changed stock. Existing orders
+    // without the field are handled from their actual export logs instead.
+    if (order.inventoryHandling === "skip_inventory_export") return
+
+    const exportLogs = await this.salesInventoryLogModel
+      .find({ salesOrderId: order._id, type: "export" })
+      .session(session)
+      .lean()
+
+    for (const exportLog of exportLogs) {
+      const restoredItem = await this.salesItemModel.findByIdAndUpdate(
+        exportLog.itemId,
+        [
+          {
+            $set: {
+              inventoryQuantity: {
+                $add: [
+                  { $ifNull: ["$inventoryQuantity", 0] },
+                  exportLog.quantity
+                ]
+              },
+              currentPeriodExportedQuantity: {
+                $max: [
+                  0,
+                  {
+                    $subtract: [
+                      { $ifNull: ["$currentPeriodExportedQuantity", 0] },
+                      exportLog.quantity
+                    ]
+                  }
+                ]
+              },
+              inventoryUpdatedAt: now,
+              updatedAt: now
+            }
+          }
+        ] as any,
+        { new: true, session }
+      )
+      if (!restoredItem) {
+        throw new HttpException(
+          `Không tìm thấy sản phẩm "${exportLog.code}" để hoàn kho`,
+          HttpStatus.NOT_FOUND
+        )
+      }
+
+      const periodFilter = exportLog.salesInventoryPeriodId
+        ? { _id: exportLog.salesInventoryPeriodId }
+        : { code: exportLog.code }
+      await this.salesInventoryPeriodModel.findOneAndUpdate(
+        periodFilter,
+        {
+          $inc: {
+            exportedQuantity: -exportLog.quantity,
+            currentQuantity: exportLog.quantity
+          },
+          $set: { updatedAt: now }
+        },
+        {
+          new: true,
+          session,
+          // Old inventory export logs do not contain a period reference.
+          sort: exportLog.salesInventoryPeriodId
+            ? undefined
+            : { importedAt: -1, createdAt: -1 }
+        }
+      )
+
+      await this.salesInventoryLogModel.create(
+        [
+          {
+            code: exportLog.code,
+            itemId: restoredItem._id,
+            type: "import",
+            quantity: exportLog.quantity,
+            quantityBefore: restoredItem.inventoryQuantity - exportLog.quantity,
+            quantityAfter: restoredItem.inventoryQuantity,
+            warehouse: exportLog.warehouse,
+            salesOrderId: order._id,
+            salesInventoryPeriodId: exportLog.salesInventoryPeriodId,
             date: now
           }
         ],
@@ -596,6 +689,7 @@ export class SalesOrdersService {
             shippingType,
             phoneNumber: channelPhoneNumber,
             status: "official",
+            inventoryHandling: "skip_inventory_export",
             createdAt: new Date(),
             updatedAt: new Date()
           })
@@ -2767,6 +2861,7 @@ export class SalesOrdersService {
       shippingCost?: number
       receivedDate?: Date
       inventoryHandling?: InventoryExportHandling
+      cancelReason?: string
     } = {}
   ): Promise<SalesOrder> {
     try {
@@ -2782,7 +2877,7 @@ export class SalesOrdersService {
         )
       }
 
-      if (order.status === "official") {
+      if (order.status === "official" && nextStatus !== "cancelled") {
         throw new HttpException(
           "Không thể chuyển trạng thái từ đơn hàng chính thức",
           HttpStatus.BAD_REQUEST
@@ -2792,7 +2887,8 @@ export class SalesOrdersService {
       const allowedTransitions: Record<SalesOrderStatus, SalesOrderStatus[]> = {
         draft: ["confirmed", "official"],
         confirmed: ["draft", "official"],
-        official: []
+        official: ["cancelled"],
+        cancelled: []
       }
 
       if (!allowedTransitions[order.status].includes(nextStatus)) {
@@ -2847,6 +2943,7 @@ export class SalesOrdersService {
             order.shippingType = payload.shippingType
             order.tax = payload.tax
             order.shippingCost = payload.shippingCost
+            order.inventoryHandling = inventoryHandling
             if (payload.receivedDate !== undefined) {
               order.receivedDate = payload.receivedDate
             }
@@ -2861,12 +2958,37 @@ export class SalesOrdersService {
         } finally {
           await session.endSession()
         }
+      } else if (nextStatus === "cancelled") {
+        const cancelReason =
+          typeof payload.cancelReason === "string"
+            ? payload.cancelReason.trim()
+            : ""
+        if (!cancelReason) {
+          throw new HttpException(
+            "Thiếu lý do hủy đơn hàng",
+            HttpStatus.BAD_REQUEST
+          )
+        }
+
+        const now = new Date()
+        const session = await this.salesOrderModel.db.startSession()
+        try {
+          await session.withTransaction(async () => {
+            await this.restoreInventoryForCancelledOrder(order, now, session)
+            order.status = "cancelled"
+            order.cancelReason = cancelReason
+            order.updatedAt = now
+            await order.save({ session })
+          })
+        } finally {
+          await session.endSession()
+        }
       } else if (payload.receivedDate !== undefined) {
         order.receivedDate = payload.receivedDate
       }
 
       let savedOrder: SalesOrder
-      if (nextStatus === "official") {
+      if (nextStatus === "official" || nextStatus === "cancelled") {
         savedOrder = order
       } else {
         order.status = nextStatus

@@ -214,6 +214,7 @@ Tìm kiếm và lọc đơn hàng.
 - `salesFunnelId` (optional): Lọc theo funnel ID
 - `returning` (optional): `true` | `false` - Lọc theo khách hàng mới/cũ
 - `shippingType` (optional): `shipping_vtp` | `shipping_cargo` - Lọc theo loại vận chuyển
+- `status` (optional): `draft` | `confirmed` | `official` | `cancelled` - Lọc theo trạng thái
 - `startDate` (optional): Ngày bắt đầu (ISO 8601)
 - `endDate` (optional): Ngày kết thúc (ISO 8601)
 - `searchText` (optional): Tìm kiếm theo shipping code, item code, item name
@@ -252,7 +253,26 @@ Tìm kiếm và lọc đơn hàng.
 
 ---
 
-### 7. PATCH /salesorders/:id/storage
+### 7. PATCH /salesorders/:id/status
+
+Chuyển trạng thái đơn hàng. Chỉ đơn `official` mới được chuyển sang `cancelled`.
+
+**Request Body khi hủy:**
+
+```json
+{
+  "status": "cancelled",
+  "cancelReason": "Khách đổi ý"
+}
+```
+
+Khi hủy, BE lưu `cancelReason`. Nếu đơn đã xuất kho lúc chuyển sang `official`, BE hoàn lại đúng các mã hàng đã thực xuất; đơn dùng lựa chọn `skip_inventory_export` sẽ không thay đổi kho. Đơn `cancelled` vẫn được trả về trong danh sách đơn hàng mặc định.
+
+**Authorization:** Requires role `admin` or `sales-cs`
+
+---
+
+### 8. PATCH /salesorders/:id/storage
 
 Cập nhật kho lưu trữ.
 
@@ -268,7 +288,7 @@ Cập nhật kho lưu trữ.
 
 ---
 
-### 8. GET /salesorders/options/storages
+### 9. GET /salesorders/options/storages
 
 Lấy danh sách các kho có sẵn.
 
@@ -287,7 +307,7 @@ Lấy danh sách các kho có sẵn.
 
 ---
 
-### 9. GET /salesorders/options/shipping-types
+### 10. GET /salesorders/options/shipping-types
 
 Lấy danh sách các loại vận chuyển có sẵn.
 
@@ -306,7 +326,7 @@ Lấy danh sách các loại vận chuyển có sẵn.
 
 ---
 
-### 10. GET /salesorders/export/xlsx
+### 11. GET /salesorders/export/xlsx
 
 Export đơn hàng ra file Excel với format chi tiết theo từng sản phẩm.
 
