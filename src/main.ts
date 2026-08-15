@@ -5,6 +5,7 @@ import { ApiBearerAuth, DocumentBuilder, SwaggerModule } from "@nestjs/swagger"
 import { AppModule } from "./app.module"
 import * as bodyParser from "body-parser"
 import { JwtAuthGuard } from "./auth/jwt-auth.guard"
+import { getCorsOptions } from "./common/cors-policy"
 
 const HTTP_METHODS = [
   "get",
@@ -116,7 +117,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule)
   const { PORT } = process.env
   app.setGlobalPrefix("api/v1")
-  app.enableCors()
+  app.enableCors(getCorsOptions())
   app.use(bodyParser.json())
 
   const swaggerConfig = new DocumentBuilder()
