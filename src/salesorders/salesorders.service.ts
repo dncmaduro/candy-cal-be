@@ -67,6 +67,16 @@ export class SalesOrdersService {
     private readonly salesLeadsService: SalesLeadsService
   ) {}
 
+  private withCancelReason<T extends Record<string, any>>(
+    order: T
+  ): T & { cancelReason: string } {
+    return {
+      ...order,
+      cancelReason:
+        typeof order.cancelReason === "string" ? order.cancelReason : ""
+    }
+  }
+
   private getOrderItemQuantities(order: SalesOrder): Map<string, number> {
     const quantities = new Map<string, number>()
     order.items.forEach((item) => {
@@ -1274,10 +1284,7 @@ export class SalesOrdersService {
                 })
               )
 
-              return {
-                ...order,
-                items: enrichedItems
-              }
+              return this.withCancelReason({ ...order, items: enrichedItems })
             })
           )
       )
@@ -1480,10 +1487,7 @@ export class SalesOrdersService {
                 })
               )
 
-              return {
-                ...order,
-                items: enrichedItems
-              }
+              return this.withCancelReason({ ...order, items: enrichedItems })
             })
           )
       )
@@ -1599,10 +1603,10 @@ export class SalesOrdersService {
           })
       )
 
-      const result = {
+      const result = this.withCancelReason({
         ...order,
         items: enrichedItems
-      } as SalesOrder
+      }) as SalesOrder
 
       this.finishPerfSession(perf, {
         status: "success",
