@@ -40,7 +40,7 @@ export interface SalesOrder extends Document {
   storage: SalesOrderStorage
   status: SalesOrderStatus
   inventoryHandling?: SalesOrderInventoryHandling
-  cancelReason?: string
+  cancelReason: string
   phoneNumber?: string
   address?: string
   province?: {
@@ -110,7 +110,7 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
     ],
     required: false
   },
-  cancelReason: { type: String, required: false },
+  cancelReason: { type: String, required: true, default: "" },
   phoneNumber: { type: String, required: false },
   address: { type: String, required: false },
   province: {
@@ -121,5 +121,14 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 })
+
+const normalizeCancelReason = (_doc: unknown, response: Record<string, any>) => {
+  response.cancelReason =
+    typeof response.cancelReason === "string" ? response.cancelReason : ""
+  return response
+}
+
+SalesOrderSchema.set("toJSON", { transform: normalizeCancelReason })
+SalesOrderSchema.set("toObject", { transform: normalizeCancelReason })
 
 export const SalesOrderModel = model<SalesOrder>("SalesOrder", SalesOrderSchema)
