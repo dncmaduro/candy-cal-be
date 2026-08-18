@@ -110,7 +110,7 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
     ],
     required: false
   },
-  cancelReason: { type: String, required: true, default: "" },
+  cancelReason: { type: String, required: false, default: "" },
   phoneNumber: { type: String, required: false },
   address: { type: String, required: false },
   province: {
