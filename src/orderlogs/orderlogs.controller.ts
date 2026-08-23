@@ -10,9 +10,9 @@ import {
   Req
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { OrderLogsService } from "./orderlogs.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 import {
   OrderLog,
   OrderLogItem,
@@ -23,14 +23,14 @@ import { Types } from "mongoose"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("orderlogs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OrderLogsController {
   constructor(
     private readonly orderLogsService: OrderLogsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getOrderLogs(
@@ -40,7 +40,7 @@ export class OrderLogsController {
     return this.orderLogsService.getOrderLogs(page, limit)
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLogSession(
@@ -61,7 +61,7 @@ export class OrderLogsController {
     return created
   }
 
-  @Roles("admin", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("range")
   @HttpCode(HttpStatus.OK)
   async getOrderLogsByRange(

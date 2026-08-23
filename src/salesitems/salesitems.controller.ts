@@ -19,8 +19,8 @@ import { Response } from "express"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { SalesItemsService } from "./salesitems.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import {
   SalesItem,
@@ -29,14 +29,14 @@ import {
 } from "../database/mongoose/schemas/SalesItem"
 
 @Controller("salesitems")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesItemsController {
   constructor(
     private readonly salesItemsService: SalesItemsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post("upload")
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
@@ -76,7 +76,7 @@ export class SalesItemsController {
     return result
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post("inventory/upload")
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
@@ -114,7 +114,7 @@ export class SalesItemsController {
     return result
   }
 
-  @Roles("admin", "sales-cs", "facebook-ads-emp")
+  @Permissions()
   @Get("inventory/template")
   @HttpCode(HttpStatus.OK)
   async downloadInventoryTemplate(@Res() res: Response): Promise<void> {
@@ -131,7 +131,7 @@ export class SalesItemsController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("inventory/daily-report")
   @HttpCode(HttpStatus.OK)
   async getDailyInventoryReport(@Query("date") date?: string) {
@@ -140,7 +140,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("inventory/daily-report/xlsx")
   @HttpCode(HttpStatus.OK)
   async downloadDailyInventoryReport(
@@ -162,7 +162,7 @@ export class SalesItemsController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("inventory/daily-reports")
   @HttpCode(HttpStatus.OK)
   async getInventoryDailyReportHistory(
@@ -175,7 +175,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("inventory/history")
   @HttpCode(HttpStatus.OK)
   async getInventoryHistory(
@@ -190,7 +190,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "facebook-ads-emp")
+  @Permissions()
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   async downloadUploadTemplate(@Res() res: Response): Promise<void> {
@@ -205,7 +205,7 @@ export class SalesItemsController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllSalesItems(
@@ -215,7 +215,7 @@ export class SalesItemsController {
     return this.salesItemsService.getAllSalesItems(Number(page), Number(limit))
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchSalesItems(
@@ -234,7 +234,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("export/xlsx")
   @HttpCode(HttpStatus.OK)
   async exportSalesItemsToXlsx(
@@ -270,7 +270,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("factories")
   @HttpCode(HttpStatus.OK)
   async getAllFactories(): Promise<{
@@ -279,7 +279,7 @@ export class SalesItemsController {
     return this.salesItemsService.getAllFactories()
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("sources")
   @HttpCode(HttpStatus.OK)
   async getAllSources(): Promise<{
@@ -288,7 +288,7 @@ export class SalesItemsController {
     return this.salesItemsService.getAllSources()
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post("create")
   @HttpCode(HttpStatus.CREATED)
   async createSalesItem(
@@ -320,14 +320,14 @@ export class SalesItemsController {
     return created
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getSalesItemById(@Param("id") id: string): Promise<SalesItem | null> {
     return this.salesItemsService.getSalesItemById(id)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateSalesItem(
@@ -360,7 +360,7 @@ export class SalesItemsController {
     return updated
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSalesItem(@Param("id") id: string, @Req() req): Promise<void> {
@@ -377,7 +377,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("stats/:code/quantity")
   @HttpCode(HttpStatus.OK)
   async getItemPurchaseQuantity(
@@ -392,7 +392,7 @@ export class SalesItemsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("stats/:code/top-customers")
   @HttpCode(HttpStatus.OK)
   async getTopCustomersByItem(

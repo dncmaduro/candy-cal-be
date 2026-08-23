@@ -10,32 +10,32 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SalesLeadsService } from "./salesleads.service"
 
 @Controller("sales-leads")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesLeadsController {
   constructor(private readonly service: SalesLeadsService) {}
   @Get("available-cs")
-  @Roles("sales-hunter", "sales-cs", "sales-leader", "admin")
+  @Permissions()
   available(@Query("channelId") channelId?: string) {
     return this.service.availableCs(channelId)
   }
-  @Post() @Roles("sales-hunter", "sales-leader", "admin") create(
+  @Post() @Permissions() create(
     @Body() body: any,
     @Req() req: any
   ) {
     return this.service.create(body, req.user.userId)
   }
   @Get("pool")
-  @Roles("sales-hunter", "sales-leader", "admin")
+  @Permissions()
   pool() {
     return this.service.pool()
   }
   @Post(":id/assign")
-  @Roles("sales-hunter", "sales-leader", "admin")
+  @Permissions()
   assign(
     @Param("id") id: string,
     @Body() body: { salesCsId?: string; channelId?: string },
@@ -45,31 +45,30 @@ export class SalesLeadsController {
       id,
       body.salesCsId,
       req.user.userId,
-      req.user.roles,
       body.channelId
     )
   }
   @Get("mine/acquired")
-  @Roles("sales-hunter", "sales-leader", "admin")
+  @Permissions()
   acquired(@Req() req: any) {
-    return this.service.acquired(req.user.userId, req.user.roles)
+    return this.service.acquired()
   }
   @Get("mine/active")
-  @Roles("sales-hunter", "sales-cs", "sales-leader", "admin")
+  @Permissions()
   active(@Req() req: any, @Query("needsCall") needsCall?: string) {
     return this.service.active(
       req.user.userId,
-      req.user.roles,
+      req.user.permissions,
       needsCall === "true"
     )
   }
   @Get("availability")
-  @Roles("sales-hunter", "sales-leader", "admin")
+  @Permissions()
   availability() {
     return this.service.availability()
   }
   @Patch("availability/:userId")
-  @Roles("sales-hunter", "sales-leader", "admin")
+  @Permissions()
   setAvailability(
     @Param("userId") userId: string,
     @Body() body: any,
@@ -83,41 +82,41 @@ export class SalesLeadsController {
     )
   }
   @Get("reports/call-compliance")
-  @Roles("sales-hunter", "sales-leader", "admin")
+  @Permissions()
   callCompliance(@Query("cycleKey") cycleKey?: string) {
     return this.service.callCompliance(cycleKey)
   }
   @Get(":id/calls")
-  @Roles("sales-cs", "sales-leader", "admin")
+  @Permissions()
   calls(@Param("id") id: string, @Req() req: any) {
-    return this.service.callsFor(id, req.user.userId, req.user.roles)
+    return this.service.callsFor(id, req.user.userId, req.user.permissions)
   }
   @Get("by-funnel/:funnelId")
-  @Roles("sales-hunter", "sales-cs", "sales-leader", "admin")
+  @Permissions()
   detailByFunnel(@Param("funnelId") funnelId: string, @Req() req: any) {
     return this.service.detailByFunnel(
       funnelId,
       req.user.userId,
-      req.user.roles
+      req.user.permissions
     )
   }
   @Get(":id")
-  @Roles("sales-hunter", "sales-cs", "sales-leader", "admin")
+  @Permissions()
   detail(@Param("id") id: string, @Req() req: any) {
-    return this.service.detail(id, req.user.userId, req.user.roles)
+    return this.service.detail(id, req.user.userId, req.user.permissions)
   }
-  @Post(":id/calls") @Roles("sales-cs", "sales-leader", "admin") call(
+  @Post(":id/calls") @Permissions() call(
     @Param("id") id: string,
     @Body() body: any,
     @Req() req: any
   ) {
-    return this.service.addCall(id, body, req.user.userId, req.user.roles)
+    return this.service.addCall(id, body, req.user.userId, req.user.permissions)
   }
-  @Post(":id/transfer") @Roles("sales-hunter", "sales-cs", "sales-leader", "admin") transfer(
+  @Post(":id/transfer") @Permissions() transfer(
     @Param("id") id: string,
     @Body("salesCsId") salesCsId: string,
     @Req() req: any
   ) {
-    return this.service.transfer(id, salesCsId, req.user.userId, req.user.roles)
+    return this.service.transfer(id, salesCsId, req.user.userId, req.user.permissions)
   }
 }

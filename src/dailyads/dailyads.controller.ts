@@ -14,23 +14,23 @@ import {
   UseInterceptors
 } from "@nestjs/common"
 import { DailyAdsService } from "./dailyads.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { FilesInterceptor } from "@nestjs/platform-express"
 import { SimpleDailyAdsDto } from "./dto/dailyads.dto"
 import { UpsertDailyAdsMetricsDto } from "./dto/dailyads-metrics.dto"
 
 @Controller("dailyads")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DailyAdsController {
   constructor(
     private readonly dailyAdsService: DailyAdsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Permissions()
   @Post()
   @UseInterceptors(FilesInterceptor("files", 6))
   @HttpCode(HttpStatus.CREATED)
@@ -99,7 +99,7 @@ export class DailyAdsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Permissions()
   @Post("/update-with-saved-before4pm")
   @UseInterceptors(FilesInterceptor("files", 4))
   @HttpCode(HttpStatus.OK)
@@ -164,7 +164,7 @@ export class DailyAdsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Permissions()
   @Get("/before4pm")
   @HttpCode(HttpStatus.OK)
   async getBefore4pmCosts(@Query("date") dateStr: string) {
@@ -191,7 +191,7 @@ export class DailyAdsController {
     return result
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Permissions()
   @Post("/simpledailyads")
   @HttpCode(HttpStatus.OK)
   async simpleCreateOrUpdateDailyAds(
@@ -259,7 +259,7 @@ export class DailyAdsController {
     return { success: true, data: result }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Permissions()
   @Post("/metrics")
   @HttpCode(HttpStatus.OK)
   async upsertDailyAdsMetrics(
@@ -336,7 +336,7 @@ export class DailyAdsController {
     return { success: true, data: result }
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Delete("/metrics/delete")
   @HttpCode(HttpStatus.OK)
   async deleteDailyAdsMetrics(
@@ -377,7 +377,7 @@ export class DailyAdsController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("/metrics")
   @HttpCode(HttpStatus.OK)
   async getDailyAdsMetrics(

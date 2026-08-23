@@ -17,8 +17,8 @@ import {
   Req
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { IncomeService } from "./income.service"
 import { InsertIncomeRequest } from "./dto/income.dto"
 import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express"
@@ -28,7 +28,7 @@ import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { NotificationsService } from "../notifications/notifications.service"
 
 @Controller("incomes")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class IncomeController {
   constructor(
     private readonly incomeService: IncomeService,
@@ -37,7 +37,7 @@ export class IncomeController {
   ) {}
 
   /** @deprecated */
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post("")
   @UseInterceptors(FileInterceptor("file"))
   @HttpCode(HttpStatus.CREATED)
@@ -60,7 +60,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteIncomeByDate(
@@ -81,7 +81,7 @@ export class IncomeController {
   }
 
   /** @deprecated */
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post("update-affiliate")
   @UseInterceptors(FileInterceptor("file"))
   @HttpCode(HttpStatus.OK)
@@ -103,7 +103,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getIncomesByDateRange(
@@ -129,7 +129,7 @@ export class IncomeController {
     return data
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Patch("update-box")
   @HttpCode(HttpStatus.OK)
   async updateIncomesBox(
@@ -150,7 +150,7 @@ export class IncomeController {
     return { success: true }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("export-xlsx")
   async exportIncomesToXlsx(
     @Query("startDate") startDate: string,
@@ -192,7 +192,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("income-split-by-month")
   @HttpCode(HttpStatus.OK)
   async totalIncomeByMonthSplit(
@@ -213,7 +213,7 @@ export class IncomeController {
     return { totalIncome }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("quantity-split-by-month")
   @HttpCode(HttpStatus.OK)
   async totalOrdersByMonthSplit(
@@ -236,7 +236,7 @@ export class IncomeController {
     }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("total-orders-by-month")
   @HttpCode(HttpStatus.OK)
   async getTotalIncomeCountByMonth(
@@ -251,7 +251,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("kpi-percentage-split-by-month")
   @HttpCode(HttpStatus.OK)
   async KPIPercentageByMonthSplit(
@@ -267,7 +267,7 @@ export class IncomeController {
     return { KPIPercentage }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("top-creators")
   @HttpCode(HttpStatus.OK)
   async getTopCreators(
@@ -305,7 +305,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin")
+  @Permissions()
   @Patch("reset-source-checked")
   @HttpCode(HttpStatus.OK)
   async resetSourceChecked(
@@ -326,7 +326,7 @@ export class IncomeController {
     return result
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("monthly-live-shop-income")
   @HttpCode(HttpStatus.OK)
   async totalLiveAndShopIncomeByMonth(
@@ -347,7 +347,7 @@ export class IncomeController {
     return { totalIncome }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("monthly-ads-cost-split")
   @HttpCode(HttpStatus.OK)
   async adsCostSplitByMonth(
@@ -388,7 +388,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("range-stats")
   @HttpCode(HttpStatus.OK)
   async getRangeStats(
@@ -524,7 +524,7 @@ export class IncomeController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp")
+  @Permissions()
   @Post("insert-and-update-source")
   @UseInterceptors(FilesInterceptor("files"))
   @HttpCode(HttpStatus.ACCEPTED) // Đổi thành 202 ACCEPTED
@@ -695,7 +695,7 @@ export class IncomeController {
     }
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("detailed-product-stats")
   @HttpCode(HttpStatus.OK)
   async getDetailedProductStats(

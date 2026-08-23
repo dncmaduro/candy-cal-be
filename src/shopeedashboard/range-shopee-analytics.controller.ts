@@ -1,33 +1,33 @@
 import { Controller, Get, HttpCode, HttpStatus, Query, UseGuards } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { RangeShopeeAnalyticsService } from "./range-shopee-analytics.service"
 import { RangeSummaryQueryDto } from "./dto/range-summary-query.dto"
 import { RangeTimeseriesQueryDto } from "./dto/range-timeseries-query.dto"
 
 @Controller("shopee/analytics")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class RangeShopeeAnalyticsController {
   constructor(
     private readonly rangeShopeeAnalyticsService: RangeShopeeAnalyticsService
   ) {}
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("range-summary")
   @HttpCode(HttpStatus.OK)
   async getRangeSummary(@Query() query: RangeSummaryQueryDto) {
     return this.rangeShopeeAnalyticsService.getRangeSummary(query)
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("range-timeseries")
   @HttpCode(HttpStatus.OK)
   async getRangeTimeseries(@Query() query: RangeTimeseriesQueryDto) {
     return this.rangeShopeeAnalyticsService.getRangeTimeseries(query)
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("range-compare")
   @HttpCode(HttpStatus.OK)
   async getRangeCompare(

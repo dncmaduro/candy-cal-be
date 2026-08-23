@@ -18,21 +18,21 @@ import { FileInterceptor } from "@nestjs/platform-express"
 import { CalResult, ShopeeService } from "./shopeeproducts.service"
 import { ShopeeProduct } from "../database/mongoose/schemas/ShopeeProduct"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { ShopeeProductDto, CalShopeeXlsxDto } from "./dto/shopeeproducts.dto"
 import { Types } from "mongoose"
 
 @Controller("shopeeproducts")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ShopeeProductsController {
   constructor(
     private readonly shopeeService: ShopeeService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createShopeeProduct(
@@ -61,7 +61,7 @@ export class ShopeeProductsController {
     return created
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Put(":productId")
   @HttpCode(HttpStatus.OK)
   async updateShopeeProduct(
@@ -93,7 +93,7 @@ export class ShopeeProductsController {
     return updated
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Delete(":productId")
   @HttpCode(HttpStatus.OK)
   async deleteShopeeProduct(
@@ -114,21 +114,21 @@ export class ShopeeProductsController {
     return deleted
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllShopeeProducts(): Promise<{ products: ShopeeProduct[] }> {
     return this.shopeeService.getAllShopeeProducts()
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("/product")
   @HttpCode(HttpStatus.OK)
   async getShopeeProduct(@Query("id") id: string): Promise<ShopeeProduct> {
     return this.shopeeService.getShopeeProduct(id)
   }
 
-  @Roles("admin", "shopee-emp", "system-emp", "accounting-emp")
+  @Permissions()
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchShopeeProducts(
@@ -153,7 +153,7 @@ export class ShopeeProductsController {
     )
   }
 
-  @Roles("admin", "shopee-emp", "accounting-emp")
+  @Permissions()
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(

@@ -11,18 +11,18 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "./systemlogs.service"
 import { SystemLogsDto } from "./dto/systemlogs.dto"
 import { SystemLog } from "../database/mongoose/schemas/SystemLog"
 
 @Controller("systemlogs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SystemLogsController {
   constructor(private readonly systemLogsService: SystemLogsService) {}
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createSystemLog(
@@ -35,7 +35,7 @@ export class SystemLogsController {
     return this.systemLogsService.createSystemLog(systemLog, req.user.userId)
   }
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getSystemLogs(
@@ -67,7 +67,7 @@ export class SystemLogsController {
   }
 
   // select helpers for FE
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Get("/options/users")
   async listUsers(): Promise<{
     data: { value: string; label: string }[]
@@ -76,7 +76,7 @@ export class SystemLogsController {
     return users
   }
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Get("/options/types")
   async listTypes(): Promise<{
     data: { value: string; label: string }[]
@@ -85,7 +85,7 @@ export class SystemLogsController {
     return types
   }
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Get("/options/actions")
   async listActions(): Promise<{
     data: { value: string; label: string }[]
@@ -94,7 +94,7 @@ export class SystemLogsController {
     return actions
   }
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Get("/options/entities")
   async listEntities(): Promise<{
     data: { value: string; label: string }[]
@@ -103,7 +103,7 @@ export class SystemLogsController {
     return entities
   }
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Get("/options/entity-ids")
   async listEntityIds(
     @Query("entity") entity: string
@@ -112,7 +112,7 @@ export class SystemLogsController {
     return ids
   }
 
-  @Roles("admin")
+  @Permissions()
   @Delete("cleanup")
   @HttpCode(HttpStatus.OK)
   async cleanup(@Query("days") days = 90): Promise<{ deleted: number }> {

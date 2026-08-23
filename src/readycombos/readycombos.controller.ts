@@ -1,3 +1,6 @@
+import { UseGuards } from "@nestjs/common"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import {
   Body,
   Controller,
@@ -13,19 +16,20 @@ import {
   Req
 } from "@nestjs/common"
 import { ReadyCombosService } from "./readycombos.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 import { ReadyComboDto } from "./dto/readycombos.dto"
 import { ReadyCombo } from "../database/mongoose/schemas/ReadyCombo"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("readycombos")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ReadyCombosController {
   constructor(
     private readonly readyCombosService: ReadyCombosService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createCombo(
@@ -46,7 +50,7 @@ export class ReadyCombosController {
     return created
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Put("/:comboId")
   @HttpCode(HttpStatus.OK)
   async updateCombo(
@@ -68,7 +72,7 @@ export class ReadyCombosController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Patch("/:comboId/toggle")
   @HttpCode(HttpStatus.OK)
   async toggleReadyCombo(
@@ -89,7 +93,7 @@ export class ReadyCombosController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchCombos(
@@ -99,7 +103,7 @@ export class ReadyCombosController {
     return this.readyCombosService.searchCombos(searchText, isReady)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp")
+  @Permissions()
   @Delete("/:comboId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteCombo(

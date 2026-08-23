@@ -13,8 +13,8 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { ShopeeDailyLiveRevenuesService } from "./shopeedailyliverevenues.service"
 import {
@@ -24,14 +24,14 @@ import {
 import { ShopeeDailyLiveRevenue } from "../database/mongoose/schemas/ShopeeDailyLiveRevenue"
 
 @Controller("shopeedailyliverevenues")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ShopeeDailyLiveRevenuesController {
   constructor(
     private readonly shopeeDailyLiveRevenuesService: ShopeeDailyLiveRevenuesService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createShopeeDailyLiveRevenue(
@@ -57,7 +57,7 @@ export class ShopeeDailyLiveRevenuesController {
     return created
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getShopeeDailyLiveRevenues(
@@ -78,7 +78,7 @@ export class ShopeeDailyLiveRevenuesController {
     })
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getShopeeDailyLiveRevenueById(
@@ -87,7 +87,7 @@ export class ShopeeDailyLiveRevenuesController {
     return this.shopeeDailyLiveRevenuesService.getShopeeDailyLiveRevenueById(id)
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateShopeeDailyLiveRevenue(
@@ -113,7 +113,7 @@ export class ShopeeDailyLiveRevenuesController {
     return updated
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteShopeeDailyLiveRevenue(@Param("id") id: string, @Req() req) {
@@ -130,7 +130,7 @@ export class ShopeeDailyLiveRevenuesController {
     )
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Delete()
   @HttpCode(HttpStatus.OK)
   async deleteShopeeDailyLiveRevenueByDateAndChannel(

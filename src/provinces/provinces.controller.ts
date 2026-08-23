@@ -1,12 +1,16 @@
+import { UseGuards } from "@nestjs/common"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { Controller, Post, Get, HttpCode, HttpStatus } from "@nestjs/common"
 import { ProvincesService } from "./provinces.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 
 @Controller("provinces")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ProvincesController {
   constructor(private readonly provincesService: ProvincesService) {}
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Post("/sync")
   @HttpCode(HttpStatus.OK)
   async syncProvinces(): Promise<{ synced: number }> {
@@ -14,7 +18,7 @@ export class ProvincesController {
     return { synced }
   }
 
-  @Roles("admin", "system-emp", "tiktokshop-emp", "accounting-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAll() {

@@ -14,8 +14,8 @@ import {
 } from "@nestjs/common"
 import { DailyTasksService } from "./dailytasks.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import {
   CreateTaskDefDto,
   UpdateTaskDefDto,
@@ -26,7 +26,7 @@ import {
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("dailytasks")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DailyTasksController {
   constructor(
     private readonly dailyTasksService: DailyTasksService,
@@ -43,7 +43,7 @@ export class DailyTasksController {
   }
 
   // admin: get all users' tasks by date (default today) - return totals only
-  @Roles("admin")
+  @Permissions()
   @Get("users")
   @HttpCode(HttpStatus.OK)
   async getAllUsersTasks(
@@ -54,7 +54,7 @@ export class DailyTasksController {
   }
 
   // admin: get user's tasks by date (default today)
-  @Roles("admin")
+  @Permissions()
   @Get("users/:userId")
   @HttpCode(HttpStatus.OK)
   async getUserTasks(
@@ -66,7 +66,7 @@ export class DailyTasksController {
   }
 
   // user: mark done
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Patch(":code/done")
   @HttpCode(HttpStatus.OK)
   async markDone(
@@ -80,7 +80,7 @@ export class DailyTasksController {
   }
 
   // ADMIN defs CRUD
-  @Roles("admin")
+  @Permissions()
   @Get("definitions")
   @HttpCode(HttpStatus.OK)
   async listDefinitions(
@@ -94,7 +94,7 @@ export class DailyTasksController {
     return { data, total }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Post("definitions")
   @HttpCode(HttpStatus.CREATED)
   async createDefinition(
@@ -104,7 +104,7 @@ export class DailyTasksController {
     return { data: doc }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Patch("definitions/:code")
   @HttpCode(HttpStatus.OK)
   async updateDefinition(
@@ -115,7 +115,7 @@ export class DailyTasksController {
     return { data: doc }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Delete("definitions/:code")
   @HttpCode(HttpStatus.OK)
   async deleteDefinition(
@@ -125,7 +125,7 @@ export class DailyTasksController {
     return { ...res }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Post("generate")
   @HttpCode(HttpStatus.OK)
   async generate(
@@ -136,7 +136,7 @@ export class DailyTasksController {
   }
 
   // user: recheck http task
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Patch(":code/recheck")
   @HttpCode(HttpStatus.OK)
   async recheck(

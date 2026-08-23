@@ -11,8 +11,8 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SalesDailyReportsService } from "./salesdailyreports.service"
 import { SalesDailyReport } from "../database/mongoose/schemas/SalesDailyReport"
 import { SalesMonthKpi } from "../database/mongoose/schemas/SalesMonthKpi"
@@ -20,14 +20,14 @@ import { SalesDailyAds } from "../database/mongoose/schemas/SalesDailyAds"
 import { SalesDailyAdsService } from "../salesdailyads/salesdailyads.service"
 
 @Controller("salesdailyreports")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesDailyReportsController {
   constructor(
     private readonly salesDailyReportsService: SalesDailyReportsService,
     private readonly salesDailyAdsService: SalesDailyAdsService
   ) {}
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("revenue-for-date")
   @HttpCode(HttpStatus.OK)
   async getRevenueForDate(
@@ -54,7 +54,7 @@ export class SalesDailyReportsController {
     )
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createReport(
@@ -71,14 +71,14 @@ export class SalesDailyReportsController {
     })
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteReport(@Param("id") id: string): Promise<void> {
     await this.salesDailyReportsService.deleteReport(id)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("by-month")
   @HttpCode(HttpStatus.OK)
   async getReportsByMonth(
@@ -95,7 +95,7 @@ export class SalesDailyReportsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("month-kpi/by-date")
   @HttpCode(HttpStatus.OK)
   async getMonthKpi(
@@ -105,7 +105,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.getMonthKpi(new Date(date), channelId)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("accumulated-revenue/by-month")
   @HttpCode(HttpStatus.OK)
   async getAccumulatedRevenueForMonth(
@@ -122,7 +122,7 @@ export class SalesDailyReportsController {
     return { accumulatedRevenue }
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post("month-kpi")
   @HttpCode(HttpStatus.CREATED)
   async createOrUpdateMonthKpi(
@@ -137,7 +137,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.createOrUpdateMonthKpi(body)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("month-kpi")
   @HttpCode(HttpStatus.OK)
   async getMonthKpis(
@@ -159,7 +159,7 @@ export class SalesDailyReportsController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("month-kpi/:id")
   @HttpCode(HttpStatus.OK)
   async getMonthKpiDetail(
@@ -168,7 +168,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.getMonthKpiDetail(id)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getReportDetail(
@@ -177,7 +177,7 @@ export class SalesDailyReportsController {
     return this.salesDailyReportsService.getReportDetail(id)
   }
 
-  @Roles("admin", "system-emp")
+  @Permissions()
   @Post("update-reports-in-range")
   @HttpCode(HttpStatus.OK)
   async updateReportsInDateRange(

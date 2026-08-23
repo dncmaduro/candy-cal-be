@@ -14,20 +14,20 @@ import {
 } from "@nestjs/common"
 import { FileInterceptor } from "@nestjs/platform-express"
 import { ShopeeIncomesService } from "./shopeeincomes.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("shopeeincomes")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ShopeeIncomesController {
   constructor(
     private readonly shopeeIncomesService: ShopeeIncomesService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader", "shopee-emp")
+  @Permissions()
   @Post("upload")
   @UseInterceptors(FileInterceptor("file"))
   async uploadIncomeFile(
@@ -48,14 +48,7 @@ export class ShopeeIncomesController {
     })
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "shopee-emp",
-    "system-emp"
-  )
+  @Permissions()
   @Get("search")
   async searchIncomes(
     @Query("productCode") productCode?: string,
@@ -76,7 +69,7 @@ export class ShopeeIncomesController {
     })
   }
 
-  @Roles("admin", "livestream-leader", "shopee-emp")
+  @Permissions()
   @Delete()
   @HttpCode(HttpStatus.OK)
   async deleteIncomes(
