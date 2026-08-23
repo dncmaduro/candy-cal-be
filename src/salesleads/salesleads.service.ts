@@ -44,8 +44,8 @@ export class SalesLeadsService {
     private notifications: NotificationsService,
     private systemLogs: SystemLogsService
   ) {}
-  private manager(roles: string[] = []) {
-    return roles.includes("admin") || roles.includes("sales-leader") || roles.includes("sales-hunter")
+  private manager(permissions: string[] = []) {
+    return permissions.includes("api.sales-leads.pool")
   }
   private month(now = new Date()) {
     const zonedNow = toZonedTime(now, SALES_TIME_ZONE)
@@ -98,7 +98,7 @@ export class SalesLeadsService {
     if (
       !user ||
       user.active === false ||
-      !user.roles?.includes("sales-cs") ||
+      !user.permissions?.includes("sales.assignee") ||
       availability?.isReceivingLeads !== true
     )
       throw new HttpException(
@@ -154,11 +154,11 @@ export class SalesLeadsService {
     }
     const users: any[] = await this.users
       .find({
-        roles: "sales-cs",
+        permissions: "sales.assignee",
         active: { $ne: false },
         ...(assignedIds ? { _id: { $in: assignedIds } } : {})
       })
-      .select("name username active roles")
+      .select("name username active permissions")
       .lean()
     const availability = await this.availabilityModel
       .find({ salesCsId: { $in: users.map((user) => user._id) } })
@@ -178,7 +178,7 @@ export class SalesLeadsService {
   async availability() {
     const [users, rows] = await Promise.all([
       this.users
-        .find({ roles: "sales-cs" })
+        .find({ permissions: "sales.assignee" })
         .select("name username active")
         .lean(),
       this.availabilityModel.find().lean()
@@ -199,7 +199,7 @@ export class SalesLeadsService {
     note?: string
   ) {
     const user = await this.users.findById(userId).lean()
-    if (!user || !user.roles?.includes("sales-cs"))
+    if (!user || !user.permissions?.includes("sales.assignee"))
       throw new HttpException(
         "Người dùng không phải sales CS",
         HttpStatus.BAD_REQUEST
@@ -347,16 +347,8 @@ export class SalesLeadsService {
     id: string,
     salesCsId: string | undefined,
     actor: string,
-    roles: string[] = [],
     channelId?: string
   ) {
-    const isManager = this.manager(roles)
-    const canAssign = isManager || roles.includes("sales-hunter")
-    if (!canAssign)
-      throw new HttpException(
-        "Bạn không có quyền phân lead",
-        HttpStatus.FORBIDDEN
-      )
     const assigneeId = salesCsId
     if (!assigneeId)
       throw new HttpException(
@@ -442,8 +434,8 @@ export class SalesLeadsService {
       )
     return assignment
   }
-  async acquired(userId: string, roles: string[]) {
-    const q = this.manager(roles) ? {} : { hunterId: userId }
+  async acquired() {
+    const q = {}
     return this.cases
       .find(q)
       .populate("salesFunnelId", "name phoneNumber")
@@ -455,9 +447,9 @@ export class SalesLeadsService {
       .sort({ createdAt: -1 })
       .lean()
   }
-  async active(userId: string, roles: string[], needsCall = false) {
+  async active(userId: string, permissions: string[], needsCall = false) {
     const q: any = { status: { $in: ["active", "retained"] } }
-    if (!this.manager(roles)) q.salesCsId = userId
+    if (!this.manager(permissions)) q.salesCsId = userId
     const assignments: any[] = await this.assignments
       .find(q)
       .populate({
@@ -480,13 +472,11 @@ export class SalesLeadsService {
         !called.some((x: any) => x.toString() === a._id.toString())
     )
   }
-  private async access(id: string, userId: string, roles: string[]) {
+  private async access(id: string, userId: string, permissions: string[]) {
     const lead: any = await this.cases.findById(id).lean()
     if (!lead)
       throw new HttpException("Lead không tồn tại", HttpStatus.NOT_FOUND)
-    if (this.manager(roles)) return { lead, mode: "all" }
-    if (roles.includes("sales-hunter") && lead.hunterId.toString() === userId)
-      return { lead, mode: "hunter" }
+    if (this.manager(permissions)) return { lead, mode: "all" }
     const assignments: any[] = await this.assignments
       .find({ leadCaseId: id, salesCsId: userId })
       .lean()
@@ -496,18 +486,9 @@ export class SalesLeadsService {
       HttpStatus.FORBIDDEN
     )
   }
-  async detail(id: string, userId: string, roles: string[]) {
-    const data: any = await this.access(id, userId, roles)
+  async detail(id: string, userId: string, permissions: string[]) {
+    const data: any = await this.access(id, userId, permissions)
     const funnel = await this.funnels.findById(data.lead.salesFunnelId).lean()
-    if (data.mode === "hunter")
-      return {
-        ...data.lead,
-        funnel: { name: funnel?.name, phoneNumber: funnel?.phoneNumber },
-        assignment: await this.assignments
-          .findById(data.lead.currentAssignmentId)
-          .populate("salesCsId", "name")
-          .lean()
-      }
     const assignments =
       data.mode === "all"
         ? await this.assignments
@@ -522,21 +503,16 @@ export class SalesLeadsService {
       .lean()
     return { ...data.lead, funnel, assignments, calls }
   }
-  async detailByFunnel(funnelId: string, userId: string, roles: string[]) {
+  async detailByFunnel(funnelId: string, userId: string, permissions: string[]) {
     const lead = await this.cases
       .findOne({ salesFunnelId: funnelId })
       .select("_id")
       .lean()
     if (!lead) return null
-    return this.detail(lead._id.toString(), userId, roles)
+    return this.detail(lead._id.toString(), userId, permissions)
   }
-  async callsFor(id: string, userId: string, roles: string[]) {
-    const data: any = await this.access(id, userId, roles)
-    if (data.mode === "hunter")
-      throw new HttpException(
-        "Hunter không có quyền xem lịch sử gọi",
-        HttpStatus.FORBIDDEN
-      )
+  async callsFor(id: string, userId: string, permissions: string[]) {
+    const data: any = await this.access(id, userId, permissions)
     const assignments =
       data.mode === "all"
         ? await this.assignments.find({ leadCaseId: id }).lean()
@@ -546,7 +522,7 @@ export class SalesLeadsService {
       .sort({ calledAt: -1 })
       .lean()
   }
-  async addCall(id: string, body: any, userId: string, roles: string[]) {
+  async addCall(id: string, body: any, userId: string, permissions: string[]) {
     if (!OUTCOMES.includes(body.outcome) || !String(body.note || "").trim())
       throw new HttpException(
         "Cần chọn kết quả và nhập ghi chú",
@@ -555,7 +531,7 @@ export class SalesLeadsService {
     const assignment: any = await this.assignments.findOne({
       leadCaseId: id,
       status: "active",
-      ...(this.manager(roles) ? {} : { salesCsId: userId })
+      ...(this.manager(permissions) ? {} : { salesCsId: userId })
     })
     if (!assignment)
       throw new HttpException(
@@ -577,13 +553,13 @@ export class SalesLeadsService {
     id: string,
     salesCsId: string,
     actor: string,
-    roles: string[]
+    permissions: string[]
   ) {
     await this.eligible(salesCsId)
     const current: any = await this.assignments.findOne({
       leadCaseId: id,
       status: { $in: ["active", "retained"] },
-      ...(this.manager(roles) ? {} : { salesCsId: actor })
+      ...(this.manager(permissions) ? {} : { salesCsId: actor })
     })
     if (!current)
       throw new HttpException(
@@ -600,7 +576,7 @@ export class SalesLeadsService {
         {
           _id: current._id,
           status: { $in: ["active", "retained"] },
-          ...(this.manager(roles) ? {} : { salesCsId: actor })
+          ...(this.manager(permissions) ? {} : { salesCsId: actor })
         },
         {
           $set: {
@@ -689,7 +665,10 @@ export class SalesLeadsService {
   }
   private async notifyPoolAvailable() {
     const recipients = await this.users
-      .find({ roles: "sales-hunter", active: { $ne: false } })
+      .find({
+        permissions: "sales.leads.pool.notify",
+        active: { $ne: false }
+      })
       .select("_id")
       .lean()
     await Promise.all(

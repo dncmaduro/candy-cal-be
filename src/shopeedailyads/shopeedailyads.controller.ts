@@ -13,8 +13,8 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { ShopeeDailyAdsService } from "./shopeedailyads.service"
 import {
@@ -24,14 +24,14 @@ import {
 import { ShopeeDailyAds } from "../database/mongoose/schemas/ShopeeDailyAds"
 
 @Controller("shopeedailyads")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ShopeeDailyAdsController {
   constructor(
     private readonly shopeeDailyAdsService: ShopeeDailyAdsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createShopeeDailyAds(
@@ -56,7 +56,7 @@ export class ShopeeDailyAdsController {
     return created
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getShopeeDailyAds(
@@ -77,14 +77,14 @@ export class ShopeeDailyAdsController {
     })
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getShopeeDailyAdsById(@Param("id") id: string): Promise<ShopeeDailyAds> {
     return this.shopeeDailyAdsService.getShopeeDailyAdsById(id)
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateShopeeDailyAds(
@@ -106,7 +106,7 @@ export class ShopeeDailyAdsController {
     return updated
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteShopeeDailyAds(@Param("id") id: string, @Req() req) {
@@ -123,7 +123,7 @@ export class ShopeeDailyAdsController {
     )
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Delete()
   @HttpCode(HttpStatus.OK)
   async deleteShopeeDailyAdsByDateAndChannel(

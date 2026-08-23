@@ -7,16 +7,16 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { ShopeeDashboardService } from "./shopeedashboard.service"
 
 @Controller("shopeedashboard")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ShopeeDashboardController {
   constructor(private readonly shopeeDashboardService: ShopeeDashboardService) {}
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("overview")
   @HttpCode(HttpStatus.OK)
   async getOverview(

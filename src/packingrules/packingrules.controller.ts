@@ -13,22 +13,22 @@ import {
   Req
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { PackingRulesService } from "./packingrules.service"
 import { PackingRule } from "../database/mongoose/schemas/PackingRule"
 import { PackingRuleDto } from "./dto/packingrules.dto"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("packingrules")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PackingRulesController {
   constructor(
     private readonly packingRulesService: PackingRulesService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createRule(
@@ -52,7 +52,7 @@ export class PackingRulesController {
     return created
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateRule(
@@ -74,7 +74,7 @@ export class PackingRulesController {
     return updated
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRule(@Param("id") id: string, @Req() req): Promise<void> {
@@ -91,14 +91,14 @@ export class PackingRulesController {
     )
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getRuleById(@Param("id") id: string): Promise<PackingRule | null> {
     return this.packingRulesService.getRuleById(id)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchRules(

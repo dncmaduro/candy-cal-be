@@ -14,19 +14,19 @@ import {
 } from "@nestjs/common"
 import { LivestreamchannelsService } from "./livestreamchannels.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("livestreamchannels")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreamchannelsController {
   constructor(
     private readonly livestreamchannelsService: LivestreamchannelsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLivestreamChannel(
@@ -57,17 +57,7 @@ export class LivestreamchannelsController {
     return created
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "tiktokshop-emp",
-    "shopee-emp",
-    "accounting-emp",
-    "livestream-accounting",
-    "system-emp"
-  )
+  @Permissions()
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchLivestreamChannels(
@@ -84,22 +74,14 @@ export class LivestreamchannelsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting",
-    "shopee-emp",
-    "system-emp"
-  )
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getLivestreamChannelById(@Param("id") id: string) {
     return this.livestreamchannelsService.getLivestreamChannelById(id)
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateLivestreamChannel(
@@ -129,7 +111,7 @@ export class LivestreamchannelsController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLivestreamChannel(@Param("id") id: string, @Req() req) {

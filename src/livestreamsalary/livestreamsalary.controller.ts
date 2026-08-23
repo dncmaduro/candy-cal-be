@@ -12,19 +12,19 @@ import {
   HttpStatus
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { LivestreamsalaryService } from "./livestreamsalary.service"
 
 @Controller("livestreamsalary")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreamsalaryController {
   constructor(
     private readonly livestreamsalaryService: LivestreamsalaryService
   ) {}
 
   @Post()
-  @Roles("admin")
+  @Permissions()
   @HttpCode(HttpStatus.CREATED)
   async createSalary(
     @Body()
@@ -38,7 +38,7 @@ export class LivestreamsalaryController {
   }
 
   @Put(":id")
-  @Roles("admin")
+  @Permissions()
   @HttpCode(HttpStatus.OK)
   async updateSalary(
     @Param("id") id: string,
@@ -53,7 +53,7 @@ export class LivestreamsalaryController {
   }
 
   @Get("search")
-  @Roles("admin", "livestream-accounting")
+  @Permissions()
   @HttpCode(HttpStatus.OK)
   async searchSalaries(
     @Query("page") page?: number,
@@ -63,14 +63,14 @@ export class LivestreamsalaryController {
   }
 
   @Get(":id")
-  @Roles("admin")
+  @Permissions()
   @HttpCode(HttpStatus.OK)
   async getSalaryById(@Param("id") id: string) {
     return this.livestreamsalaryService.getSalaryById(id)
   }
 
   @Delete(":id")
-  @Roles("admin")
+  @Permissions()
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSalary(@Param("id") id: string) {
     await this.livestreamsalaryService.deleteSalary(id)

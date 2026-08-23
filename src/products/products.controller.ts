@@ -21,19 +21,19 @@ import { ProductDto } from "./dto/product.dto"
 import { Product } from "../database/mongoose/schemas/Product"
 import { CalItemsResponse } from "./products"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("products")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createProduct(
@@ -55,7 +55,7 @@ export class ProductsController {
     return created
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateProduct(
@@ -76,7 +76,7 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Put("/items")
   @HttpCode(HttpStatus.OK)
   async updateItemsForProduct(
@@ -102,21 +102,21 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp", "system-emp", "accounting-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllProducts(): Promise<ProductResponse[]> {
     return this.productsService.getAllProducts()
   }
 
-  @Roles("admin", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("/product")
   @HttpCode(HttpStatus.OK)
   async getProduct(@Query("id") id: string): Promise<ProductResponse> {
     return this.productsService.getProduct(id)
   }
 
-  @Roles("admin", "tiktokshop-emp", "system-emp", "accounting-emp")
+  @Permissions()
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchProducts(
@@ -134,7 +134,7 @@ export class ProductsController {
     return this.productsService.searchProducts(searchText, deletedFilter)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp")
+  @Permissions()
   @Post("/cal-xlsx")
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
@@ -162,7 +162,7 @@ export class ProductsController {
     return res
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Patch(":productId/change-ready-status")
   @HttpCode(HttpStatus.OK)
   async changeReadyStatus(
@@ -183,7 +183,7 @@ export class ProductsController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Delete(":productId")
   @HttpCode(HttpStatus.OK)
   async deleteProduct(
@@ -204,7 +204,7 @@ export class ProductsController {
     return { message: "Sản phẩm đã được xóa thành công" }
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Patch(":productId/restore")
   @HttpCode(HttpStatus.OK)
   async restoreProduct(

@@ -10,16 +10,16 @@ import {
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { SalesDailyAds } from "../database/mongoose/schemas/SalesDailyAds"
-import { Roles } from "../roles/roles.decorator"
-import { RolesGuard } from "../roles/roles.guard"
+import { Permissions } from "../permissions/permissions.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { SalesDailyAdsService } from "./salesdailyads.service"
 
 @Controller("salesdailyads")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesDailyAdsController {
   constructor(private readonly salesDailyAdsService: SalesDailyAdsService) {}
 
-  @Roles("admin", "sales-hunter", "facebook-ads-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.OK)
   async upsertAdsCost(
@@ -37,13 +37,7 @@ export class SalesDailyAdsController {
     })
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "system-emp",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get("by-month")
   @HttpCode(HttpStatus.OK)
   async getAdsByMonth(

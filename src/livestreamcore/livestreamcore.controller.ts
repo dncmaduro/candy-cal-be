@@ -15,19 +15,19 @@ import {
 } from "@nestjs/common"
 import { LivestreamcoreService } from "./livestreamcore.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("livestreamcore")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreamcoreController {
   constructor(
     private readonly livestreamcoreService: LivestreamcoreService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLivestream(
@@ -56,7 +56,7 @@ export class LivestreamcoreController {
     return created
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post("range")
   @HttpCode(HttpStatus.CREATED)
   async createLivestreamRange(
@@ -100,14 +100,7 @@ export class LivestreamcoreController {
     return created
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "tiktokshop-emp",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("by-date-range")
   @HttpCode(HttpStatus.OK)
   async getLivestreamsByDateRange(
@@ -126,14 +119,7 @@ export class LivestreamcoreController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "tiktokshop-emp",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("products-quantity-by-date-range")
   @HttpCode(HttpStatus.OK)
   async getProductsQuantityByDateRange(
@@ -150,7 +136,7 @@ export class LivestreamcoreController {
     return { productsQuantity }
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post(":livestreamId/snapshots")
   @HttpCode(HttpStatus.CREATED)
   async addSnapshotToLivestream(
@@ -182,7 +168,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post(":livestreamId/snapshots/external")
   @HttpCode(HttpStatus.CREATED)
   async addExternalSnapshot(
@@ -220,7 +206,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Put(":livestreamId/snapshots/:snapshotId")
   @HttpCode(HttpStatus.OK)
   async updateSnapshot(
@@ -254,7 +240,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader", "livestream-ast")
+  @Permissions()
   @Patch(":livestreamId/snapshots/:snapshotId/report")
   @HttpCode(HttpStatus.OK)
   async reportSnapshot(
@@ -292,7 +278,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Delete(":livestreamId/snapshots/:snapshotId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSnapshot(
@@ -315,7 +301,7 @@ export class LivestreamcoreController {
   }
 
   // API mới: chỉ update startTime/endTime trực tiếp trên snapshot
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Patch(":livestreamId/snapshots/:snapshotId/time-direct")
   @HttpCode(HttpStatus.OK)
   async updateSnapshotTimeDirect(
@@ -351,7 +337,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post(":livestreamId/metrics")
   @HttpCode(HttpStatus.OK)
   async setLivestreamMetrics(
@@ -378,7 +364,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post("sync-snapshots")
   @HttpCode(HttpStatus.OK)
   async syncSnapshots(
@@ -414,7 +400,7 @@ export class LivestreamcoreController {
     return result
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Patch("fix-by-date")
   @HttpCode(HttpStatus.OK)
   async fixLivestreamByDate(
@@ -445,7 +431,7 @@ export class LivestreamcoreController {
     return { updated }
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Patch(":livestreamId/snapshots/:snapshotId/alt")
   @HttpCode(HttpStatus.OK)
   async updateSnapshotAlt(
@@ -478,7 +464,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Patch(":livestreamId/snapshots/:snapshotId/assign-other")
   @HttpCode(HttpStatus.OK)
   async assignOtherToSnapshot(
@@ -510,7 +496,7 @@ export class LivestreamcoreController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLivestream(@Param("id") id: string, @Req() req) {

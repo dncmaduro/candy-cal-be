@@ -13,14 +13,14 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SalesActivitiesService } from "./salesactivities.service"
 import { SalesActivity } from "../database/mongoose/schemas/SalesActivity"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("salesactivities")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesActivitiesController {
   constructor(
     private readonly salesActivitiesService: SalesActivitiesService,
@@ -28,15 +28,10 @@ export class SalesActivitiesController {
   ) {}
 
   private isSalesCsOnly(req: any) {
-    const roles: string[] = req.user?.roles || []
-    return (
-      roles.includes("sales-cs") &&
-      !roles.includes("admin") &&
-      !roles.includes("sales-leader")
-    )
+    return !(req.user?.permissions || []).includes("sales.activities.read.all")
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createActivity(
@@ -73,7 +68,7 @@ export class SalesActivitiesController {
     return created
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllActivities(
@@ -92,7 +87,7 @@ export class SalesActivitiesController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("funnel/:salesFunnelId/latest")
   @HttpCode(HttpStatus.OK)
   async getLatestActivitiesByFunnel(
@@ -105,14 +100,14 @@ export class SalesActivitiesController {
     )
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getActivityById(@Param("id") id: string): Promise<SalesActivity> {
     return this.salesActivitiesService.getActivityById(id)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateActivity(
@@ -149,7 +144,7 @@ export class SalesActivitiesController {
     return updated
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteActivity(@Param("id") id: string, @Req() req): Promise<void> {

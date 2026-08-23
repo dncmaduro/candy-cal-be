@@ -13,21 +13,21 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SalesChannelsService } from "./saleschannels.service"
 import { SalesChannel } from "../database/mongoose/schemas/SalesChannel"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("saleschannels")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesChannelsController {
   constructor(
     private readonly salesChannelsService: SalesChannelsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-cs", "system-emp", "sales-hunter")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createChannel(
@@ -56,7 +56,7 @@ export class SalesChannelsController {
     return created
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "sales-hunter")
+  @Permissions()
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateChannel(
@@ -86,7 +86,7 @@ export class SalesChannelsController {
     return updated
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "sales-hunter")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteChannel(@Param("id") id: string, @Req() req): Promise<void> {
@@ -103,28 +103,14 @@ export class SalesChannelsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getChannelById(@Param("id") id: string): Promise<SalesChannel | null> {
     return this.salesChannelsService.getChannelById(id)
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async searchChannels(
@@ -139,7 +125,7 @@ export class SalesChannelsController {
     )
   }
 
-  @Roles("admin", "sales-hunter")
+  @Permissions()
   @Post(":id/assign")
   @HttpCode(HttpStatus.OK)
   async assignUser(
@@ -161,13 +147,7 @@ export class SalesChannelsController {
     return updated
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get("my/channel")
   @HttpCode(HttpStatus.OK)
   async getMyChannel(@Req() req): Promise<{ channel: SalesChannel | null }> {

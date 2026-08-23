@@ -14,8 +14,8 @@ import {
 import { UsersService } from "./users.service"
 import { LoginDto, RefreshTokenDto, ValidTokenDto } from "./dto/login.dto"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { Roles } from "../roles/roles.decorator"
-import { RolesGuard } from "../roles/roles.guard"
+import { Permissions } from "../permissions/permissions.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 
 @Controller("users")
 export class UsersController {
@@ -52,6 +52,7 @@ export class UsersController {
     username: string
     name: string
     roles: string[]
+    permissions: string[]
     avatarUrl?: string
     active: boolean
     _id: string
@@ -93,13 +94,13 @@ export class UsersController {
     return this.usersService.updateUser(req.user.username, { name: body.name })
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("admin")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions()
   @Get("admin/list")
   @HttpCode(HttpStatus.OK)
   async adminListUsers(
     @Query("searchText") searchText: string,
-    @Query("role") role?: string,
+    @Query("permission") permission?: string,
     @Query("status") status = "all",
     @Query("page") page = 1,
     @Query("limit") limit = 10
@@ -109,6 +110,7 @@ export class UsersController {
       username: string
       name: string
       roles: string[]
+      permissions: string[]
       avatarUrl?: string
       active: boolean
     }[]
@@ -116,15 +118,23 @@ export class UsersController {
   }> {
     return this.usersService.adminListUsers(
       searchText,
-      role,
+      permission,
       status,
       Number(page),
       Number(limit)
     )
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("admin")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions("api.users.admin-list-users")
+  @Get("admin/:userId")
+  @HttpCode(HttpStatus.OK)
+  async adminGetUser(@Param("userId") userId: string) {
+    return this.usersService.adminGetUser(userId)
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions()
   @Patch(":userId/active")
   @HttpCode(HttpStatus.OK)
   async updateUserActive(
@@ -139,8 +149,8 @@ export class UsersController {
     )
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("admin")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions()
   @Patch(":userId/roles")
   @HttpCode(HttpStatus.OK)
   async updateUserRoles(
@@ -151,19 +161,51 @@ export class UsersController {
     return this.usersService.updateUserRoles(userId, body.roles, req.user.username)
   }
 
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions("api.users.admin-list-users")
+  @Get("permissions")
+  @HttpCode(HttpStatus.OK)
+  async listPermissions() {
+    return { data: await this.usersService.listPermissions() }
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions("api.users.admin-list-users")
+  @Get("permission-groups")
+  @HttpCode(HttpStatus.OK)
+  async listPermissionGroups() {
+    return { data: await this.usersService.listPermissionGroups() }
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions("api.users.update-user-roles")
+  @Patch(":userId/permissions")
+  @HttpCode(HttpStatus.OK)
+  async updateUserPermissions(
+    @Req() req,
+    @Body() body: { permissions: string[] },
+    @Param("userId") userId: string
+  ): Promise<{ message: string; data: { _id: string; permissions: string[] } }> {
+    return this.usersService.updateUserPermissions(
+      userId,
+      body.permissions,
+      req.user.username
+    )
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get("publicsearch")
   @HttpCode(HttpStatus.OK)
   async publicSearchUsers(
     @Query("searchText") searchText: string,
-    @Query("role") role?: string,
+    @Query("permission") permission?: string,
     @Query("status") status = "all",
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: { _id: string; name: string }[]; total: number }> {
     return this.usersService.publicSearchUsers(
       searchText,
-      role,
+      permission,
       status,
       Number(page),
       Number(limit)

@@ -10,22 +10,22 @@ import {
   Req
 } from "@nestjs/common"
 import { DailyLogsService } from "./dailylogs.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 import { DailyLogDto } from "./dto/dailylogs.dto"
 import { DailyLog } from "../database/mongoose/schemas/DailyLog"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("dailylogs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DailyLogsController {
   constructor(
     private readonly dailyLogsService: DailyLogsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createDailyLog(
@@ -44,7 +44,7 @@ export class DailyLogsController {
     )
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getDailyLogs(
@@ -55,7 +55,7 @@ export class DailyLogsController {
     return this.dailyLogsService.getDailyLogs(channelId, page, limit)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("by-date")
   @HttpCode(HttpStatus.OK)
   async getDailyLogByDate(

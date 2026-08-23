@@ -14,21 +14,21 @@ import {
 } from "@nestjs/common"
 import { StorageItemsService } from "./storageitems.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { StorageItem } from "../database/mongoose/schemas/StorageItem"
 import { StorageItemDto } from "./dto/storageitems.dto"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("storageitems")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class StorageItemsController {
   constructor(
     private readonly storageItemsService: StorageItemsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createItem(
@@ -50,7 +50,7 @@ export class StorageItemsController {
     return created
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateItem(
@@ -71,14 +71,14 @@ export class StorageItemsController {
     return updated
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getItem(@Query("id") id: string): Promise<StorageItem> {
     return this.storageItemsService.getItem(id)
   }
 
-  @Roles("admin", "accounting-emp", "tiktokshop-emp", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(
@@ -91,7 +91,7 @@ export class StorageItemsController {
     return this.storageItemsService.searchItems(searchText, deletedFlag)
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteItem(@Param("id") id: string, @Req() req): Promise<void> {
@@ -108,7 +108,7 @@ export class StorageItemsController {
     )
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post(":id/restore")
   @HttpCode(HttpStatus.OK)
   async restoreItem(@Param("id") id: string, @Req() req): Promise<void> {

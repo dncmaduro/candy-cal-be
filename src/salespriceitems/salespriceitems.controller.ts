@@ -14,8 +14,8 @@ import {
 } from "@nestjs/common"
 import { SalesPriceItemsService } from "./salespriceitems.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import {
   CreateSalesPriceItemDto,
   UpdateSalesPriceItemDto
@@ -24,14 +24,14 @@ import { SalesPriceItem } from "../database/mongoose/schemas/SalesPriceItem"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("salespriceitems")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesPriceItemsController {
   constructor(
     private readonly salesPriceItemsService: SalesPriceItemsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createSalesPriceItem(
@@ -53,7 +53,7 @@ export class SalesPriceItemsController {
     return created
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateSalesPriceItem(
@@ -75,7 +75,7 @@ export class SalesPriceItemsController {
     return updated
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getSalesPriceItems(
@@ -87,7 +87,7 @@ export class SalesPriceItemsController {
     return this.salesPriceItemsService.getSalesPriceItems(p, l)
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getSalesPriceItemByItemId(
@@ -96,7 +96,7 @@ export class SalesPriceItemsController {
     return this.salesPriceItemsService.getSalesPriceItemByItemId(id)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSalesPriceItem(

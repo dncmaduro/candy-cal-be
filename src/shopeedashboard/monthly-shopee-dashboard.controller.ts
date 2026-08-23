@@ -1,26 +1,26 @@
 import { Controller, Get, HttpCode, HttpStatus, Query, UseGuards } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { MonthlyShopeeDashboardService } from "./monthly-shopee-dashboard.service"
 import { MonthlySummaryQueryDto } from "./dto/monthly-summary-query.dto"
 import { MonthlyKpisQueryDto } from "./dto/monthly-kpis-query.dto"
 
 @Controller("shopee/incomes")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MonthlyShopeeDashboardController {
   constructor(
     private readonly monthlyShopeeDashboardService: MonthlyShopeeDashboardService
   ) {}
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("monthly-summary")
   @HttpCode(HttpStatus.OK)
   async getMonthlySummary(@Query() query: MonthlySummaryQueryDto) {
     return this.monthlyShopeeDashboardService.getMonthlySummary(query)
   }
 
-  @Roles("admin", "shopee-emp", "system-emp")
+  @Permissions()
   @Get("monthly-kpis")
   @HttpCode(HttpStatus.OK)
   async getMonthlyKpis(@Query() query: MonthlyKpisQueryDto) {
