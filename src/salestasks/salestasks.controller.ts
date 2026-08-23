@@ -13,21 +13,21 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SalesTasksService } from "./salestasks.service"
 import { SalesTask } from "../database/mongoose/schemas/SalesTask"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("salestasks")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesTasksController {
   constructor(
     private readonly salesTasksService: SalesTasksService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "sales-hunter")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createTask(
@@ -57,13 +57,7 @@ export class SalesTasksController {
     return created
   }
 
-  @Roles(
-    "admin",
-    "sales-hunter",
-    "sales-cs",
-    "system-emp",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllTasks(
@@ -82,20 +76,14 @@ export class SalesTasksController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-hunter",
-    "sales-cs",
-    "system-emp",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getTaskById(@Param("id") id: string): Promise<SalesTask> {
     return this.salesTasksService.getTaskById(id)
   }
 
-  @Roles("admin", "sales-hunter", "sales-cs")
+  @Permissions()
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateTask(
@@ -126,7 +114,7 @@ export class SalesTasksController {
     return updated
   }
 
-  @Roles("admin", "sales-hunter", "sales-cs")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteTask(@Param("id") id: string, @Req() req): Promise<void> {
@@ -144,7 +132,7 @@ export class SalesTasksController {
     )
   }
 
-  @Roles("admin", "sales-hunter", "sales-cs")
+  @Permissions()
   @Post(":id/complete")
   @HttpCode(HttpStatus.OK)
   async completeTask(@Param("id") id: string, @Req() req): Promise<SalesTask> {

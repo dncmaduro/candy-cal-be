@@ -13,8 +13,8 @@ import {
 } from "@nestjs/common"
 import { SalesCustomerRanksService } from "./salescustomerranks.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import {
   SalesCustomerRank,
   Rank
@@ -22,14 +22,14 @@ import {
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("salescustomerranks")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesCustomerRanksController {
   constructor(
     private readonly salesCustomerRanksService: SalesCustomerRanksService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createRank(
@@ -54,14 +54,14 @@ export class SalesCustomerRanksController {
     return created
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllRanks(): Promise<SalesCustomerRank[]> {
     return this.salesCustomerRanksService.getAllRanks()
   }
 
-  @Roles("admin", "sales-cs", "system-emp", "facebook-ads-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getRankById(
@@ -70,7 +70,7 @@ export class SalesCustomerRanksController {
     return this.salesCustomerRanksService.getRankById(id)
   }
 
-  @Roles("admin")
+  @Permissions()
   @Patch(":id")
   @HttpCode(HttpStatus.OK)
   async updateRank(
@@ -96,7 +96,7 @@ export class SalesCustomerRanksController {
     return updated
   }
 
-  @Roles("admin")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRank(@Param("id") id: string, @Req() req): Promise<void> {

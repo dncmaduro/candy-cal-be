@@ -14,32 +14,26 @@ import {
 } from "@nestjs/common"
 import { LivestreamperiodsService } from "./livestreamperiods.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("livestreamperiods")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreamperiodsController {
   constructor(
     private readonly livestreamperiodsService: LivestreamperiodsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("by-channel/:channelId")
   @HttpCode(HttpStatus.OK)
   async getPeriodIdsByChannel(@Param("channelId") channelId: string) {
     return this.livestreamperiodsService.getPeriodIdsByChannel(channelId)
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLivestreamPeriod(
@@ -68,33 +62,21 @@ export class LivestreamperiodsController {
     return created
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllLivestreamPeriods() {
     return this.livestreamperiodsService.getAllLivestreamPeriods()
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getLivestreamPeriodById(@Param("id") id: string) {
     return this.livestreamperiodsService.getLivestreamPeriodById(id)
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateLivestreamPeriod(
@@ -125,7 +107,7 @@ export class LivestreamperiodsController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLivestreamPeriod(@Param("id") id: string, @Req() req) {

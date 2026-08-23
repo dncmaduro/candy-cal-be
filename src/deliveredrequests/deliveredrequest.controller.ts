@@ -12,22 +12,22 @@ import {
   Req
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { DeliveredRequestsService } from "./deliveredrequests.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 import { DeliveredRequestDto } from "./dto/deliveredrequests.dto"
 import { DeliveredRequest } from "../database/mongoose/schemas/DeliveredRequest"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("deliveredrequests")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DeliveredRequestsController {
   constructor(
     private readonly deliveredRequestsService: DeliveredRequestsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createDeliveredRequest(
@@ -47,7 +47,7 @@ export class DeliveredRequestsController {
     return created
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp")
+  @Permissions()
   @Post(":id/comment")
   @HttpCode(HttpStatus.OK)
   async addComment(
@@ -73,7 +73,7 @@ export class DeliveredRequestsController {
     return res
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Patch(":id/accept")
   @HttpCode(HttpStatus.OK)
   async acceptRequest(
@@ -94,7 +94,7 @@ export class DeliveredRequestsController {
     return res
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchRequests(
@@ -125,7 +125,7 @@ export class DeliveredRequestsController {
     return res
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get(":requestId")
   @HttpCode(HttpStatus.OK)
   async getRequest(
@@ -135,7 +135,7 @@ export class DeliveredRequestsController {
     return this.deliveredRequestsService.getRequest(requestId, channelId)
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Patch(":requestId/undo-request")
   @HttpCode(HttpStatus.OK)
   async undoAcceptRequest(

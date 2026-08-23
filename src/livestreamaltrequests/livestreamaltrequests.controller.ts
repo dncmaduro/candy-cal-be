@@ -15,25 +15,19 @@ import {
 } from "@nestjs/common"
 import { LivestreamaltrequestsService } from "./livestreamaltrequests.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("livestreamaltrequests")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreamaltrequestsController {
   constructor(
     private readonly livestreamaltrequestsService: LivestreamaltrequestsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("search")
   @HttpCode(HttpStatus.OK)
   async searchAltRequests(
@@ -55,7 +49,7 @@ export class LivestreamaltrequestsController {
     )
   }
 
-  @Roles("livestream-emp", "livestream-ast", "livestream-leader")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createAltRequest(
@@ -88,7 +82,7 @@ export class LivestreamaltrequestsController {
     return created
   }
 
-  @Roles("livestream-emp", "livestream-ast", "livestream-leader")
+  @Permissions()
   @Put(":requestId")
   @HttpCode(HttpStatus.OK)
   async updateAltRequest(
@@ -114,13 +108,7 @@ export class LivestreamaltrequestsController {
     return updated
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("by-snapshot/:livestreamId/:snapshotId")
   @HttpCode(HttpStatus.OK)
   async getRequestBySnapshot(
@@ -135,7 +123,7 @@ export class LivestreamaltrequestsController {
     )
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Patch(":requestId/status")
   @HttpCode(HttpStatus.OK)
   async updateRequestStatus(
@@ -164,7 +152,7 @@ export class LivestreamaltrequestsController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader", "livestream-emp", "livestream-ast")
+  @Permissions()
   @Delete(":requestId")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAltRequest(@Param("requestId") requestId: string, @Req() req) {

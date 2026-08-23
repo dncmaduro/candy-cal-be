@@ -3,13 +3,19 @@ import { MongooseModule } from "@nestjs/mongoose"
 import { UsersService } from "./users.service"
 import { UsersController } from "./users.controller"
 import { UserSchema } from "../database/mongoose/schemas/User"
+import { PermissionSchema } from "../database/mongoose/schemas/Permission"
+import { PermissionGroupSchema } from "../database/mongoose/schemas/PermissionGroup"
 import { JwtModule } from "@nestjs/jwt"
 import { ConfigModule, ConfigService } from "@nestjs/config"
 import { SystemLogsModule } from "../systemlogs/systemlogs.module"
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: "users", schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: "users", schema: UserSchema },
+      { name: "permissions", schema: PermissionSchema },
+      { name: "permissiongroups", schema: PermissionGroupSchema }
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -14,19 +14,19 @@ import {
 } from "@nestjs/common"
 import { LivestreammonthgoalsService } from "./livestreammonthgoals.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("livestreammonthgoals")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreammonthgoalsController {
   constructor(
     private readonly livestreammonthgoalsService: LivestreammonthgoalsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLivestreamMonthGoal(
@@ -59,13 +59,7 @@ export class LivestreammonthgoalsController {
     return created
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLivestreamMonthGoals(
@@ -80,13 +74,7 @@ export class LivestreammonthgoalsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("kpis")
   @HttpCode(HttpStatus.OK)
   async getLivestreamMonthKpis(
@@ -96,7 +84,7 @@ export class LivestreammonthgoalsController {
     return this.livestreammonthgoalsService.getLivestreamMonthKpis(month, year)
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateLivestreamMonthGoal(
@@ -122,7 +110,7 @@ export class LivestreammonthgoalsController {
     return updated
   }
 
-  @Roles("admin", "livestream-leader")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteLivestreamMonthGoal(@Param("id") id: string, @Req() req) {

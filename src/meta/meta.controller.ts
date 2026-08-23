@@ -8,22 +8,22 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
+import { PermissionsGuard } from "../permissions/permissions.guard"
 import { MetaService } from "./meta.service"
-import { Roles } from "../roles/roles.decorator"
+import { Permissions } from "../permissions/permissions.decorator"
 
 @Controller("meta")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MetaController {
   constructor(private readonly metaService: MetaService) {}
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Get("conversations")
   async listConversations(@Query("page") page = 1, @Query("limit") limit = 10) {
     return this.metaService.listConversations(page, limit)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Get("conversations/:id/messages")
   async listMessages(
     @Param("id") conversationId: string,
@@ -33,7 +33,7 @@ export class MetaController {
     return this.metaService.listMessages(conversationId, { after, before })
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Get("conversations/:conversationId/psid")
   async getPsidByConversationId(
     @Param("conversationId") conversationId: string
@@ -41,19 +41,19 @@ export class MetaController {
     return this.metaService.getPsidByConversationId(conversationId)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Get("conversations/:psid/conversationId")
   async getConversationIdByPsid(@Param("psid") psid: string) {
     return this.metaService.getConversationIdByPsid(psid)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post("conversations/:psid/send")
   async sendText(@Param("psid") psid: string, @Body() body: { text: string }) {
     return this.metaService.sendText(psid, body.text)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Get("profile/:psid")
   async getProfileByPsid(@Param("psid") psid: string) {
     return this.metaService.getProfileByPsid(psid)

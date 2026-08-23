@@ -16,11 +16,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    // Roles can be changed while an access/refresh token is still valid. Read
-    // the current user so authorization reflects that change immediately.
+    // Permissions live in the database, not the JWT. This keeps Authorization
+    // headers small and makes permission changes effective immediately.
     const user = await this.users
       .findById(payload.sub)
-      .select("username roles active")
+      .select("username roles permissions active")
       .lean()
     if (!user || user.active === false) {
       throw new UnauthorizedException("Tài khoản không còn hoạt động")
@@ -28,7 +28,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       userId: user._id.toString(),
       username: user.username,
-      roles: user.roles || []
+      roles: user.roles || [], // Temporary compatibility for ownership rules outside @Roles.
+      permissions: user.permissions || []
     }
   }
 }

@@ -2,6 +2,8 @@ import { HttpException, HttpStatus, Injectable } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
 import { User } from "../database/mongoose/schemas/User"
+import { Permission } from "../database/mongoose/schemas/Permission"
+import { PermissionGroup } from "../database/mongoose/schemas/PermissionGroup"
 import {
   ForgotPasswordDto,
   LoginDto,
@@ -17,6 +19,10 @@ export class UsersService {
   constructor(
     @InjectModel("users")
     private readonly userModel: Model<User>,
+    @InjectModel("permissions")
+    private readonly permissionModel: Model<Permission>,
+    @InjectModel("permissiongroups")
+    private readonly permissionGroupModel: Model<PermissionGroup>,
     private readonly jwtService: JwtService,
     private readonly systemLogsService: SystemLogsService
   ) {}
@@ -101,8 +107,7 @@ export class UsersService {
 
       const payload = {
         username: existingUser.username,
-        sub: existingUser._id,
-        roles: existingUser.roles
+        sub: existingUser._id.toString()
       }
       const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
@@ -152,8 +157,7 @@ export class UsersService {
       const decoded = this.jwtService.verify(credential.refreshToken)
       const payload = {
         username: decoded.username,
-        sub: decoded.sub,
-        roles: decoded.roles
+        sub: decoded.sub
       }
       const accessToken = this.jwtService.sign(payload, { expiresIn: "30m" })
       const refreshToken = this.jwtService.sign(payload, {
@@ -181,6 +185,7 @@ export class UsersService {
     username: string
     name: string
     roles: string[]
+    permissions: string[]
     avatarUrl?: string
     active: boolean
     _id: string
@@ -200,6 +205,7 @@ export class UsersService {
         username: existingUser.username,
         name: existingUser.name,
         roles: existingUser.roles,
+        permissions: existingUser.permissions || [],
         avatarUrl: existingUser.avatarUrl,
         active: existingUser.active !== false,
         _id: existingUser._id.toString()
@@ -402,9 +408,94 @@ export class UsersService {
     return { message: "Cập nhật role thành công", data: { _id: user._id.toString(), roles: user.roles } }
   }
 
+  async listPermissions(): Promise<
+    Array<{
+      key: string
+      label: string
+      description?: string
+      module?: string
+      source?: { method: string; path: string; handler: string }
+    }>
+  > {
+    const permissions = await this.permissionModel
+      .find({}, { _id: 0, key: 1, label: 1, description: 1, module: 1, source: 1 })
+      .sort({ module: 1, key: 1 })
+      .lean()
+
+    return permissions.map((permission) => ({
+      key: permission.key,
+      label: permission.label,
+      description: permission.description,
+      module: permission.module,
+      source: permission.source
+    }))
+  }
+
+  async listPermissionGroups(): Promise<
+    Array<{ key: string; label: string; permissionKeys: string[]; kind?: string }>
+  > {
+    const groups = await this.permissionGroupModel
+      .find({}, { _id: 0, key: 1, label: 1, permissionKeys: 1, kind: 1 })
+      .sort({ label: 1, key: 1 })
+      .lean()
+
+    return groups.map((group) => ({
+      key: group.key,
+      label: group.label,
+      permissionKeys: group.permissionKeys || [],
+      kind: group.kind
+    }))
+  }
+
+  async updateUserPermissions(
+    userId: string,
+    permissionKeys: string[],
+    actorUsername: string
+  ): Promise<{ message: string; data: { _id: string; permissions: string[] } }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new HttpException("Invalid user id", HttpStatus.BAD_REQUEST)
+    }
+
+    const normalized = Array.from(
+      new Set((permissionKeys || []).map((key) => String(key).trim()).filter(Boolean))
+    ).sort()
+    const validKeys = await this.permissionModel.distinct("key", { key: { $in: normalized } })
+    const invalidKeys = normalized.filter((key) => !validKeys.includes(key))
+    if (invalidKeys.length) {
+      throw new HttpException(
+        `Permission không tồn tại: ${invalidKeys.join(", ")}`,
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const user = await this.userModel.findByIdAndUpdate(
+      userId,
+      { $set: { permissions: normalized } },
+      { new: true }
+    )
+    if (!user) throw new HttpException("User not found", HttpStatus.NOT_FOUND)
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "users",
+        action: "updated_permissions",
+        entity: "user",
+        entityId: userId,
+        result: "success",
+        meta: { permissions: normalized }
+      },
+      actorUsername
+    )
+
+    return {
+      message: "Cập nhật permission thành công",
+      data: { _id: user._id.toString(), permissions: user.permissions || [] }
+    }
+  }
+
   async adminListUsers(
     searchText: string,
-    role?: string,
+    permission?: string,
     status = "all",
     page = 1,
     limit = 10
@@ -414,6 +505,7 @@ export class UsersService {
       username: string
       name: string
       roles: string[]
+      permissions: string[]
       avatarUrl?: string
       active: boolean
     }[]
@@ -445,8 +537,8 @@ export class UsersService {
         ]
       }
 
-      if (role && String(role).trim().length > 0) {
-        filter.roles = role
+      if (permission && String(permission).trim().length > 0) {
+        filter.permissions = permission
       }
 
       const [users, total] = await Promise.all([
@@ -465,6 +557,7 @@ export class UsersService {
           username: u.username,
           name: u.name,
           roles: Array.isArray(u.roles) ? u.roles : [],
+          permissions: Array.isArray(u.permissions) ? u.permissions : [],
           avatarUrl: u.avatarUrl,
           active: u.active !== false
         })),
@@ -482,9 +575,36 @@ export class UsersService {
     }
   }
 
+  async adminGetUser(userId: string): Promise<{
+    _id: string
+    username: string
+    name: string
+    permissions: string[]
+    avatarUrl?: string
+    active: boolean
+  }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new HttpException("Invalid user id", HttpStatus.BAD_REQUEST)
+    }
+
+    const user = await this.userModel.findById(userId).lean()
+    if (!user) {
+      throw new HttpException("User not found", HttpStatus.NOT_FOUND)
+    }
+
+    return {
+      _id: user._id.toString(),
+      username: user.username,
+      name: user.name,
+      permissions: Array.isArray(user.permissions) ? user.permissions : [],
+      avatarUrl: user.avatarUrl,
+      active: user.active !== false
+    }
+  }
+
   async publicSearchUsers(
     searchText: string,
-    role?: string,
+    permission?: string,
     status = "all",
     page = 1,
     limit = 10
@@ -502,8 +622,8 @@ export class UsersService {
           $options: "i"
         }
       }
-      if (role && String(role).trim().length > 0) {
-        filter.roles = role
+      if (permission && String(permission).trim().length > 0) {
+        filter.permissions = permission
       }
 
       const [users, total] = await Promise.all([

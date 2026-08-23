@@ -13,8 +13,8 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { ShopeeMonthKpisService } from "./shopeemonthkpis.service"
 import {
@@ -24,14 +24,14 @@ import {
 import { ShopeeMonthKpi } from "../database/mongoose/schemas/ShopeeMonthKpi"
 
 @Controller("shopeemonthkpis")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ShopeeMonthKpisController {
   constructor(
     private readonly shopeeMonthKpisService: ShopeeMonthKpisService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createShopeeMonthKpi(
@@ -57,11 +57,7 @@ export class ShopeeMonthKpisController {
     return created
   }
 
-  @Roles(
-    "admin",
-    "shopee-emp",
-    "system-emp"
-  )
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getShopeeMonthKpis(
@@ -80,18 +76,14 @@ export class ShopeeMonthKpisController {
     })
   }
 
-  @Roles(
-    "admin",
-    "shopee-emp",
-    "system-emp"
-  )
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getShopeeMonthKpiById(@Param("id") id: string): Promise<ShopeeMonthKpi> {
     return this.shopeeMonthKpisService.getShopeeMonthKpiById(id)
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateShopeeMonthKpi(
@@ -116,7 +108,7 @@ export class ShopeeMonthKpisController {
     return updated
   }
 
-  @Roles("admin", "shopee-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteShopeeMonthKpi(@Param("id") id: string, @Req() req) {

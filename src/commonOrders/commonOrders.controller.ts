@@ -15,11 +15,11 @@ import { CommonOrderDto } from "./dto/commonOrder.dto"
 import { CommonOrder } from "../database/mongoose/schemas/CommonOrder"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 
 @Controller("common-orders")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CommonOrdersController {
   constructor(
     private readonly commonOrdersService: CommonOrdersService,
@@ -66,21 +66,21 @@ export class CommonOrdersController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAllOrders(): Promise<CommonOrder[]> {
     return this.commonOrdersService.getAllOrders()
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("/order")
   @HttpCode(HttpStatus.OK)
   async getOrder(@Query("id") id: string): Promise<CommonOrder> {
     return this.commonOrdersService.getOrder(id)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchOrders(

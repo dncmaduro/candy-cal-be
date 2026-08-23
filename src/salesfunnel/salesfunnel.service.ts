@@ -83,7 +83,7 @@ export class SalesFunnelService {
     if (!user) {
       throw new HttpException(notFoundMessage, HttpStatus.NOT_FOUND)
     }
-    if (!user.roles || !user.roles.includes("sales-cs")) {
+    if (!user.permissions?.includes("sales.assignee")) {
       throw new HttpException(invalidRoleMessage, HttpStatus.BAD_REQUEST)
     }
   }
@@ -167,7 +167,7 @@ export class SalesFunnelService {
         channel,
         "Kênh này chưa có người phụ trách",
         "Người phụ trách kênh không tồn tại",
-        "Người phụ trách kênh không có quyền sales-cs"
+        "Người phụ trách kênh không có quyền được phân công"
       )
 
       const now = new Date()
@@ -285,7 +285,7 @@ export class SalesFunnelService {
           await this.validateSalesAssignedUser(
             assignedUserId,
             `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không tồn tại`,
-            `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không có quyền sales-cs`
+            `Dòng ${rowNumber}: Người phụ trách kênh "${channelName}" không có quyền được phân công`
           )
 
           // Find province (optional) - LIKE %{cellValue}% search
@@ -635,7 +635,7 @@ export class SalesFunnelService {
           channel,
           "Kênh này chưa có người phụ trách",
           "Người phụ trách kênh không tồn tại",
-          "Người phụ trách kênh không có quyền sales-cs"
+          "Người phụ trách kênh không có quyền được phân công"
         )
 
         // Update both channel and user
@@ -977,14 +977,14 @@ export class SalesFunnelService {
     isAdmin = false
   ): Promise<SalesFunnel> {
     try {
-      // Validate new user has sales-cs role
+      // Validate new user can be assigned sales work.
       const newUser = await this.userModel.findById(newUserId).lean()
       if (!newUser) {
         throw new HttpException("User not found", HttpStatus.NOT_FOUND)
       }
-      if (!newUser.roles || !newUser.roles.includes("sales-cs")) {
+      if (!newUser.permissions?.includes("sales.assignee")) {
         throw new HttpException(
-          "User must have sales-cs role",
+          "User must have sales assignee permission",
           HttpStatus.BAD_REQUEST
         )
       }
@@ -1045,7 +1045,7 @@ export class SalesFunnelService {
 
       return {
         // Sales CS can only open funnels currently assigned to them. Other
-        // roles retain the existing detail-view access policy.
+        // Other permission sets retain the existing detail-view access policy.
         hasPermission: requireResponsibleUser
           ? permission.isResponsible
           : true,

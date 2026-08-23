@@ -16,19 +16,19 @@ import { ItemsService } from "./items.service"
 import { ItemDto } from "./dto/item.dto"
 import { Item } from "../database/mongoose/schemas/Item"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("items")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ItemsController {
   constructor(
     private readonly itemsService: ItemsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createItem(@Body() item: ItemDto, @Req() req): Promise<Item> {
@@ -47,7 +47,7 @@ export class ItemsController {
     return created
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Put()
   @HttpCode(HttpStatus.OK)
   async updateItem(@Body() item: Item, @Req() req): Promise<Item> {
@@ -65,21 +65,21 @@ export class ItemsController {
     return updated
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("/item")
   @HttpCode(HttpStatus.OK)
   async getItem(@Query("id") id: string): Promise<Item> {
     return this.itemsService.getItem(id)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("/search")
   @HttpCode(HttpStatus.OK)
   async searchItems(@Query("searchText") searchText: string): Promise<Item[]> {
     return this.itemsService.searchItems(searchText)
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteItem(@Param("id") id: string, @Req() req): Promise<void> {

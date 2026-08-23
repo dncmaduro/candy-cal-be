@@ -29,8 +29,8 @@ import {
   ApiTags
 } from "@nestjs/swagger"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import {
   InventoryExportHandling,
   SalesOrdersService
@@ -45,7 +45,7 @@ import {
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("salesorders")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiTags("Sales orders")
 export class SalesOrdersController {
   constructor(
@@ -54,16 +54,10 @@ export class SalesOrdersController {
   ) {}
 
   private scopeSalesCsToOwnOrders(req: any): boolean {
-    const roles: string[] = req?.user?.roles || []
-    return (
-      roles.includes("sales-cs") &&
-      !roles.includes("admin") &&
-      !roles.includes("sales-hunter") &&
-      !roles.includes("sales-leader")
-    )
+    return !(req?.user?.permissions || []).includes("sales.orders.read.all")
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: "Tạo đơn hàng nháp" })
@@ -137,7 +131,7 @@ export class SalesOrdersController {
     return created
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Post("upload")
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: "Import đơn hàng từ file XLSX" })
@@ -188,7 +182,7 @@ export class SalesOrdersController {
     return result
   }
 
-  @Roles("admin", "sales-cs", "facebook-ads-emp")
+  @Permissions()
   @Get("upload/template")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Tải file mẫu import đơn hàng" })
@@ -208,7 +202,7 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id/items")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Cập nhật mặt hàng và chiết khấu đơn nháp" })
@@ -278,7 +272,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id/date")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Cập nhật ngày đơn hàng" })
@@ -312,7 +306,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id/shipping-tax")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Cập nhật thông tin vận chuyển, thuế và phí ship" })
@@ -361,7 +355,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Xóa đơn hàng chưa chính thức" })
@@ -384,14 +378,7 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Lấy chi tiết đơn hàng" })
@@ -406,13 +393,7 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get("funnel/:funnelId")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Lấy đơn hàng theo sales funnel" })
@@ -445,10 +426,9 @@ export class SalesOrdersController {
     totalRevenue: number
     topProducts: { code: string; name: string; quantity: number }[]
   }> {
-    const canViewAll =
-      req.user.roles?.some(
-        (role: string) => role === "admin" || role === "sales-hunter"
-      ) || false
+    const canViewAll = (req.user.permissions || []).includes(
+      "sales.orders.funnel.read.all"
+    )
     return this.salesOrdersService.getOrdersByFunnel(
       funnelId,
       req.user.userId,
@@ -460,14 +440,7 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -542,7 +515,7 @@ export class SalesOrdersController {
     )
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id/storage")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Cập nhật kho xuất hàng" })
@@ -578,14 +551,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get("options/storages")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Lấy các kho có thể chọn" })
@@ -595,14 +561,7 @@ export class SalesOrdersController {
     return this.salesOrdersService.getAllStorages()
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get("options/shipping-types")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Lấy các loại vận chuyển có thể chọn" })
@@ -612,14 +571,7 @@ export class SalesOrdersController {
     return this.salesOrdersService.getAllShippingTypes()
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "sales-hunter",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get("export/xlsx")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Export đơn hàng ra Excel" })
@@ -692,13 +644,7 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp"
-  )
+  @Permissions()
   @Get("export/xlsx/accounting")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Export đơn hàng kế toán ra Excel" })
@@ -772,7 +718,7 @@ export class SalesOrdersController {
     res.send(buffer)
   }
 
-  @Roles("admin", "sales-cs")
+  @Permissions()
   @Patch(":id/status")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -917,7 +863,7 @@ export class SalesOrdersController {
     return updated
   }
 
-  @Roles("admin", "sales-cs", "sales-hunter", "sales-accounting")
+  @Permissions()
   @Post("export/xlsx/by-ids")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Export các đơn được chọn ra Excel" })

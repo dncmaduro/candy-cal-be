@@ -14,19 +14,19 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { Log, LogProduct } from "../database/mongoose/schemas/Log"
 import { LogDto } from "./dto/log.dto"
 import { Types } from "mongoose"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
 @Controller("logs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LogsController {
   constructor(
     private readonly logsService: LogsService,
     private readonly systemLogsService: SystemLogsService // Ensure SystemLogsService is injected
   ) {}
 
-  @Roles("admin", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getLogs(
@@ -36,7 +36,7 @@ export class LogsController {
     return this.logsService.getLogs(page, limit)
   }
 
-  @Roles("admin", "tiktokshop-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createLog(@Body() log: LogDto, @Req() req): Promise<Log> {
@@ -54,7 +54,7 @@ export class LogsController {
     return created
   }
 
-  @Roles("admin", "tiktokshop-emp", "system-emp")
+  @Permissions()
   @Get("range")
   @HttpCode(HttpStatus.OK)
   async getLogsByRange(

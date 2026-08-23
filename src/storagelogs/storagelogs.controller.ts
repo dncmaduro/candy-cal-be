@@ -18,20 +18,20 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard"
 import { StorageLogDto } from "./dto/storagelog.dto"
 import { StorageLog } from "../database/mongoose/schemas/StorageLog"
 import { GetMonthStorageLogsReponse } from "./dto/month"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 import { differenceInCalendarDays } from "date-fns"
 
 @Controller("storagelogs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class StorageLogsController {
   constructor(
     private readonly storageLogsService: StorageLogsService,
     private readonly systemLogsService: SystemLogsService
   ) {}
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createStorageLog(
@@ -53,7 +53,7 @@ export class StorageLogsController {
     return created
   }
 
-  @Roles("admin", "accounting-emp", "system-emp")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getStorageLogs(
@@ -78,7 +78,7 @@ export class StorageLogsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("month")
   @HttpCode(HttpStatus.OK)
   async getDeliveredLogsByMonth(
@@ -93,7 +93,7 @@ export class StorageLogsController {
     )
   }
 
-  @Roles("admin", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("delivered/summary")
   @HttpCode(HttpStatus.OK)
   async getDeliveredSummary(
@@ -149,14 +149,14 @@ export class StorageLogsController {
     }
   }
 
-  @Roles("admin", "accounting-emp", "system-emp")
+  @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
   async getStorageLogById(@Param("id") id: string): Promise<StorageLog | null> {
     return this.storageLogsService.getStorageLogById(id)
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async updateStorageLog(
@@ -184,13 +184,14 @@ export class StorageLogsController {
     return updated
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteStorageLog(@Param("id") id: string, @Req() req): Promise<void> {
-    const isAdmin = req.user.roles?.includes("admin") || false
     await this.storageLogsService.deleteStorageLog(id, {
-      allowNegativeQuantities: isAdmin
+      allowNegativeQuantities: (req.user.permissions || []).includes(
+        "inventory.logs.delete.with-negative-quantity"
+      )
     })
     void this.systemLogsService.createSystemLog(
       {

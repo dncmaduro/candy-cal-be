@@ -10,20 +10,20 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard"
-import { RolesGuard } from "../../roles/roles.guard"
-import { Roles } from "../../roles/roles.decorator"
+import { PermissionsGuard } from "../../permissions/permissions.guard"
+import { Permissions } from "../../permissions/permissions.decorator"
 import { ApiEndpointsService } from "./apiendpoints.service"
 import { ApiEndpointAutoDiscoverService } from "./apiendpoints.autodiscover"
 
 @Controller("api-endpoints")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ApiEndpointsController {
   constructor(
     private readonly apiEndpointsService: ApiEndpointsService,
     private readonly autoDiscoverService: ApiEndpointAutoDiscoverService
   ) {}
 
-  @Roles("admin")
+  @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async list(): Promise<{ data: any[] }> {
@@ -31,7 +31,7 @@ export class ApiEndpointsController {
     return { data }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Get("options")
   @HttpCode(HttpStatus.OK)
   async options(): Promise<{ data: Array<{ value: string; label: string }> }> {
@@ -39,7 +39,7 @@ export class ApiEndpointsController {
     return { data }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
@@ -57,7 +57,7 @@ export class ApiEndpointsController {
     return { data: doc }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Patch(":key")
   @HttpCode(HttpStatus.OK)
   async update(
@@ -76,14 +76,14 @@ export class ApiEndpointsController {
     return { data: doc }
   }
 
-  @Roles("admin")
+  @Permissions()
   @Patch(":key/delete")
   @HttpCode(HttpStatus.OK)
   async delete(@Param("key") key: string): Promise<{ deleted: boolean }> {
     return this.apiEndpointsService.softDelete(key)
   }
 
-  @Roles("admin")
+  @Permissions()
   @Post("discover")
   @HttpCode(HttpStatus.OK)
   async triggerDiscovery(): Promise<{ message: string }> {

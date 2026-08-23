@@ -11,25 +11,25 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { MonthGoalService } from "./monthgoals.service"
 import { CreateMonthGoalDto, UpdateMonthGoalDto } from "./dto/monthgoals.dto"
 import { MonthGoal } from "../database/mongoose/schemas/MonthGoal"
 
 @Controller("monthgoals")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MonthGoalController {
   constructor(private readonly monthGoalService: MonthGoalService) {}
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createGoal(@Body() dto: CreateMonthGoalDto): Promise<MonthGoal> {
     return this.monthGoalService.createGoal(dto)
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("year")
   @HttpCode(HttpStatus.OK)
   async getGoals(
@@ -64,7 +64,7 @@ export class MonthGoalController {
     )
   }
 
-  @Roles("admin", "tiktokshop-emp", "accounting-emp", "system-emp")
+  @Permissions()
   @Get("month")
   @HttpCode(HttpStatus.OK)
   async getGoal(
@@ -75,7 +75,7 @@ export class MonthGoalController {
     return this.monthGoalService.getGoal(Number(month), Number(year), channelId)
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Patch("")
   @HttpCode(HttpStatus.OK)
   async updateGoal(@Body() dto: UpdateMonthGoalDto): Promise<MonthGoal> {
@@ -87,7 +87,7 @@ export class MonthGoalController {
     )
   }
 
-  @Roles("admin", "accounting-emp")
+  @Permissions()
   @Delete("")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteGoal(

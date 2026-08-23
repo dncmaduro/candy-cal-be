@@ -8,23 +8,17 @@ import {
 } from "@nestjs/common"
 import { LivestreamanalyticsService } from "./livestreamanalytics.service"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 
 @Controller("livestreamanalytics")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LivestreamanalyticsController {
   constructor(
     private readonly livestreamanalyticsService: LivestreamanalyticsService
   ) {}
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("monthly-totals")
   @HttpCode(HttpStatus.OK)
   async getMonthlyTotals(
@@ -34,13 +28,7 @@ export class LivestreamanalyticsController {
     return this.livestreamanalyticsService.getMonthlyTotals(year, month)
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("stats")
   @HttpCode(HttpStatus.OK)
   async getLivestreamStats(
@@ -53,13 +41,7 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("aggregated-metrics")
   @HttpCode(HttpStatus.OK)
   async getAggregatedMetrics(
@@ -76,13 +58,7 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("month-metrics")
   @HttpCode(HttpStatus.OK)
   async getMonthMetrics(
@@ -101,13 +77,7 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("host-revenue-rankings")
   @HttpCode(HttpStatus.OK)
   async getHostRevenueRankings(
@@ -122,13 +92,7 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("host-revenue-rankings-by-month")
   @HttpCode(HttpStatus.OK)
   async getHostRevenueRankingsByMonth(
@@ -143,13 +107,7 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("assistant-revenue-rankings")
   @HttpCode(HttpStatus.OK)
   async getAssistantRevenueRankings(
@@ -164,13 +122,7 @@ export class LivestreamanalyticsController {
     )
   }
 
-  @Roles(
-    "admin",
-    "livestream-leader",
-    "livestream-emp",
-    "livestream-ast",
-    "livestream-accounting"
-  )
+  @Permissions()
   @Get("assistant-revenue-rankings-by-month")
   @HttpCode(HttpStatus.OK)
   async getAssistantRevenueRankingsByMonth(

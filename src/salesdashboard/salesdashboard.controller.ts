@@ -7,23 +7,16 @@ import {
   UseGuards
 } from "@nestjs/common"
 import { JwtAuthGuard } from "../auth/jwt-auth.guard"
-import { RolesGuard } from "../roles/roles.guard"
-import { Roles } from "../roles/roles.decorator"
+import { PermissionsGuard } from "../permissions/permissions.guard"
+import { Permissions } from "../permissions/permissions.decorator"
 import { SalesDashboardService } from "./salesdashboard.service"
 
 @Controller("salesdashboard")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesDashboardController {
   constructor(private readonly salesDashboardService: SalesDashboardService) {}
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get("province-stats")
   @HttpCode(HttpStatus.OK)
   async getProvinceSalesStats(
@@ -40,14 +33,7 @@ export class SalesDashboardController {
     })
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get("revenue-stats")
   @HttpCode(HttpStatus.OK)
   async getRevenueStats(
@@ -62,14 +48,7 @@ export class SalesDashboardController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get("monthly-metrics")
   @HttpCode(HttpStatus.OK)
   async getMonthlyMetrics(
@@ -84,14 +63,7 @@ export class SalesDashboardController {
     )
   }
 
-  @Roles(
-    "admin",
-    "sales-cs",
-    "system-emp",
-    "sales-accounting",
-    "facebook-ads-emp",
-    "sales-hunter"
-  )
+  @Permissions()
   @Get("top-customers")
   @HttpCode(HttpStatus.OK)
   async getTopCustomersByRevenue(

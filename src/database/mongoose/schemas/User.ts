@@ -5,6 +5,7 @@ export interface User extends Document {
   password: string
   name: string
   roles: string[]
+  permissions: string[]
   avatarUrl?: string
   active?: boolean
 }
@@ -14,6 +15,7 @@ export const UserSchema = new Schema<User>({
   password: { type: String, required: true },
   name: { type: String, required: true },
   roles: { type: [String], required: true, default: ["user"] },
+  permissions: { type: [String], required: true, default: [] },
   avatarUrl: { type: String, required: false },
   active: { type: Boolean, required: true, default: true }
 })
