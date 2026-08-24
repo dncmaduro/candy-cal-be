@@ -10,7 +10,7 @@ import { Permissions } from "../permissions/permissions.decorator"
 export class ProvincesController {
   constructor(private readonly provincesService: ProvincesService) {}
 
-  @Permissions()
+  // @Permissions()
   @Post("/sync")
   @HttpCode(HttpStatus.OK)
   async syncProvinces(): Promise<{ synced: number }> {
@@ -18,7 +18,7 @@ export class ProvincesController {
     return { synced }
   }
 
-  @Permissions()
+  // @Permissions()
   @Get()
   @HttpCode(HttpStatus.OK)
   async getAll() {
