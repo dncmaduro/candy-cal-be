@@ -6,7 +6,7 @@ import { ProvincesService } from "./provinces.service"
 import { Permissions } from "../permissions/permissions.decorator"
 
 @Controller("provinces")
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard)
 export class ProvincesController {
   constructor(private readonly provincesService: ProvincesService) {}
 
