@@ -59,7 +59,10 @@ import { SalesLeadsModule } from "./salesleads/salesleads.module"
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: ".env" }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [`.env.${process.env.NODE_ENV}`, ".env"]
+    }),
     DatabaseModule,
     UsersModule,
     ItemsModule,
