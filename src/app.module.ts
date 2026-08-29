@@ -56,6 +56,7 @@ import { ShopeeMonthKpisModule } from "./shopeemonthkpis/shopeemonthkpis.module"
 import { ShopeeDashboardModule } from "./shopeedashboard/shopeedashboard.module"
 import { AiModule } from "./ai/ai.module"
 import { SalesLeadsModule } from "./salesleads/salesleads.module"
+import { MisaModule } from "./integrations/misa/misa.module"
 
 @Module({
   imports: [
@@ -116,6 +117,7 @@ import { SalesLeadsModule } from "./salesleads/salesleads.module"
     ShopeeDashboardModule,
     AiModule,
     SalesLeadsModule,
+    MisaModule,
     MongooseModule.forFeature([
       { name: "RequestAudit", schema: RequestAuditSchema }
     ])
