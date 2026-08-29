@@ -1,7 +1,12 @@
 import { NestFactory } from "@nestjs/core"
 import { ModulesContainer } from "@nestjs/core/injector/modules-container"
 import { GUARDS_METADATA } from "@nestjs/common/constants"
-import { ApiBearerAuth, DocumentBuilder, SwaggerModule } from "@nestjs/swagger"
+import {
+  ApiBearerAuth,
+  DocumentBuilder,
+  SwaggerModule
+} from "@nestjs/swagger"
+import { RequestMethod } from "@nestjs/common"
 import { AppModule } from "./app.module"
 import * as bodyParser from "body-parser"
 import { JwtAuthGuard } from "./auth/jwt-auth.guard"
@@ -116,7 +121,16 @@ async function bootstrap() {
   console.log("🚀 Starting NestJS application...")
   const app = await NestFactory.create(AppModule)
   const { PORT } = process.env
-  app.setGlobalPrefix("api/v1")
+  app.setGlobalPrefix("api/v1", {
+    // MISA registers this public callback URL verbatim. Keep it outside the
+    // versioned application API while all existing controllers remain /api/v1.
+    exclude: [
+      {
+        path: "api/integrations/misa/callback",
+        method: RequestMethod.POST
+      }
+    ]
+  })
   app.enableCors(getCorsOptions())
   app.use(bodyParser.json())
 
