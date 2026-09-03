@@ -532,7 +532,7 @@ export class IncomeController {
     @UploadedFiles() files: Express.Multer.File[],
     @Body()
     body: {
-      date: string
+      date?: string
       channel: string
       updateMode?: "full" | "status-only" | "base-only" | "affiliate-only"
       chunkIndex?: string
@@ -588,7 +588,7 @@ export class IncomeController {
       this.incomeService.insertAndUpdateAffiliateType({
         totalIncomeFile,
         affiliateFile,
-        date: new Date(body.date),
+        date: body.date ? new Date(body.date) : undefined,
         channel: body.channel,
         updateMode
       })
@@ -614,10 +614,13 @@ export class IncomeController {
       if (hasChunkMetadata && !isFinalChunk) return
 
       try {
+        const importedDate = body.date
+          ? `ngày ${new Date(body.date).toLocaleDateString()}`
+          : "các ngày trong file"
         await this.notificationsService.createNotificationForSingleUser(
           {
             title: "Xử lý file doanh thu hoàn thành",
-            content: `File đang xử lý cho ngày ${new Date(body.date).toLocaleDateString()} đã hoàn thành.`,
+            content: `File đang xử lý cho ${importedDate} đã hoàn thành.`,
             createdAt: new Date(),
             type: "income_import"
           },
@@ -649,10 +652,13 @@ export class IncomeController {
       )
 
       try {
+        const importedDate = body.date
+          ? `ngày ${new Date(body.date).toLocaleDateString()}`
+          : "các ngày trong file"
         await this.notificationsService.createNotificationForSingleUser(
           {
             title: "Xử lý file doanh thu thất bại",
-            content: `Quá trình xử lý file cho ngày ${new Date(body.date).toLocaleDateString()} đã thất bại. Vui lòng liên hệ admin.`,
+            content: `Quá trình xử lý file cho ${importedDate} đã thất bại. Vui lòng liên hệ admin.`,
             createdAt: new Date(),
             type: "income_import"
           },

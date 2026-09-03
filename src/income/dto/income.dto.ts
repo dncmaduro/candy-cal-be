@@ -13,6 +13,9 @@ export class InsertIncomeRequest {
 
 export class XlsxIncomeData {
   "Order ID": string
+  "Created Time"?: string | number | Date
+  "Order Created Time"?: string | number | Date
+  "Order Creation Time"?: string | number | Date
   "Order Status"?: string
   "Order Substatus"?: string
   "Seller SKU": string
