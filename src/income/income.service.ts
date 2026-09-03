@@ -16,7 +16,7 @@ import { Response } from "express"
 import { DailyAds } from "../database/mongoose/schemas/DailyAds"
 import { DailyAdsMetrics } from "../database/mongoose/schemas/DailyAdsMetrics"
 import { format as formatDateFns } from "date-fns"
-import { formatInTimeZone } from "date-fns-tz"
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz"
 import { OWN_USERS } from "../constants/own-users"
 import { LivestreamChannel } from "../database/mongoose/schemas/LivestreamChannel"
 
@@ -210,6 +210,109 @@ export class IncomeService {
     }
   }
 
+  private parseTikTokOrderDate(line: Partial<XlsxIncomeData>): Date | null {
+    const dateValue = [
+      line["Created Time"],
+      line["Order Created Time"],
+      line["Order Creation Time"]
+    ].find((value) => value !== undefined && value !== null && value !== "")
+
+    if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
+      return dateValue
+    }
+
+    const fromVietnamDateParts = (
+      year: number,
+      month: number,
+      day: number,
+      hour = 0,
+      minute = 0,
+      second = 0
+    ): Date | null => {
+      const validated = new Date(
+        Date.UTC(year, month - 1, day, hour, minute, second)
+      )
+      if (
+        validated.getUTCFullYear() !== year ||
+        validated.getUTCMonth() !== month - 1 ||
+        validated.getUTCDate() !== day ||
+        validated.getUTCHours() !== hour ||
+        validated.getUTCMinutes() !== minute ||
+        validated.getUTCSeconds() !== second
+      ) {
+        return null
+      }
+
+      const localDateTime = `${year}-${String(month).padStart(2, "0")}-${String(
+        day
+      ).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(
+        minute
+      ).padStart(2, "0")}:${String(second).padStart(2, "0")}`
+      return fromZonedTime(localDateTime, INCOME_STATS_TIME_ZONE)
+    }
+
+    if (typeof dateValue === "number" && Number.isFinite(dateValue)) {
+      const parsed = XLSX.SSF.parse_date_code(dateValue)
+      if (parsed) {
+        return fromVietnamDateParts(
+          parsed.y,
+          parsed.m,
+          parsed.d,
+          parsed.H,
+          parsed.M,
+          parsed.S
+        )
+      }
+    }
+
+    if (typeof dateValue === "string" && dateValue.trim()) {
+      const raw = dateValue.trim()
+      const vietnamDateTime = raw.match(
+        /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/
+      )
+      if (vietnamDateTime) {
+        const [, day, month, year, hour, minute, second] = vietnamDateTime
+        return fromVietnamDateParts(
+          Number(year),
+          Number(month),
+          Number(day),
+          Number(hour),
+          Number(minute),
+          Number(second)
+        )
+      }
+
+      const parsed = new Date(raw)
+      if (!Number.isNaN(parsed.getTime())) return parsed
+    }
+
+    return null
+  }
+
+  private getVietnamDayRange(date: Date): { start: Date; end: Date } {
+    const day = this.getBusinessDayKey(date)
+    const start = fromZonedTime(`${day}T00:00:00.000`, INCOME_STATS_TIME_ZONE)
+    const end = fromZonedTime(`${day}T23:59:59.999`, INCOME_STATS_TIME_ZONE)
+    return { start, end }
+  }
+
+  private getUniqueBusinessDates(dates: Date[]): Date[] {
+    const uniqueDays = new Map<string, Date>()
+    for (const date of dates) {
+      uniqueDays.set(this.getBusinessDayKey(date), date)
+    }
+    return Array.from(uniqueDays.values())
+  }
+
+  private getDateRangesFilter(dates: Date[]): { $or: object[] } {
+    return {
+      $or: this.getUniqueBusinessDates(dates).map((date) => {
+        const { start, end } = this.getVietnamDayRange(date)
+        return { date: { $gte: start, $lte: end } }
+      })
+    }
+  }
+
   private async aggregateIncomeAmounts(
     start: Date,
     end: Date,
@@ -320,7 +423,8 @@ export class IncomeService {
       totalRevenue,
       adjustedRevenue,
       incomeBeforeDiscount,
-      incomeAfterDiscount: totalRevenue || Number(incomeAgg.incomeAfterDiscount || 0),
+      incomeAfterDiscount:
+        totalRevenue || Number(incomeAgg.incomeAfterDiscount || 0),
       actualAdsCost: Number(data.actualAdsCost || 0),
       totalCost: Number(data.totalCost || 0),
       costAfterRefund: Number(data.costAfterRefund || 0),
@@ -2500,17 +2604,11 @@ export class IncomeService {
   async insertAndUpdateAffiliateType(dto: {
     totalIncomeFile?: Express.Multer.File
     affiliateFile?: Express.Multer.File
-    date: Date
+    date?: Date
     channel: string
     updateMode?: "full" | "status-only" | "base-only" | "affiliate-only"
   }): Promise<void> {
     try {
-      // ====== 0) Date range ======
-      const start = new Date(dto.date)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(dto.date)
-      end.setHours(23, 59, 59, 999)
-
       if (dto.updateMode === "status-only") {
         if (!dto.totalIncomeFile) {
           throw new HttpException(
@@ -2521,7 +2619,6 @@ export class IncomeService {
 
         await this.updateIncomeStatusesFromFile({
           totalIncomeFile: dto.totalIncomeFile,
-          date: dto.date,
           channel: dto.channel
         })
         return
@@ -2544,15 +2641,38 @@ export class IncomeService {
         const totalReadData = XLSX.utils.sheet_to_json(
           totalSheet
         ) as XlsxIncomeData[]
-        const totalData = totalReadData
-          .slice(1)
-          .filter((line) => line["Cancelation/Return Type"] !== "Cancel")
+        const importedRows = totalReadData.slice(1)
+        const validOrderDates = importedRows
+          .map((line) => this.parseTikTokOrderDate(line))
+          .filter((date): date is Date => date !== null)
+        if (validOrderDates.length !== importedRows.length) {
+          throw new HttpException(
+            "File tổng doanh thu thiếu cột Created Time hợp lệ",
+            HttpStatus.BAD_REQUEST
+          )
+        }
 
-        // Xóa incomes trong ngày nhưng chỉ cho channel này
-        await this.incomeModel.deleteMany({
-          date: { $gte: start, $lte: end },
+        const cancelledOrderIds = Array.from(
+          new Set(
+            importedRows
+              .filter((line) => line["Cancelation/Return Type"] === "Cancel")
+              .map((line) => String(line["Order ID"] || "").trim())
+              .filter(Boolean)
+          )
+        )
+        const totalData = importedRows.filter(
+          (line) => line["Cancelation/Return Type"] !== "Cancel"
+        )
+
+        // Giữ lại đơn đã bị Cancel để chỉ cập nhật trạng thái của bản ghi cũ.
+        const deleteFilter: any = {
+          ...this.getDateRangesFilter(validOrderDates),
           channel: dto.channel
-        })
+        }
+        if (cancelledOrderIds.length) {
+          deleteFilter.orderId = { $nin: cancelledOrderIds }
+        }
+        await this.incomeModel.deleteMany(deleteFilter)
 
         // Group theo orderId
         const newIncomesMap = totalData.reduce(
@@ -2570,6 +2690,7 @@ export class IncomeService {
         for (const orderId of Object.keys(newIncomesMap)) {
           const lines = newIncomesMap[orderId]
           const shippingProvider = this.getShippingProviderName(lines[0] as any)
+          const orderDate = this.parseTikTokOrderDate(lines[0])
 
           const products = lines.map((line) => ({
             code: String(line["Seller SKU"] || "").trim(),
@@ -2592,7 +2713,7 @@ export class IncomeService {
             shippingProvider,
             ...this.buildIncomeStatusPayload(lines[0]),
             channel: dto.channel,
-            date: dto.date,
+            date: orderDate,
             products
           })
         }
@@ -2601,12 +2722,25 @@ export class IncomeService {
           await this.incomeModel.insertMany(inserts, { ordered: false })
         }
 
+        if (cancelledOrderIds.length) {
+          await this.updateIncomeStatusesFromFile({
+            totalIncomeFile: dto.totalIncomeFile,
+            channel: dto.channel
+          })
+        }
+
+        const uniqueOrderDates = this.getUniqueBusinessDates(validOrderDates)
+
         if (dto.updateMode === "base-only") {
-          await this.updateImportedIncomesBox(new Date(dto.date), dto.channel)
+          for (const date of uniqueOrderDates) {
+            await this.updateImportedIncomesBox(date, dto.channel)
+          }
           return
         }
 
-        await this.updateIncomesBox(new Date(dto.date))
+        for (const date of uniqueOrderDates) {
+          await this.updateIncomesBox(date)
+        }
       }
 
       // ====== 2) Xử lý file affiliate: update source (FIX RACE + IDEMPOTENT) ======
@@ -2702,7 +2836,6 @@ export class IncomeService {
             filter: {
               orderId,
               channel: dto.channel,
-              date: { $gte: start, $lte: end },
               products: { $elemMatch: { code, quantity, sourceChecked: false } }
             },
             update: {
@@ -2753,6 +2886,7 @@ export class IncomeService {
       }
     } catch (error) {
       console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Lỗi khi xử lý file tổng doanh thu và affiliate",
         HttpStatus.INTERNAL_SERVER_ERROR
@@ -2806,48 +2940,60 @@ export class IncomeService {
 
   async updateIncomeStatusesFromFile(dto: {
     totalIncomeFile: Express.Multer.File
-    date: Date
+    date?: Date
     channel: string
   }): Promise<{ matched: number; modified: number; missing: number }> {
     try {
-      const start = new Date(dto.date)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(dto.date)
-      end.setHours(23, 59, 59, 999)
-
       const workbook = XLSX.read(dto.totalIncomeFile.buffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
       const readData = XLSX.utils.sheet_to_json(sheet) as XlsxIncomeData[]
       const totalData = readData.slice(1)
+      const validOrderDates = totalData
+        .map((line) => this.parseTikTokOrderDate(line))
+        .filter((date): date is Date => date !== null)
+      if (validOrderDates.length !== totalData.length) {
+        throw new HttpException(
+          "File tổng doanh thu thiếu cột Created Time hợp lệ",
+          HttpStatus.BAD_REQUEST
+        )
+      }
 
       const statusesByOrderId = totalData.reduce(
         (acc, line) => {
           const orderId = String(line["Order ID"] || "").trim()
           if (!orderId) return acc
-          acc[orderId] = this.buildIncomeStatusPayload(line)
+          const orderDate = this.parseTikTokOrderDate(line)
+          if (!orderDate) return acc
+          acc[orderId] = {
+            payload: this.buildIncomeStatusPayload(line),
+            orderDate
+          }
           return acc
         },
         {} as Record<
           string,
-          ReturnType<IncomeService["buildIncomeStatusPayload"]>
+          {
+            payload: ReturnType<IncomeService["buildIncomeStatusPayload"]>
+            orderDate: Date
+          }
         >
       )
 
       let matched = 0
       let modified = 0
 
-      for (const [orderId, statusPayload] of Object.entries(
+      for (const [orderId, status] of Object.entries(
         statusesByOrderId
       )) {
         const res = await this.incomeModel.updateMany(
           {
             orderId,
             channel: dto.channel,
-            date: { $gte: start, $lte: end }
+            ...this.getDateRangesFilter([status.orderDate])
           },
           {
-            $set: statusPayload
+            $set: status.payload
           }
         )
 
@@ -2862,6 +3008,7 @@ export class IncomeService {
       }
     } catch (error) {
       console.error(error)
+      if (error instanceof HttpException) throw error
       throw new HttpException(
         "Lỗi khi cập nhật trạng thái đơn hàng",
         HttpStatus.INTERNAL_SERVER_ERROR
