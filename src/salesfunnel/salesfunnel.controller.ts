@@ -28,6 +28,22 @@ import {
 import { Rank } from "../database/mongoose/schemas/SalesCustomerRank"
 import { SystemLogsService } from "../systemlogs/systemlogs.service"
 
+type FunnelSearchQuery = {
+  stage?: SalesFunnelStage
+  channel?: string
+  province?: string
+  user?: string
+  searchText?: string
+  rank?: Rank
+  startDate?: string
+  endDate?: string
+  noActivityDays?: string
+  funnelSource?: SalesFunnelSource
+  deleted?: string
+  sortBy?: "totalIncome" | "lastTimeBuyed"
+  sortOrder?: "asc" | "desc"
+}
+
 @Controller("salesfunnel")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SalesFunnelController {
@@ -42,6 +58,31 @@ export class SalesFunnelController {
 
   private canManageAllFunnels(req: any) {
     return (req.user?.permissions || []).includes("sales.funnels.manage.all")
+  }
+
+  private getSearchFilters(req: any, query: FunnelSearchQuery) {
+    return {
+      stage: query.stage,
+      channel: query.channel,
+      province: query.province,
+      user: this.scopeSalesCsToOwnFunnels(req) ? req.user.userId : query.user,
+      searchText: query.searchText,
+      rank: query.rank,
+      startDate: query.startDate ? new Date(query.startDate) : undefined,
+      endDate: query.endDate ? new Date(query.endDate) : undefined,
+      noActivityDays: query.noActivityDays
+        ? Number(query.noActivityDays)
+        : undefined,
+      funnelSource: query.funnelSource,
+      deleted:
+        query.deleted === "true"
+          ? true
+          : query.deleted === "false"
+            ? false
+            : undefined,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder
+    }
   }
 
   @Permissions()
@@ -219,6 +260,63 @@ export class SalesFunnelController {
     return updated
   }
 
+  @Permissions("api.salesfunnel.search-funnels")
+  @Get("export/xlsx")
+  @HttpCode(HttpStatus.OK)
+  async exportFunnelsToXlsx(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query("stage") stage?: SalesFunnelStage,
+    @Query("channel") channel?: string,
+    @Query("province") province?: string,
+    @Query("user") user?: string,
+    @Query("searchText") searchText?: string,
+    @Query("rank") rank?: Rank,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("noActivityDays") noActivityDays?: string,
+    @Query("funnelSource") funnelSource?: SalesFunnelSource,
+    @Query("deleted") deleted?: string,
+    @Query("sortBy") sortBy?: "totalIncome" | "lastTimeBuyed",
+    @Query("sortOrder") sortOrder?: "asc" | "desc"
+  ): Promise<void> {
+    const filters = this.getSearchFilters(req, {
+      stage,
+      channel,
+      province,
+      user,
+      searchText,
+      rank,
+      startDate,
+      endDate,
+      noActivityDays,
+      funnelSource,
+      deleted,
+      sortBy,
+      sortOrder
+    })
+    const buffer = await this.salesFunnelService.exportFunnelsToXlsx(filters)
+    const filename = `funnels_${Date.now()}.xlsx`
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
+
+    void this.systemLogsService.createSystemLog(
+      {
+        type: "salesfunnel",
+        action: "export_xlsx",
+        entity: "salesfunnel",
+        result: "success",
+        meta: filters
+      },
+      req.user.userId
+    )
+  }
+
   @Permissions()
   @Get(":id")
   @HttpCode(HttpStatus.OK)
@@ -250,26 +348,22 @@ export class SalesFunnelController {
     @Query("page") page = 1,
     @Query("limit") limit = 10
   ): Promise<{ data: any[]; total: number }> {
-    const assignedUserId = this.scopeSalesCsToOwnFunnels(req)
-      ? req.user.userId
-      : user
     return this.salesFunnelService.searchFunnels(
-      {
+      this.getSearchFilters(req, {
         stage,
         channel,
         province,
-        user: assignedUserId,
+        user,
         searchText,
         rank,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        noActivityDays: noActivityDays ? Number(noActivityDays) : undefined,
+        startDate,
+        endDate,
+        noActivityDays,
         funnelSource,
-        deleted:
-          deleted === "true" ? true : deleted === "false" ? false : undefined,
+        deleted,
         sortBy,
         sortOrder
-      },
+      }),
       Number(page),
       Number(limit)
     )
