@@ -16,6 +16,7 @@ import { SalesChannel } from "../database/mongoose/schemas/SalesChannel"
 import { Province } from "../database/mongoose/schemas/Province"
 import { SalesActivity } from "../database/mongoose/schemas/SalesActivity"
 import * as XLSX from "xlsx"
+import * as ExcelJS from "exceljs"
 
 interface XlsxFunnelData {
   Tên?: string
@@ -25,6 +26,22 @@ interface XlsxFunnelData {
   Kênh?: string
   "Giai đoạn"?: string
   "Ngày tạo"?: string
+}
+
+type FunnelSearchFilters = {
+  stage?: SalesFunnelStage
+  channel?: string
+  province?: string
+  user?: string
+  searchText?: string
+  rank?: Rank
+  startDate?: Date
+  endDate?: Date
+  noActivityDays?: number
+  funnelSource?: SalesFunnelSource
+  deleted?: boolean
+  sortBy?: "totalIncome" | "lastTimeBuyed"
+  sortOrder?: "asc" | "desc"
 }
 
 @Injectable()
@@ -474,6 +491,121 @@ export class SalesFunnelService {
     return buffer
   }
 
+  async exportFunnelsToXlsx(filters: FunnelSearchFilters): Promise<Buffer> {
+    try {
+      // The list view uses the same search method; a high limit exports every
+      // matching row rather than only the currently displayed page.
+      const { data: funnels } = await this.searchFunnels(filters, 1, 100000)
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet("Funnels", {
+        views: [{ state: "frozen", ySplit: 1 }]
+      })
+      const headers = [
+        "Tên",
+        "SĐT",
+        "SĐT phụ",
+        "Tỉnh/TP",
+        "Địa chỉ",
+        "Kênh",
+        "Nhân viên phụ trách",
+        "Giai đoạn",
+        "Nguồn khách",
+        "Đã mua hàng",
+        "Tổng doanh thu",
+        "Hạng khách hàng",
+        "Lần cuối mua hàng",
+        "Lần cuối hoạt động",
+        "Số ngày không hoạt động",
+        "Ngày tạo",
+        "Ngày cập nhật",
+        "Đã xóa"
+      ]
+      const stageLabels: Record<SalesFunnelStage, string> = {
+        lead: "Lead",
+        contacted: "Đã liên hệ",
+        customer: "Khách hàng",
+        closed: "Đã đóng"
+      }
+      const sourceLabels: Record<SalesFunnelSource, string> = {
+        ads: "Ads",
+        seeding: "Seeding",
+        referral: "Giới thiệu"
+      }
+      const rankLabels: Record<Rank, string> = {
+        gold: "Vàng",
+        silver: "Bạc",
+        bronze: "Đồng"
+      }
+      const formatDate = (value?: Date | string | null) =>
+        value
+          ? new Intl.DateTimeFormat("vi-VN", {
+              timeZone: "Asia/Ho_Chi_Minh",
+              dateStyle: "short",
+              timeStyle: "short"
+            }).format(new Date(value))
+          : ""
+
+      const rows = funnels.map((funnel) => [
+        funnel.name || "",
+        funnel.phoneNumber || "",
+        (funnel.secondaryPhoneNumbers || []).join(", "),
+        funnel.province?.name || "",
+        funnel.address || "",
+        funnel.channel?.channelName || "",
+        funnel.user?.name || "",
+        stageLabels[funnel.stage] || funnel.stage || "",
+        sourceLabels[funnel.funnelSource] || funnel.funnelSource || "",
+        funnel.hasBuyed ? "Có" : "Không",
+        funnel.totalIncome || 0,
+        funnel.rank ? rankLabels[funnel.rank] : "",
+        funnel.lastTimeBuyed || "",
+        formatDate(funnel.lastActivityTime),
+        funnel.daysSinceLastActivity ?? "",
+        formatDate(funnel.createdAt),
+        formatDate(funnel.updatedAt),
+        funnel.deletedAt ? "Có" : "Không"
+      ])
+      const columnWidths = [
+        24, 16, 24, 20, 36, 24, 24, 16, 16,
+        14, 18, 18, 20, 20, 22, 20, 20, 12
+      ]
+      worksheet.columns = columnWidths.map((width) => ({ width }))
+      worksheet.addRow(headers)
+      worksheet.addRows(rows)
+      worksheet.autoFilter = `A1:R${Math.max(rows.length + 1, 1)}`
+
+      worksheet.eachRow((row, rowNumber) => {
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cell.font = {
+            name: "Times New Roman",
+            size: 11,
+            bold: rowNumber === 1
+          }
+          cell.alignment = {
+            vertical: "middle",
+            wrapText: true,
+            horizontal: rowNumber === 1 ? "center" : undefined
+          }
+        })
+      })
+
+      // Keep phone values as text and revenue as a numeric, thousands-formatted value.
+      worksheet.getColumn(2).numFmt = "@"
+      worksheet.getColumn(3).numFmt = "@"
+      worksheet.getColumn(11).numFmt = "#,##0"
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      return Buffer.from(buffer as ArrayBuffer)
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      console.error("Error in exportFunnelsToXlsx:", error)
+      throw new HttpException(
+        "Có lỗi khi xuất danh sách funnel",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+    }
+  }
+
   async moveToContacted(
     id: string,
     payload: {
@@ -672,21 +804,7 @@ export class SalesFunnelService {
   }
 
   async searchFunnels(
-    filters: {
-      stage?: SalesFunnelStage
-      channel?: string
-      province?: string
-      user?: string
-      searchText?: string
-      rank?: Rank
-      startDate?: Date
-      endDate?: Date
-      noActivityDays?: number
-      funnelSource?: SalesFunnelSource
-      deleted?: boolean
-      sortBy?: "totalIncome" | "lastTimeBuyed"
-      sortOrder?: "asc" | "desc"
-    },
+    filters: FunnelSearchFilters,
     page = 1,
     limit = 10
   ): Promise<{ data: any[]; total: number }> {
