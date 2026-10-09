@@ -516,6 +516,92 @@ export class SalesOrdersController {
   }
 
   @Permissions()
+  @Get("export/xlsx/viettel-post")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Export đơn hàng theo mẫu Viettel Post ra Excel" })
+  @ApiProduces(
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
+  @ApiQuery({ name: "salesFunnelId", required: false, type: String })
+  @ApiQuery({ name: "userId", required: false, type: String })
+  @ApiQuery({ name: "channelId", required: false, type: String })
+  @ApiQuery({ name: "returning", required: false, enum: ["true", "false"] })
+  @ApiQuery({
+    name: "startDate",
+    required: false,
+    type: String,
+    format: "date-time"
+  })
+  @ApiQuery({
+    name: "endDate",
+    required: false,
+    type: String,
+    format: "date-time"
+  })
+  @ApiQuery({ name: "searchText", required: false, type: String })
+  @ApiQuery({
+    name: "shippingType",
+    required: false,
+    enum: ["shipping_vtp", "shipping_cargo"]
+  })
+  @ApiQuery({
+    name: "status",
+    required: false,
+    enum: ["draft", "confirmed", "official", "cancelled"]
+  })
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "limit", required: false, type: Number, example: 9999 })
+  @ApiResponse({ status: HttpStatus.OK, description: "File XLSX" })
+  async exportOrdersToViettelPostExcel(
+    @Query("salesFunnelId") salesFunnelId?: string,
+    @Query("userId") userId?: string,
+    @Query("channelId") channelId?: string,
+    @Query("returning") returning?: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("searchText") searchText?: string,
+    @Query("shippingType") shippingType?: SalesOrderShippingType,
+    @Query("status") status?: SalesOrderStatus,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+    @Req() req?: any,
+    @Res() res?: Response
+  ): Promise<void> {
+    const effectiveUserId = this.scopeSalesCsToOwnOrders(req)
+      ? req.user.userId
+      : userId
+    const buffer =
+      await this.salesOrdersService.exportOrdersToExcelForViettelPost(
+        {
+          salesFunnelId,
+          userId: effectiveUserId,
+          channelId,
+          returning:
+            returning === "true"
+              ? true
+              : returning === "false"
+                ? false
+                : undefined,
+          startDate: startDate ? new Date(startDate) : undefined,
+          endDate: endDate ? new Date(endDate) : undefined,
+          searchText,
+          shippingType,
+          status
+        },
+        Number(page) || 1,
+        Number(limit) || 9999
+      )
+
+    const filename = `orders_viettel_post_${new Date().getTime()}.xlsx`
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
+    res.send(buffer)
+  }
+
+  @Permissions()
   @Patch(":id/storage")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Cập nhật kho xuất hàng" })

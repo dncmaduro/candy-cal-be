@@ -1,6 +1,8 @@
 import { HttpException, HttpStatus, Injectable, Logger } from "@nestjs/common"
 import { InjectModel } from "@nestjs/mongoose"
 import { Model, Types } from "mongoose"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { SalesLeadsService } from "../salesleads/salesleads.service"
 import * as XLSX from "xlsx"
 import * as ExcelJS from "exceljs"
@@ -2855,6 +2857,25 @@ export class SalesOrdersService {
     }
   }
 
+  async exportOrdersToExcelForViettelPost(
+    filters: {
+      salesFunnelId?: string
+      userId?: string
+      channelId?: string
+      returning?: boolean
+      startDate?: Date
+      endDate?: Date
+      searchText?: string
+      shippingType?: SalesOrderShippingType
+      status?: SalesOrderStatus
+    },
+    page = 1,
+    limit = 9999
+  ): Promise<Buffer> {
+    const result = await this.searchOrders(filters, page, limit)
+    return this.buildViettelPostOrdersExcelBuffer(result.data)
+  }
+
   async transitionOrderStatus(
     orderId: string,
     nextStatus: SalesOrderStatus,
@@ -3791,6 +3812,140 @@ export class SalesOrdersService {
         left: { style: "thin", color: { argb: "FF000000" } },
         bottom: { style: "thin", color: { argb: "FF000000" } },
         right: { style: "thin", color: { argb: "FF000000" } }
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    return Buffer.from(buffer as ArrayBuffer)
+  }
+
+  private async buildViettelPostOrdersExcelBuffer(
+    orders: any[]
+  ): Promise<Buffer> {
+    const templatePath = join(
+      __dirname,
+      "templates",
+      "sales-orders-viettel-post-template.xlsx"
+    )
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await readFile(templatePath))
+
+    const worksheet = workbook.getWorksheet("Danh sách")
+    if (!worksheet) {
+      throw new Error('Sheet "Danh sách" không tồn tại trong file mẫu')
+    }
+
+    const firstDataRow = 8
+    const templateLastDataRow = 47
+    const lastColumn = 22
+    const templateRow = worksheet.getRow(templateLastDataRow)
+    const requiredLastDataRow = Math.max(
+      templateLastDataRow,
+      firstDataRow + Math.max(orders.length, 1) - 1
+    )
+
+    // Preserve all row-level and cell-level template formatting for rows added
+    // beyond the 40 rows supplied by the template.
+    for (
+      let rowNumber = templateLastDataRow + 1;
+      rowNumber <= requiredLastDataRow;
+      rowNumber++
+    ) {
+      const targetRow = worksheet.getRow(rowNumber)
+      targetRow.height = templateRow.height
+      targetRow.hidden = templateRow.hidden
+      targetRow.outlineLevel = templateRow.outlineLevel
+
+      for (let columnNumber = 1; columnNumber <= lastColumn; columnNumber++) {
+        const sourceCell = templateRow.getCell(columnNumber)
+        const targetCell = targetRow.getCell(columnNumber)
+        targetCell.value = sourceCell.value
+        targetCell.style = sourceCell.style
+        if (sourceCell.dataValidation) {
+          targetCell.dataValidation = sourceCell.dataValidation
+        }
+      }
+    }
+
+    const toNumber = (value: unknown): number => {
+      const numberValue = Number(value)
+      return Number.isFinite(numberValue) ? numberValue : 0
+    }
+
+    const buildOrderValues = (order: any) => {
+      const funnel =
+        order?.salesFunnelId && typeof order.salesFunnelId === "object"
+          ? order.salesFunnelId
+          : null
+      const items = Array.isArray(order?.items) ? order.items : []
+
+      const totalQuantity = items.reduce(
+        (sum: number, item: any) => sum + toNumber(item?.quantity),
+        0
+      )
+      const totalMassInGrams = Math.round(
+        items.reduce(
+          (sum: number, item: any) =>
+            sum + toNumber(item?.mass) * toNumber(item?.quantity) * 1000,
+          0
+        )
+      )
+      const goodsValue = items.reduce(
+        (sum: number, item: any) =>
+          sum + toNumber(item?.price) * toNumber(item?.quantity),
+        0
+      )
+      const orderDiscount = toNumber(order?.orderDiscount)
+      const otherDiscount = toNumber(order?.otherDiscount)
+      const tax = toNumber(order?.tax)
+      const shippingCost = toNumber(order?.shippingCost)
+      const deposit = toNumber(order?.deposit)
+      const remainingAmount =
+        goodsValue -
+        orderDiscount -
+        otherDiscount +
+        tax +
+        shippingCost -
+        deposit
+      const goodsName = items
+        .map((item: any) =>
+          `${toNumber(item?.quantity)} ${item?.name || ""}`.trim()
+        )
+        .join(" - ")
+
+      return [
+        null,
+        funnel?.name || "",
+        funnel?.phoneNumber || "",
+        funnel?.address || "",
+        goodsName,
+        totalQuantity,
+        totalMassInGrams,
+        goodsValue,
+        remainingAmount
+      ]
+    }
+
+    // A and C-J are replaced by order data. B (order code) intentionally
+    // remains whatever the template contains, as requested.
+    const orderDataColumnNumbers = [1, 3, 4, 5, 6, 7, 8, 9, 10]
+    const availableDataRows = Math.max(
+      templateLastDataRow - firstDataRow + 1,
+      orders.length
+    )
+
+    for (let index = 0; index < availableDataRows; index++) {
+      const row = worksheet.getRow(firstDataRow + index)
+      const values =
+        index < orders.length ? buildOrderValues(orders[index]) : null
+
+      for (const columnNumber of orderDataColumnNumbers) {
+        const valueIndex = columnNumber === 1 ? 0 : columnNumber - 2
+        row.getCell(columnNumber).value = values ? values[valueIndex] : null
+      }
+
+      if (values) {
+        row.getCell(1).value = index + 1
       }
     }
 
