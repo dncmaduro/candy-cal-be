@@ -11,6 +11,12 @@
           "introspectComments": true
         }
       }
+    ],
+    "assets": [
+      {
+        "include": "salesorders/templates/**/*",
+        "outDir": "dist"
+      }
     ]
   }
 }
