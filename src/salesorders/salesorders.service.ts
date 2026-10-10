@@ -2870,10 +2870,43 @@ export class SalesOrdersService {
       status?: SalesOrderStatus
     },
     page = 1,
-    limit = 9999
+    limit = 9999,
+    orderIds?: string[],
+    salesCsId?: string
   ): Promise<Buffer> {
-    const result = await this.searchOrders(filters, page, limit)
-    return this.buildViettelPostOrdersExcelBuffer(result.data)
+    if (!orderIds?.length) {
+      const result = await this.searchOrders(filters, page, limit)
+      return this.buildViettelPostOrdersExcelBuffer(result.data)
+    }
+
+    const validObjectIds = orderIds
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.trim())
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id))
+
+    const filter: any = { _id: { $in: validObjectIds } }
+    if (salesCsId) {
+      const ownFunnelIds = await this.salesFunnelModel
+        .find({ user: new Types.ObjectId(salesCsId) })
+        .distinct("_id")
+      filter.salesFunnelId = { $in: ownFunnelIds }
+    }
+
+    const orders = await this.salesOrderModel
+      .find(filter)
+      .populate({
+        path: "salesFunnelId",
+        populate: [
+          { path: "channel", model: "saleschannels" },
+          { path: "user", model: "users", select: "name email role" },
+          { path: "province", model: "provinces" }
+        ]
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+
+    return this.buildViettelPostOrdersExcelBuffer(orders)
   }
 
   async transitionOrderStatus(
