@@ -84,6 +84,10 @@ export class RangeShopeeAnalyticsService {
         summary: {
           grossRevenue: 0,
           netRevenue: 0,
+          grossOrders: 0,
+          netOrders: 0,
+          cancelledRevenue: 0,
+          cancelledOrders: 0,
           liveRevenue: 0,
           adsCost: 0,
           totalOrders: 0,
@@ -91,7 +95,21 @@ export class RangeShopeeAnalyticsService {
           aov: 0,
           revenuePerDay: 0,
           ordersPerDay: 0,
-          adsCostPerDay: 0
+          adsCostPerDay: 0,
+          beforeCancellation: {
+            revenue: 0,
+            orders: 0,
+            adsCost: 0,
+            roas: 0,
+            aov: 0
+          },
+          afterCancellation: {
+            revenue: 0,
+            orders: 0,
+            adsCost: 0,
+            roas: 0,
+            aov: 0
+          }
         },
         meta: {
           lastSyncedAt: null,
@@ -121,13 +139,18 @@ export class RangeShopeeAnalyticsService {
       this.repo.getLastSyncedAt(scope.channelFilter)
     ])
 
-    const grossRevenue = Number(incomeAgg[0]?.totalRevenue || 0)
-    const netRevenue = grossRevenue
-    const totalOrders = Number(incomeAgg[0]?.totalOrders || 0)
+    const grossRevenue = Number(incomeAgg[0]?.grossRevenue || 0)
+    const netRevenue = Number(incomeAgg[0]?.netRevenue || 0)
+    const grossOrders = Number(incomeAgg[0]?.grossOrders || 0)
+    const netOrders = Number(incomeAgg[0]?.netOrders || 0)
+    const cancelledRevenue = Number(incomeAgg[0]?.cancelledRevenue || 0)
+    const cancelledOrders = Number(incomeAgg[0]?.cancelledOrders || 0)
     const adsCost = Number(adsAgg[0]?.totalAdsCost || 0)
     const liveRevenue = Number(liveAgg[0]?.totalLiveRevenue || 0)
-    const roas = round(safeDivide(netRevenue, adsCost), 4)
-    const aov = round(safeDivide(netRevenue, totalOrders), 2)
+    const grossRoas = round(safeDivide(grossRevenue, adsCost), 4)
+    const netRoas = round(safeDivide(netRevenue, adsCost), 4)
+    const grossAov = round(safeDivide(grossRevenue, grossOrders), 2)
+    const netAov = round(safeDivide(netRevenue, netOrders), 2)
 
     return {
       scope: {
@@ -140,14 +163,32 @@ export class RangeShopeeAnalyticsService {
       summary: {
         grossRevenue,
         netRevenue,
+        grossOrders,
+        netOrders,
+        cancelledRevenue,
+        cancelledOrders,
         liveRevenue,
         adsCost,
-        totalOrders,
-        roas,
-        aov,
+        totalOrders: netOrders,
+        roas: netRoas,
+        aov: netAov,
         revenuePerDay: round(safeDivide(netRevenue, range.days), 2),
-        ordersPerDay: round(safeDivide(totalOrders, range.days), 2),
-        adsCostPerDay: round(safeDivide(adsCost, range.days), 2)
+        ordersPerDay: round(safeDivide(netOrders, range.days), 2),
+        adsCostPerDay: round(safeDivide(adsCost, range.days), 2),
+        beforeCancellation: {
+          revenue: grossRevenue,
+          orders: grossOrders,
+          adsCost,
+          roas: grossRoas,
+          aov: grossAov
+        },
+        afterCancellation: {
+          revenue: netRevenue,
+          orders: netOrders,
+          adsCost,
+          roas: netRoas,
+          aov: netAov
+        }
       },
       meta: {
         lastSyncedAt: formatMetaDate(lastSyncedAt),
@@ -172,10 +213,13 @@ export class RangeShopeeAnalyticsService {
         const d = addDays(range.orderFrom, i)
         series.push({
           orderDate: d,
+          grossRevenue: 0,
+          grossOrders: 0,
           revenue: 0,
           liveRevenue: 0,
           adsCost: 0,
           orders: 0,
+          grossRoas: 0,
           roas: 0,
           aov: 0
         })
@@ -222,10 +266,13 @@ export class RangeShopeeAnalyticsService {
       const orderDate = addDays(range.orderFrom, i)
       map.set(orderDate, {
         orderDate,
+        grossRevenue: 0,
+        grossOrders: 0,
         revenue: 0,
         liveRevenue: 0,
         adsCost: 0,
         orders: 0,
+        grossRoas: 0,
         roas: 0,
         aov: 0
       })
@@ -234,8 +281,10 @@ export class RangeShopeeAnalyticsService {
     incomes.forEach((item) => {
       const row = map.get(item.orderDate)
       if (!row) return
-      row.revenue = Number(item.revenue || 0)
-      row.orders = Number(item.orders || 0)
+      row.grossRevenue = Number(item.grossRevenue || 0)
+      row.grossOrders = Number(item.grossOrders || 0)
+      row.revenue = Number(item.netRevenue || 0)
+      row.orders = Number(item.netOrders || 0)
     })
 
     ads.forEach((item) => {
@@ -254,6 +303,7 @@ export class RangeShopeeAnalyticsService {
       .sort((a, b) => a.orderDate.localeCompare(b.orderDate))
       .map((item) => ({
         ...item,
+        grossRoas: round(safeDivide(item.grossRevenue, item.adsCost), 4),
         roas: round(safeDivide(item.revenue, item.adsCost), 4),
         aov: round(safeDivide(item.revenue, item.orders), 2)
       }))
