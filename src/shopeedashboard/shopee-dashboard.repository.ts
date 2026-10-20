@@ -8,6 +8,42 @@ import { ShopeeIncome } from "../database/mongoose/schemas/ShopeeIncome"
 import { ShopeeMonthKpi } from "../database/mongoose/schemas/ShopeeMonthKpi"
 import { SHOPEE_TZ } from "./shopee-dashboard.utils"
 
+const cancelledOrderExpression = {
+  $or: [
+    {
+      $regexMatch: {
+        input: {
+          $convert: {
+            input: { $ifNull: ["$orderStatus", ""] },
+            to: "string",
+            onError: "",
+            onNull: ""
+          }
+        },
+        regex: "cancel|hủy|huỷ",
+        options: "i"
+      }
+    },
+    {
+      $ne: [
+        {
+          $trim: {
+            input: {
+              $convert: {
+                input: { $ifNull: ["$cancelReason", ""] },
+                to: "string",
+                onError: "",
+                onNull: ""
+              }
+            }
+          }
+        },
+        ""
+      ]
+    }
+  ]
+}
+
 @Injectable()
 export class ShopeeDashboardRepository {
   constructor(
@@ -73,10 +109,26 @@ export class ShopeeDashboardRepository {
           $match: { channel: channelFilter, orderDate: { $gte: start, $lte: end } }
         },
         {
+          $set: {
+            isCancelled: cancelledOrderExpression,
+            orderRevenue: { $sum: "$products.buyerPaidTotal" }
+          }
+        },
+        {
           $group: {
             _id: null,
-            totalRevenue: { $sum: { $sum: "$products.buyerPaidTotal" } },
-            totalOrders: { $sum: 1 }
+            totalRevenue: { $sum: "$orderRevenue" },
+            totalOrders: { $sum: 1 },
+            grossRevenue: { $sum: "$orderRevenue" },
+            grossOrders: { $sum: 1 },
+            netRevenue: {
+              $sum: { $cond: ["$isCancelled", 0, "$orderRevenue"] }
+            },
+            netOrders: { $sum: { $cond: ["$isCancelled", 0, 1] } },
+            cancelledRevenue: {
+              $sum: { $cond: ["$isCancelled", "$orderRevenue", 0] }
+            },
+            cancelledOrders: { $sum: { $cond: ["$isCancelled", 1, 0] } }
           }
         }
       ])
@@ -113,11 +165,25 @@ export class ShopeeDashboardRepository {
     channelFilter: Types.ObjectId | { $in: Types.ObjectId[] },
     start: Date,
     end: Date
-  ): Promise<Array<{ orderDate: string; revenue: number; orders: number }>> {
+  ): Promise<
+    Array<{
+      orderDate: string
+      grossRevenue: number
+      netRevenue: number
+      grossOrders: number
+      netOrders: number
+    }>
+  > {
     return this.incomeModel
       .aggregate([
         {
           $match: { channel: channelFilter, orderDate: { $gte: start, $lte: end } }
+        },
+        {
+          $set: {
+            isCancelled: cancelledOrderExpression,
+            orderRevenue: { $sum: "$products.buyerPaidTotal" }
+          }
         },
         {
           $group: {
@@ -128,11 +194,24 @@ export class ShopeeDashboardRepository {
                 timezone: "UTC"
               }
             },
-            revenue: { $sum: { $sum: "$products.buyerPaidTotal" } },
-            orders: { $sum: 1 }
+            grossRevenue: { $sum: "$orderRevenue" },
+            netRevenue: {
+              $sum: { $cond: ["$isCancelled", 0, "$orderRevenue"] }
+            },
+            grossOrders: { $sum: 1 },
+            netOrders: { $sum: { $cond: ["$isCancelled", 0, 1] } }
           }
         },
-        { $project: { _id: 0, orderDate: "$_id", revenue: 1, orders: 1 } },
+        {
+          $project: {
+            _id: 0,
+            orderDate: "$_id",
+            grossRevenue: 1,
+            netRevenue: 1,
+            grossOrders: 1,
+            netOrders: 1
+          }
+        },
         { $sort: { orderDate: 1 } }
       ])
       .exec()
