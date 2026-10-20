@@ -540,6 +540,13 @@ export class SalesOrdersController {
   })
   @ApiQuery({ name: "searchText", required: false, type: String })
   @ApiQuery({
+    name: "orderIds",
+    required: false,
+    type: String,
+    isArray: true,
+    description: "Danh sách ID đơn hàng cần xuất; có thể truyền lặp tham số"
+  })
+  @ApiQuery({
     name: "shippingType",
     required: false,
     enum: ["shipping_vtp", "shipping_cargo"]
@@ -560,6 +567,7 @@ export class SalesOrdersController {
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
     @Query("searchText") searchText?: string,
+    @Query("orderIds") orderIds?: string | string[],
     @Query("shippingType") shippingType?: SalesOrderShippingType,
     @Query("status") status?: SalesOrderStatus,
     @Query("page") page?: string,
@@ -570,6 +578,14 @@ export class SalesOrdersController {
     const effectiveUserId = this.scopeSalesCsToOwnOrders(req)
       ? req.user.userId
       : userId
+    const normalizedOrderIds = orderIds
+      ? (Array.isArray(orderIds) ? orderIds : [orderIds]).flatMap((value) =>
+          value
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean)
+        )
+      : undefined
     const buffer =
       await this.salesOrdersService.exportOrdersToExcelForViettelPost(
         {
@@ -589,7 +605,9 @@ export class SalesOrdersController {
           status
         },
         Number(page) || 1,
-        Number(limit) || 9999
+        Number(limit) || 9999,
+        normalizedOrderIds,
+        this.scopeSalesCsToOwnOrders(req) ? req.user.userId : undefined
       )
 
     const filename = `orders_viettel_post_${new Date().getTime()}.xlsx`
