@@ -4,6 +4,8 @@ export interface ShopeeDailyAds extends Document {
   date: Date
   channel: Types.ObjectId
   adsCost: number
+  adsCostBeforeCancellation?: number
+  adsCostAfterCancellation?: number
 }
 
 export const ShopeeDailyAdsSchema = new Schema<ShopeeDailyAds>({
@@ -13,7 +15,9 @@ export const ShopeeDailyAdsSchema = new Schema<ShopeeDailyAds>({
     ref: "livestreamchannels",
     required: true
   },
-  adsCost: { type: Number, required: true, default: 0 }
+  adsCost: { type: Number, required: true, default: 0 },
+  adsCostBeforeCancellation: { type: Number, required: false },
+  adsCostAfterCancellation: { type: Number, required: false }
 })
 
 ShopeeDailyAdsSchema.index({ channel: 1, date: 1 }, { unique: true })
