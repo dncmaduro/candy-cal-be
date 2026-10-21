@@ -105,6 +105,8 @@ export type RangeTimeseriesPoint = {
   grossOrders: number
   revenue: number
   liveRevenue: number
+  grossAdsCost: number
+  netAdsCost: number
   adsCost: number
   orders: number
   grossRoas: number

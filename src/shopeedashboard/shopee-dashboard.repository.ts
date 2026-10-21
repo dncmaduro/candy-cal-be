@@ -143,7 +143,18 @@ export class ShopeeDashboardRepository {
     return this.dailyAdsModel
       .aggregate([
         { $match: { channel: channelFilter, date: { $gte: start, $lte: end } } },
-        { $group: { _id: null, totalAdsCost: { $sum: "$adsCost" } } }
+        {
+          $group: {
+            _id: null,
+            totalAdsCost: { $sum: "$adsCost" },
+            totalAdsCostBeforeCancellation: {
+              $sum: { $ifNull: ["$adsCostBeforeCancellation", "$adsCost"] }
+            },
+            totalAdsCostAfterCancellation: {
+              $sum: { $ifNull: ["$adsCostAfterCancellation", "$adsCost"] }
+            }
+          }
+        }
       ])
       .exec()
   }
@@ -221,7 +232,14 @@ export class ShopeeDashboardRepository {
     channelFilter: Types.ObjectId | { $in: Types.ObjectId[] },
     start: Date,
     end: Date
-  ): Promise<Array<{ date: string; adsCost: number }>> {
+  ): Promise<
+    Array<{
+      date: string
+      adsCost: number
+      grossAdsCost: number
+      netAdsCost: number
+    }>
+  > {
     return this.dailyAdsModel
       .aggregate([
         { $match: { channel: channelFilter, date: { $gte: start, $lte: end } } },
@@ -234,10 +252,24 @@ export class ShopeeDashboardRepository {
                 timezone: SHOPEE_TZ
               }
             },
-            adsCost: { $sum: "$adsCost" }
+            adsCost: { $sum: "$adsCost" },
+            grossAdsCost: {
+              $sum: { $ifNull: ["$adsCostBeforeCancellation", "$adsCost"] }
+            },
+            netAdsCost: {
+              $sum: { $ifNull: ["$adsCostAfterCancellation", "$adsCost"] }
+            }
           }
         },
-        { $project: { _id: 0, date: "$_id", adsCost: 1 } },
+        {
+          $project: {
+            _id: 0,
+            date: "$_id",
+            adsCost: 1,
+            grossAdsCost: 1,
+            netAdsCost: 1
+          }
+        },
         { $sort: { date: 1 } }
       ])
       .exec()
