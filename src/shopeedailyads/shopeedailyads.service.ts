@@ -20,6 +20,12 @@ type ShopeeDailyAdsFilters = {
   endDate?: string
 }
 
+type ShopeeDailyAdsCostsInput = {
+  adsCost?: number
+  adsCostBeforeCancellation?: number
+  adsCostAfterCancellation?: number
+}
+
 @Injectable()
 export class ShopeeDailyAdsService {
   constructor(
@@ -55,6 +61,43 @@ export class ShopeeDailyAdsService {
     }
   }
 
+  private resolveAdsCosts(
+    input: ShopeeDailyAdsCostsInput,
+    fallback?: ShopeeDailyAds
+  ): {
+    adsCost: number
+    adsCostBeforeCancellation: number
+    adsCostAfterCancellation: number
+  } {
+    const legacyAdsCost =
+      typeof input.adsCost === "undefined" ? undefined : Number(input.adsCost)
+    const fallbackAdsCost = fallback?.adsCost
+    const before = Number(
+      input.adsCostBeforeCancellation ??
+        legacyAdsCost ??
+        fallback?.adsCostBeforeCancellation ??
+        fallbackAdsCost ??
+        0
+    )
+    const after = Number(
+      input.adsCostAfterCancellation ??
+        legacyAdsCost ??
+        fallback?.adsCostAfterCancellation ??
+        fallbackAdsCost ??
+        0
+    )
+
+    this.validateAdsCost(before)
+    this.validateAdsCost(after)
+
+    return {
+      // Keep the legacy field as the pre-cancellation/raw value for old consumers.
+      adsCost: before,
+      adsCostBeforeCancellation: before,
+      adsCostAfterCancellation: after
+    }
+  }
+
   private async getShopeeLivestreamChannelOrThrow(
     channelId: string
   ): Promise<LivestreamChannel> {
@@ -81,7 +124,17 @@ export class ShopeeDailyAdsService {
   ): Promise<ShopeeDailyAds> {
     try {
       const date = this.parseAndNormalizeDate(dto.date)
-      this.validateAdsCost(Number(dto.adsCost))
+      if (
+        typeof dto.adsCost === "undefined" &&
+        typeof dto.adsCostBeforeCancellation === "undefined" &&
+        typeof dto.adsCostAfterCancellation === "undefined"
+      ) {
+        throw new HttpException(
+          "Vui lòng nhập chi phí ads trước hoặc sau lọc đơn hủy",
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      const adsCosts = this.resolveAdsCosts(dto)
 
       const channel = await this.getShopeeLivestreamChannelOrThrow(dto.channel)
       const channelObjectId = channel._id as Types.ObjectId
@@ -103,7 +156,7 @@ export class ShopeeDailyAdsService {
       const created = await this.shopeeDailyAdsModel.create({
         date,
         channel: channelObjectId,
-        adsCost: Number(dto.adsCost)
+        ...adsCosts
       })
 
       const populated = await this.shopeeDailyAdsModel
@@ -236,9 +289,13 @@ export class ShopeeDailyAdsService {
         nextChannelId = channel._id as Types.ObjectId
       }
 
-      if (typeof dto.adsCost !== "undefined") {
-        this.validateAdsCost(Number(dto.adsCost))
-      }
+      const hasAdsCostInput =
+        typeof dto.adsCost !== "undefined" ||
+        typeof dto.adsCostBeforeCancellation !== "undefined" ||
+        typeof dto.adsCostAfterCancellation !== "undefined"
+      const adsCosts = hasAdsCostInput
+        ? this.resolveAdsCosts(dto, existing)
+        : null
 
       const duplicate = await this.shopeeDailyAdsModel
         .findOne({
@@ -258,8 +315,11 @@ export class ShopeeDailyAdsService {
       existing.date = nextDate
       existing.channel = nextChannelId
 
-      if (typeof dto.adsCost !== "undefined") {
-        existing.adsCost = Number(dto.adsCost)
+      if (adsCosts) {
+        existing.adsCost = adsCosts.adsCost
+        existing.adsCostBeforeCancellation =
+          adsCosts.adsCostBeforeCancellation
+        existing.adsCostAfterCancellation = adsCosts.adsCostAfterCancellation
       }
 
       await existing.save()
