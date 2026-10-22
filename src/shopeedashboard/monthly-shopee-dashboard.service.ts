@@ -61,26 +61,51 @@ export class MonthlyShopeeDashboardService {
     revenueTarget: number
     adsCostTarget: number
     roasTarget: number
-    currentRevenue: number
+    grossRevenue: number
+    netRevenue: number
+    grossOrders: number
+    netOrders: number
     liveRevenue: number
-    adsCost: number
-    totalOrders: number
+    adsCostBeforeCancellation: number
+    adsCostAfterCancellation: number
     expectedProgressPercent: number
   }) {
-    const roas = round(safeDivide(raw.currentRevenue, raw.adsCost), 4)
+    const beforeRoas = round(
+      safeDivide(raw.grossRevenue, raw.adsCostBeforeCancellation),
+      4
+    )
+    const afterRoas = round(
+      safeDivide(raw.netRevenue, raw.adsCostAfterCancellation),
+      4
+    )
     return {
-      currentRevenue: raw.currentRevenue,
+      currentRevenue: raw.netRevenue,
       revenueTarget: raw.revenueTarget,
       liveRevenue: raw.liveRevenue,
-      adsCost: raw.adsCost,
+      adsCost: raw.adsCostAfterCancellation,
       adsCostTarget: raw.adsCostTarget,
-      roas,
+      roas: afterRoas,
       roasTarget: raw.roasTarget,
-      totalOrders: raw.totalOrders,
+      totalOrders: raw.netOrders,
+      beforeCancellation: {
+        revenue: raw.grossRevenue,
+        orders: raw.grossOrders,
+        adsCost: raw.adsCostBeforeCancellation,
+        roas: beforeRoas
+      },
+      afterCancellation: {
+        revenue: raw.netRevenue,
+        orders: raw.netOrders,
+        adsCost: raw.adsCostAfterCancellation,
+        roas: afterRoas
+      },
       expectedProgressPercent: raw.expectedProgressPercent,
-      actualRevenueProgressPercent: toProgress(raw.currentRevenue, raw.revenueTarget),
-      actualAdsCostProgressPercent: toProgress(raw.adsCost, raw.adsCostTarget),
-      actualRoasProgressPercent: toProgress(roas, raw.roasTarget)
+      actualRevenueProgressPercent: toProgress(raw.netRevenue, raw.revenueTarget),
+      actualAdsCostProgressPercent: toProgress(
+        raw.adsCostAfterCancellation,
+        raw.adsCostTarget
+      ),
+      actualRoasProgressPercent: toProgress(afterRoas, raw.roasTarget)
     }
   }
 
@@ -101,10 +126,13 @@ export class MonthlyShopeeDashboardService {
           revenueTarget: 0,
           adsCostTarget: 0,
           roasTarget: 0,
-          currentRevenue: 0,
+          grossRevenue: 0,
+          netRevenue: 0,
+          grossOrders: 0,
+          netOrders: 0,
           liveRevenue: 0,
-          adsCost: 0,
-          totalOrders: 0,
+          adsCostBeforeCancellation: 0,
+          adsCostAfterCancellation: 0,
           expectedProgressPercent
         }),
         meta: {
@@ -138,9 +166,24 @@ export class MonthlyShopeeDashboardService {
           )
         : round(Number(targetRow.roasAvgValue || 0), 4)
 
-    const currentRevenue = Number(incomeAgg[0]?.totalRevenue || 0)
-    const totalOrders = Number(incomeAgg[0]?.totalOrders || 0)
-    const adsCost = Number(adsAgg[0]?.totalAdsCost || 0)
+    const grossRevenue = Number(
+      incomeAgg[0]?.grossRevenue ?? incomeAgg[0]?.totalRevenue ?? 0
+    )
+    const netRevenue = Number(incomeAgg[0]?.netRevenue || 0)
+    const grossOrders = Number(
+      incomeAgg[0]?.grossOrders ?? incomeAgg[0]?.totalOrders ?? 0
+    )
+    const netOrders = Number(incomeAgg[0]?.netOrders || 0)
+    const adsCostBeforeCancellation = Number(
+      adsAgg[0]?.totalAdsCostBeforeCancellation ??
+        adsAgg[0]?.totalAdsCost ??
+        0
+    )
+    const adsCostAfterCancellation = Number(
+      adsAgg[0]?.totalAdsCostAfterCancellation ??
+        adsAgg[0]?.totalAdsCost ??
+        0
+    )
     const liveRevenue = Number(liveAgg[0]?.totalLiveRevenue || 0)
 
     return {
@@ -149,10 +192,13 @@ export class MonthlyShopeeDashboardService {
         revenueTarget,
         adsCostTarget,
         roasTarget,
-        currentRevenue,
+        grossRevenue,
+        netRevenue,
+        grossOrders,
+        netOrders,
         liveRevenue,
-        adsCost,
-        totalOrders,
+        adsCostBeforeCancellation,
+        adsCostAfterCancellation,
         expectedProgressPercent
       }),
       meta: {

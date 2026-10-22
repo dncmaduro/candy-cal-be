@@ -14,6 +14,18 @@ export type MonthlySummaryResponse = {
     roas: number
     roasTarget: number
     totalOrders: number
+    beforeCancellation: {
+      revenue: number
+      orders: number
+      adsCost: number
+      roas: number
+    }
+    afterCancellation: {
+      revenue: number
+      orders: number
+      adsCost: number
+      roas: number
+    }
     expectedProgressPercent: number
     actualRevenueProgressPercent: number
     actualAdsCostProgressPercent: number
