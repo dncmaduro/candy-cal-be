@@ -318,7 +318,7 @@ export class SalesOrdersController {
         shippingCode: { type: "string" },
         shippingType: {
           type: "string",
-          enum: ["shipping_vtp", "shipping_cargo"]
+          enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"]
         },
         tax: { type: "number", minimum: 0 },
         shippingCost: { type: "number", minimum: 0 },
@@ -466,7 +466,7 @@ export class SalesOrdersController {
   @ApiQuery({
     name: "shippingType",
     required: false,
-    enum: ["shipping_vtp", "shipping_cargo"]
+    enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"]
   })
   @ApiQuery({
     name: "status",
@@ -549,7 +549,7 @@ export class SalesOrdersController {
   @ApiQuery({
     name: "shippingType",
     required: false,
-    enum: ["shipping_vtp", "shipping_cargo"]
+    enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"]
   })
   @ApiQuery({
     name: "status",
@@ -702,7 +702,7 @@ export class SalesOrdersController {
   @ApiQuery({
     name: "shippingType",
     required: false,
-    enum: ["shipping_vtp", "shipping_cargo"]
+    enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"]
   })
   @ApiQuery({
     name: "status",
@@ -775,7 +775,7 @@ export class SalesOrdersController {
   @ApiQuery({
     name: "shippingType",
     required: false,
-    enum: ["shipping_vtp", "shipping_cargo"]
+    enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"]
   })
   @ApiQuery({
     name: "status",
@@ -844,7 +844,7 @@ export class SalesOrdersController {
         },
         shippingType: {
           type: "string",
-          enum: ["shipping_vtp", "shipping_cargo"],
+          enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"],
           description: "Bắt buộc khi chuyển official"
         },
         tax: {
