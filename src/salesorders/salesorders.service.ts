@@ -19,6 +19,7 @@ import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import { Province } from "../database/mongoose/schemas/Province"
 import { SalesInventoryLog } from "../database/mongoose/schemas/SalesInventoryLog"
 import { SalesInventoryPeriod } from "../database/mongoose/schemas/SalesInventoryPeriod"
+import { calculateJntShippingCost } from "./salesShipping"
 
 interface XlsxSalesOrderData {
   "SĐT Khách hàng"?: string
@@ -597,6 +598,11 @@ export class SalesOrdersService {
           ) {
             shippingType = "shipping_vtp"
           } else if (
+            shippingTypeValue.includes("j&t") ||
+            shippingTypeValue.includes("jnt")
+          ) {
+            shippingType = "shipping_jnt"
+          } else if (
             shippingTypeValue.includes("cargo") ||
             shippingTypeValue.includes("chành")
           ) {
@@ -683,6 +689,10 @@ export class SalesOrdersService {
 
           // Determine returning status
           const returning = funnel.hasBuyed || false
+          const calculatedShippingCost =
+            shippingType === "shipping_jnt"
+              ? calculateJntShippingCost(orderItems)
+              : shippingCost
 
           // Create order
           await this.salesOrderModel.create({
@@ -696,7 +706,7 @@ export class SalesOrdersService {
             otherDiscount,
             deposit,
             tax,
-            shippingCost,
+            shippingCost: calculatedShippingCost,
             shippingCode,
             shippingType,
             phoneNumber: channelPhoneNumber,
@@ -1074,7 +1084,12 @@ export class SalesOrdersService {
       if (payload.tax !== undefined) {
         order.tax = payload.tax
       }
-      if (payload.shippingCost !== undefined) {
+      if (payload.shippingType === "shipping_jnt") {
+        order.shippingCost = calculateJntShippingCost(order.items)
+      } else if (
+        payload.shippingCost !== undefined &&
+        order.shippingType !== "shipping_jnt"
+      ) {
         order.shippingCost = payload.shippingCost
       }
       if (payload.receivedDate !== undefined) {
@@ -1673,7 +1688,8 @@ export class SalesOrdersService {
       label: string
     }> = [
       { value: "shipping_vtp", label: "Viettel Post" },
-      { value: "shipping_cargo", label: "Chành xe" }
+      { value: "shipping_cargo", label: "Chành xe" },
+      { value: "shipping_jnt", label: "J&T" }
     ]
     return { data: shippingTypes }
   }
@@ -1937,6 +1953,8 @@ export class SalesOrdersService {
   //         customerInfo = `Shipcod (${funnelName} - ${provinceName})`
   //       } else if (order.shippingType === "shipping_cargo") {
   //         customerInfo = `Chành (${funnelName} - ${provinceName})`
+  //       } else if (order.shippingType === "shipping_jnt") {
+  //         customerInfo = `J&T (${funnelName} - ${provinceName})`
   //       } else {
   //         customerInfo = `${funnelName} - ${provinceName}`
   //       }
@@ -1947,7 +1965,9 @@ export class SalesOrdersService {
   //           ? "VIETTEL POST"
   //           : order.shippingType === "shipping_cargo"
   //             ? "SHIPCOD LÊN CHÀNH"
-  //             : "KHÁC"
+  //             : order.shippingType === "shipping_jnt"
+  //               ? "J&T"
+  //               : "KHÁC"
 
   //       // Calculate tax (only for VTP)
   //       const taxValue =
@@ -2978,7 +2998,11 @@ export class SalesOrdersService {
           )
         }
 
-        if (payload.tax === undefined || payload.shippingCost === undefined) {
+        if (
+          payload.tax === undefined ||
+          (payload.shippingType !== "shipping_jnt" &&
+            payload.shippingCost === undefined)
+        ) {
           throw new HttpException(
             "Thiếu thông tin thuế hoặc phí vận chuyển để chuyển sang chính thức",
             HttpStatus.BAD_REQUEST
@@ -3000,7 +3024,10 @@ export class SalesOrdersService {
             order.shippingCode = payload.shippingCode
             order.shippingType = payload.shippingType
             order.tax = payload.tax
-            order.shippingCost = payload.shippingCost
+            order.shippingCost =
+              payload.shippingType === "shipping_jnt"
+                ? calculateJntShippingCost(order.items)
+                : (payload.shippingCost ?? 0)
             order.inventoryHandling = inventoryHandling
             if (payload.receivedDate !== undefined) {
               order.receivedDate = payload.receivedDate
@@ -3220,6 +3247,8 @@ export class SalesOrdersService {
         customerInfo = `Shipcod (${funnelName} - ${provinceName})`
       } else if (order.shippingType === "shipping_cargo") {
         customerInfo = `Chành (${funnelName} - ${provinceName})`
+      } else if (order.shippingType === "shipping_jnt") {
+        customerInfo = `J&T (${funnelName} - ${provinceName})`
       } else {
         customerInfo = `${funnelName} - ${provinceName}`
       }
@@ -3230,7 +3259,9 @@ export class SalesOrdersService {
           ? "VIETTEL POST"
           : order.shippingType === "shipping_cargo"
             ? "SHIPCOD LÊN CHÀNH"
-            : "KHÁC"
+            : order.shippingType === "shipping_jnt"
+              ? "J&T"
+              : "KHÁC"
 
       // Calculate tax (only for VTP)
       const taxValue =
@@ -4279,6 +4310,8 @@ export class SalesOrdersService {
         customerInfo = `Shipcod (${funnelName} - ${provinceName})`
       } else if (order.shippingType === "shipping_cargo") {
         customerInfo = `Chành (${funnelName} - ${provinceName})`
+      } else if (order.shippingType === "shipping_jnt") {
+        customerInfo = `J&T (${funnelName} - ${provinceName})`
       } else {
         customerInfo = `${funnelName} - ${provinceName}`
       }
@@ -4289,7 +4322,9 @@ export class SalesOrdersService {
           ? "VIETTEL POST"
           : order.shippingType === "shipping_cargo"
             ? "SHIPCOD LÊN CHÀNH"
-            : "KHÁC"
+            : order.shippingType === "shipping_jnt"
+              ? "J&T"
+              : "KHÁC"
 
       // Calculate tax (only for VTP)
       const taxValue =
