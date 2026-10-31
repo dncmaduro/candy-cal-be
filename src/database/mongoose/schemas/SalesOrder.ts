@@ -2,7 +2,10 @@ import { Schema, Document, model, Types } from "mongoose"
 
 export type SalesOrderStorage = "position_HaNam" | "position_MKT"
 
-export type SalesOrderShippingType = "shipping_vtp" | "shipping_cargo"
+export type SalesOrderShippingType =
+  | "shipping_vtp"
+  | "shipping_cargo"
+  | "shipping_jnt"
 
 export type SalesOrderStatus = "draft" | "confirmed" | "official" | "cancelled"
 
@@ -61,7 +64,7 @@ export const SalesOrderSchema = new Schema<SalesOrder>({
   shippingCode: { type: String, required: false },
   shippingType: {
     type: String,
-    enum: ["shipping_vtp", "shipping_cargo"],
+    enum: ["shipping_vtp", "shipping_cargo", "shipping_jnt"],
     required: false
   },
   items: [

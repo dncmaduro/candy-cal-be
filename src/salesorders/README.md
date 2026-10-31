@@ -151,6 +151,11 @@ Cập nhật thông tin vận chuyển.
 
 - Cả `shippingCode` và `shippingType` đều là optional
 - Chỉ cập nhật những field được truyền vào
+- Với `shippingType = "shipping_jnt"`, server tự tính lại `shippingCost` theo từng thùng:
+  - Cân nặng quy đổi = `số khối (m³) * 1000 / 6`
+  - Cân nặng tính ship = số lớn hơn giữa cân nặng quy đổi và cân nặng thực tế, làm tròn đến kg
+  - Dưới hoặc bằng 5kg: 30.000đ; 6–10kg: 35.000đ; 11–15kg: 45.000đ; từ 16kg tăng 5.000đ/kg
+  - Từ trên 25kg, mỗi kg tăng thêm 5.000đ/thùng (26kg = 100.000đ); tổng phí là tổng phí của từng thùng
 
 **Authorization:** Requires role `admin` or `sales-cs`
 
@@ -213,7 +218,7 @@ Tìm kiếm và lọc đơn hàng.
 
 - `salesFunnelId` (optional): Lọc theo funnel ID
 - `returning` (optional): `true` | `false` - Lọc theo khách hàng mới/cũ
-- `shippingType` (optional): `shipping_vtp` | `shipping_cargo` - Lọc theo loại vận chuyển
+- `shippingType` (optional): `shipping_vtp` | `shipping_cargo` | `shipping_jnt` - Lọc theo loại vận chuyển
 - `status` (optional): `draft` | `confirmed` | `official` | `cancelled` - Lọc theo trạng thái
 - `startDate` (optional): Ngày bắt đầu (ISO 8601)
 - `endDate` (optional): Ngày kết thúc (ISO 8601)
@@ -317,7 +322,8 @@ Lấy danh sách các loại vận chuyển có sẵn.
 {
   "data": [
     { "value": "shipping_vtp", "label": "Viettel Post" },
-    { "value": "shipping_cargo", "label": "Chành xe" }
+    { "value": "shipping_cargo", "label": "Chành xe" },
+    { "value": "shipping_jnt", "label": "J&T" }
   ]
 }
 ```
@@ -395,6 +401,7 @@ Mỗi sản phẩm trong mỗi đơn hàng tương ứng với 1 dòng, với c�
 | ------------------ | ------------------ |
 | shipping_vtp       | VIETTEL POST       |
 | shipping_cargo     | SHIPCODE LÊN CHÀNH |
+| shipping_jnt       | J&T                |
 
 **Excel Formatting:**
 
