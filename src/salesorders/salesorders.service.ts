@@ -954,6 +954,9 @@ export class SalesOrdersService {
 
       order.items = itemsWithDetails
       order.total = total
+      if (order.shippingType === "shipping_jnt") {
+        order.shippingCost = calculateJntShippingCost(itemsWithDetails)
+      }
       order.phoneNumber = phoneNumber
       order.address = address
       order.province = province
