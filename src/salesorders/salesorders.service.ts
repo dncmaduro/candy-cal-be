@@ -19,7 +19,10 @@ import { SalesFunnel } from "../database/mongoose/schemas/SalesFunnel"
 import { Province } from "../database/mongoose/schemas/Province"
 import { SalesInventoryLog } from "../database/mongoose/schemas/SalesInventoryLog"
 import { SalesInventoryPeriod } from "../database/mongoose/schemas/SalesInventoryPeriod"
-import { calculateJntShippingCost } from "./salesShipping"
+import {
+  calculateJntShippingCost,
+  calculateJntShippingCostForBox
+} from "./salesShipping"
 
 interface XlsxSalesOrderData {
   "SĐT Khách hàng"?: string
@@ -2932,6 +2935,65 @@ export class SalesOrdersService {
     return this.buildViettelPostOrdersExcelBuffer(orders)
   }
 
+  async exportOrdersToExcelForJnt(
+    filters: {
+      salesFunnelId?: string
+      userId?: string
+      channelId?: string
+      returning?: boolean
+      startDate?: Date
+      endDate?: Date
+      searchText?: string
+      status?: SalesOrderStatus
+    },
+    page = 1,
+    limit = 9999,
+    orderIds?: string[],
+    salesCsId?: string
+  ): Promise<Buffer> {
+    const jntFilters = {
+      ...filters,
+      shippingType: "shipping_jnt" as SalesOrderShippingType
+    }
+
+    if (!orderIds?.length) {
+      const result = await this.searchOrders(jntFilters, page, limit)
+      return this.buildJntOrdersExcelBuffer(result.data)
+    }
+
+    const validObjectIds = orderIds
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.trim())
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id))
+
+    const filter: any = {
+      _id: { $in: validObjectIds },
+      shippingType: "shipping_jnt"
+    }
+    if (salesCsId) {
+      const ownFunnelIds = await this.salesFunnelModel
+        .find({ user: new Types.ObjectId(salesCsId) })
+        .distinct("_id")
+      filter.salesFunnelId = { $in: ownFunnelIds }
+    }
+
+    const orders = await this.salesOrderModel
+      .find(filter)
+      .populate({
+        path: "salesFunnelId",
+        populate: [
+          { path: "channel", model: "saleschannels" },
+          { path: "user", model: "users", select: "name email role" },
+          { path: "province", model: "provinces" }
+        ]
+      })
+      .sort({ createdAt: -1 })
+      .lean()
+
+    return this.buildJntOrdersExcelBuffer(orders)
+  }
+
   async transitionOrderStatus(
     orderId: string,
     nextStatus: SalesOrderStatus,
@@ -4014,6 +4076,112 @@ export class SalesOrdersService {
       if (values) {
         row.getCell(1).value = index + 1
       }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    return Buffer.from(buffer as ArrayBuffer)
+  }
+
+  private async buildJntOrdersExcelBuffer(orders: any[]): Promise<Buffer> {
+    const templatePath = join(
+      __dirname,
+      "templates",
+      "sales-orders-jnt-template.xlsx"
+    )
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await readFile(templatePath))
+
+    const worksheet = workbook.getWorksheet("Đơn hàng")
+    if (!worksheet) {
+      throw new Error('Sheet "Đơn hàng" không tồn tại trong file mẫu J&T')
+    }
+
+    const firstDataRow = 6
+    const templateLastDataRow = 55
+    const lastColumn = 17
+    const templateRow = worksheet.getRow(templateLastDataRow)
+    const orderItems = orders.flatMap((order) => {
+      const items = Array.isArray(order?.items) ? order.items : []
+      const funnel =
+        order?.salesFunnelId && typeof order.salesFunnelId === "object"
+          ? order.salesFunnelId
+          : null
+
+      return items.map((item: any, itemIndex: number) => ({
+        order,
+        item,
+        funnel,
+        isLastItem: itemIndex === items.length - 1
+      }))
+    })
+    const requiredLastDataRow = Math.max(
+      templateLastDataRow,
+      firstDataRow + Math.max(orderItems.length, 1) - 1
+    )
+
+    // Preserve the template's row and cell formatting when the export has
+    // more data rows than the sample rows supplied by J&T.
+    for (
+      let rowNumber = templateLastDataRow + 1;
+      rowNumber <= requiredLastDataRow;
+      rowNumber++
+    ) {
+      const targetRow = worksheet.getRow(rowNumber)
+      targetRow.height = templateRow.height
+      targetRow.hidden = templateRow.hidden
+      targetRow.outlineLevel = templateRow.outlineLevel
+
+      for (let columnNumber = 1; columnNumber <= lastColumn; columnNumber++) {
+        const sourceCell = templateRow.getCell(columnNumber)
+        const targetCell = targetRow.getCell(columnNumber)
+        targetCell.style = sourceCell.style
+        if (sourceCell.dataValidation) {
+          targetCell.dataValidation = sourceCell.dataValidation
+        }
+      }
+    }
+
+    // Remove the sample rows while preserving the template formatting.
+    for (
+      let rowNumber = firstDataRow;
+      rowNumber <= requiredLastDataRow;
+      rowNumber++
+    ) {
+      const row = worksheet.getRow(rowNumber)
+      for (let columnNumber = 1; columnNumber <= lastColumn; columnNumber++) {
+        row.getCell(columnNumber).value = null
+      }
+    }
+
+    const toNumber = (value: unknown): number => {
+      const numberValue = Number(value)
+      return Number.isFinite(numberValue) ? numberValue : 0
+    }
+
+    const toText = (value: unknown): string | null => {
+      if (value === null || value === undefined) return null
+      const text = String(value).trim()
+      return text.length > 0 ? text : null
+    }
+
+    for (let index = 0; index < orderItems.length; index++) {
+      const { order, item, funnel, isLastItem } = orderItems[index]
+      const row = worksheet.getRow(firstDataRow + index)
+      const quantity = toNumber(item?.quantity)
+      const price = toNumber(item?.price)
+      const mass = toNumber(item?.mass)
+      const shippingCost =
+        calculateJntShippingCostForBox(item) * Math.max(0, quantity)
+      const tax = isLastItem ? toNumber(order?.tax) : 0
+
+      // Each product occupies one row. COD includes that product's J&T shipping
+      // fee and order tax is added once to the last product row.
+      row.getCell(2).value = toText(funnel?.name)
+      row.getCell(3).value = toText(funnel?.phoneNumber || order?.phoneNumber)
+      row.getCell(4).value = toText(funnel?.address || order?.address)
+      row.getCell(8).value = toText(item?.name)
+      row.getCell(10).value = Math.round(price * quantity + shippingCost + tax)
+      row.getCell(11).value = Math.round(mass * quantity * 1000) / 1000
     }
 
     const buffer = await workbook.xlsx.writeBuffer()
