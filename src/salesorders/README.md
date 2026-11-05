@@ -425,6 +425,38 @@ GET /salesorders/export/xlsx?startDate=2024-11-01&endDate=2024-11-30&shippingTyp
 
 ---
 
+### 12. GET /salesorders/export/xlsx/jnt
+
+Export đơn J&T theo template `sales-orders-jnt-template.xlsx`.
+
+**Query Parameters:**
+
+- Tương tự API search: `salesFunnelId`, `userId`, `channelId`, `returning`, `startDate`, `endDate`, `searchText`, `status`
+- `orderIds`: danh sách ID đơn hàng, có thể truyền lặp hoặc ngăn cách bằng dấu phẩy
+- `page`, `limit`: dùng khi export theo bộ lọc
+
+**Quy tắc dữ liệu:**
+
+- Chỉ export đơn có `shippingType=shipping_jnt`
+- Mỗi sản phẩm trong đơn chiếm một dòng
+- Tên, điện thoại, địa chỉ lấy từ khách hàng/funnel
+- COD mỗi dòng = `item.price * item.quantity` + phí J&T của item đó, trước giảm giá
+- `tax` của đơn chỉ cộng một lần vào dòng sản phẩm cuối cùng
+- Trọng lượng mỗi dòng = `item.mass * item.quantity` (kg)
+- Các cột không có dữ liệu trong Sales Order được để trống theo template
+
+**Response:**
+
+- File Excel (.xlsx) với filename dạng `orders_jnt_<timestamp>.xlsx`
+
+**Example Request:**
+
+```
+GET /salesorders/export/xlsx/jnt?startDate=2026-11-01&endDate=2026-11-30&status=official
+```
+
+---
+
 ## Price Management
 
 ### Cơ chế lưu giá
