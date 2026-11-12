@@ -4100,6 +4100,12 @@ export class SalesOrdersService {
     const templateLastDataRow = 55
     const lastColumn = 17
     const templateRow = worksheet.getRow(templateLastDataRow)
+
+    const toNumber = (value: unknown): number => {
+      const numberValue = Number(value)
+      return Number.isFinite(numberValue) ? numberValue : 0
+    }
+
     const orderItems = orders.flatMap((order) => {
       const items = Array.isArray(order?.items) ? order.items : []
       const funnel =
@@ -4107,12 +4113,22 @@ export class SalesOrdersService {
           ? order.salesFunnelId
           : null
 
-      return items.map((item: any, itemIndex: number) => ({
-        order,
-        item,
-        funnel,
-        isLastItem: itemIndex === items.length - 1
-      }))
+      const expandedItems = items.flatMap((item: any) => {
+        const quantity = Math.max(0, Math.floor(toNumber(item?.quantity)))
+
+        return Array.from({ length: quantity }, () => ({
+          order,
+          item,
+          funnel,
+          isLastItem: false
+        }))
+      })
+
+      if (expandedItems.length > 0) {
+        expandedItems[expandedItems.length - 1].isLastItem = true
+      }
+
+      return expandedItems
     })
     const requiredLastDataRow = Math.max(
       templateLastDataRow,
@@ -4153,35 +4169,36 @@ export class SalesOrdersService {
       }
     }
 
-    const toNumber = (value: unknown): number => {
-      const numberValue = Number(value)
-      return Number.isFinite(numberValue) ? numberValue : 0
-    }
-
     const toText = (value: unknown): string | null => {
       if (value === null || value === undefined) return null
       const text = String(value).trim()
       return text.length > 0 ? text : null
     }
 
+    const normalizeJntExportMass = (mass: number): number => {
+      if (mass >= 6 && mass <= 10) return 10
+      if (mass >= 11 && mass <= 15) return 15
+      return mass
+    }
+
     for (let index = 0; index < orderItems.length; index++) {
       const { order, item, funnel, isLastItem } = orderItems[index]
       const row = worksheet.getRow(firstDataRow + index)
-      const quantity = toNumber(item?.quantity)
       const price = toNumber(item?.price)
       const mass = toNumber(item?.mass)
-      const shippingCost =
-        calculateJntShippingCostForBox(item) * Math.max(0, quantity)
+      const exportMass = normalizeJntExportMass(mass)
+      const shippingCost = calculateJntShippingCostForBox(item)
       const tax = isLastItem ? toNumber(order?.tax) : 0
 
-      // Each product occupies one row. COD includes that product's J&T shipping
-      // fee and order tax is added once to the last product row.
+      // Each unit occupies one row. COD includes that unit's J&T shipping fee
+      // and order tax is added once to the last unit row of the order.
       row.getCell(2).value = toText(funnel?.name)
       row.getCell(3).value = toText(funnel?.phoneNumber || order?.phoneNumber)
       row.getCell(4).value = toText(funnel?.address || order?.address)
       row.getCell(8).value = toText(item?.name)
-      row.getCell(10).value = Math.round(price * quantity + shippingCost + tax)
-      row.getCell(11).value = Math.round(mass * quantity * 1000) / 1000
+      row.getCell(10).value = Math.round(price + shippingCost + tax)
+      row.getCell(11).value = Math.round(exportMass * 1000) / 1000
+      row.getCell(17).value = "giao cả ngày"
     }
 
     const buffer = await workbook.xlsx.writeBuffer()
