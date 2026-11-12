@@ -438,11 +438,11 @@ Export đơn J&T theo template `sales-orders-jnt-template.xlsx`.
 **Quy tắc dữ liệu:**
 
 - Chỉ export đơn có `shippingType=shipping_jnt`
-- Mỗi sản phẩm trong đơn chiếm một dòng
+- Mỗi đơn vị sản phẩm trong đơn chiếm một dòng (ví dụ quantity = 3 sẽ tạo 3 dòng)
 - Tên, điện thoại, địa chỉ lấy từ khách hàng/funnel
-- COD mỗi dòng = `item.price * item.quantity` + phí J&T của item đó, trước giảm giá
-- `tax` của đơn chỉ cộng một lần vào dòng sản phẩm cuối cùng
-- Trọng lượng mỗi dòng = `item.mass * item.quantity` (kg)
+- COD mỗi dòng = `item.price` + phí J&T của một sản phẩm; `tax` của đơn chỉ cộng một lần ở dòng cuối
+- Trọng lượng mỗi dòng = `item.mass`; từ 6–10 kg ghi 10, từ 11–15 kg ghi 15
+- Cột ghi chú của mọi dòng luôn là `giao cả ngày`
 - Các cột không có dữ liệu trong Sales Order được để trống theo template
 
 **Response:**
